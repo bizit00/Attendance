@@ -781,18 +781,18 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
       <div class="card">
         <div class="card-lbl">📅 Leave Period</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 90px;gap:12px;align-items:end">
-          <div class="field" style="margin-bottom:0">
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;min-width:0">
+          <div class="field" style="margin-bottom:0;min-width:0">
             <label>From Date <span style="color:var(--red)">*</span></label>
-            <input type="date" id="leaveFrom" onchange="calcLeaveDays()"/>
+            <input type="date" id="leaveFrom" onchange="calcLeaveDays()" style="min-width:0;width:100%"/>
           </div>
-          <div class="field" style="margin-bottom:0">
+          <div class="field" style="margin-bottom:0;min-width:0">
             <label>To Date <span style="color:var(--red)">*</span></label>
-            <input type="date" id="leaveTo" onchange="calcLeaveDays()"/>
+            <input type="date" id="leaveTo" onchange="calcLeaveDays()" style="min-width:0;width:100%"/>
           </div>
-          <div class="field" style="margin-bottom:0">
+          <div class="field" style="margin-bottom:0;min-width:0">
             <label>Days</label>
-            <input type="text" id="leaveNumDays" readonly placeholder="Auto" style="background:#f3f4f6;text-align:center;font-family:var(--mono);font-weight:700;color:var(--blue)"/>
+            <input type="text" id="leaveNumDays" readonly placeholder="Auto" style="background:#f3f4f6;text-align:center;font-family:var(--mono);font-weight:700;color:var(--blue);width:76px;min-width:0;box-sizing:border-box"/>
           </div>
         </div>
       </div>
@@ -1335,17 +1335,23 @@ service cloud.firestore {
   <div class="modal-box" style="max-width:540px;max-height:90vh;overflow-y:auto">
     <button class="modal-close" onclick="document.getElementById('myLeavesModal').classList.remove('open')">✕</button>
     <div class="modal-title">📁 My Leave Applications</div>
-    <div class="modal-sub" id="myLeavesEmpInfo">Enter your Engineer ID to view your leaves</div>
-    <div style="display:flex;gap:8px;margin-bottom:16px">
+    <div class="modal-sub" id="myLeavesEmpInfo">Your leave applications</div>
+
+    <!-- Security lock notice — shown when session is verified or blocked -->
+    <div id="myLeavesLockNotice" style="display:none;border-radius:10px;padding:10px 14px;font-size:.82rem;font-weight:600;margin-bottom:14px;line-height:1.6;border:1.5px solid"></div>
+
+    <!-- Engineer ID row — hidden after check-in (locked automatically) -->
+    <div id="myLeavesInputRow" style="display:flex;gap:8px;margin-bottom:16px">
       <div style="flex:1;display:flex;align-items:center;border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;background:#fafaf8">
         <span style="padding:10px 8px 10px 14px;font-weight:800;font-family:var(--mono);font-size:.9rem;color:var(--blue);background:#eff6ff;border-right:1.5px solid var(--border);white-space:nowrap;user-select:none">Eng</span>
         <input type="text" id="myLeavesEmpId" placeholder="01" inputmode="numeric" pattern="[0-9]*" maxlength="10"
           style="border:none;background:transparent;padding:10px 12px;font-size:.9rem;font-family:var(--mono);width:100%;outline:none;color:var(--ink)"
           oninput="engIdInput(this)" onkeydown="if(event.key==='Enter')loadMyLeaves()"/>
       </div>
-      <button onclick="loadMyLeaves()" style="padding:10px 18px;border-radius:var(--r);background:var(--blue);color:#fff;border:none;font-weight:700;font-family:var(--body);cursor:pointer;font-size:.88rem">Search</button>
+      <button id="myLeavesSearchBtn" onclick="loadMyLeaves()" style="padding:10px 18px;border-radius:var(--r);background:var(--blue);color:#fff;border:none;font-weight:700;font-family:var(--body);cursor:pointer;font-size:.88rem">Search</button>
     </div>
-    <div id="myLeavesList"><div style="text-align:center;padding:30px;color:var(--ink3);font-size:.88rem">Enter your Engineer ID above and tap Search</div></div>
+
+    <div id="myLeavesList"><div style="text-align:center;padding:30px;color:var(--ink3);font-size:.88rem">Loading…</div></div>
   </div>
 </div>
 
@@ -3706,25 +3712,110 @@ function exportCombinedCSV() {
 function showMyLeaves() {
   var modal = document.getElementById("myLeavesModal");
   if (!modal) return;
-  // Pre-fill with session empId — strip "Eng" prefix for number-only input
+
+  var inp        = document.getElementById("myLeavesEmpId");
+  var inputRow   = document.getElementById("myLeavesInputRow");
+  var notice     = document.getElementById("myLeavesLockNotice");
+  var listEl     = document.getElementById("myLeavesList");
+  var empInfo    = document.getElementById("myLeavesEmpInfo");
+
+  // ── Resolve verified identity ────────────────────
+  // Priority 1: active check-in session
   var sess = getSess();
-  var inp = document.getElementById("myLeavesEmpId");
-  if (sess && sess.empId && inp) {
-    inp.value = sess.empId.replace(/^[Ee][Nn][Gg]/i, "");
+  var today = new Date().toLocaleDateString("en-SG");
+  var verifiedEmpId = null;
+
+  if (sess && sess.empId && sess.checkinTimestamp) {
+    verifiedEmpId = sess.empId;
+  } else {
+    // Priority 2: checked in earlier today (even after checkout)
+    var ci = localStorage.getItem("_at_ci_" + today);
+    if (ci) verifiedEmpId = ci;
   }
-  modal.classList.add("open");
-  if (inp && inp.value) loadMyLeaves();
+
+  // ── Render modal based on verification state ─────
+  if (verifiedEmpId) {
+    // ✅ Identity confirmed — lock to this engineer only
+    var numPart = verifiedEmpId.replace(/^[Ee][Nn][Gg]/i, "");
+    if (inp) {
+      inp.value    = numPart;
+      inp.readOnly = true;
+      inp.style.cursor     = "not-allowed";
+      inp.style.background = "#f3f4f6";
+      inp.style.color      = "var(--ink3)";
+    }
+    // Hide the manual search row — they can't change it
+    if (inputRow) inputRow.style.display = "none";
+
+    // Show green lock notice
+    if (notice) {
+      notice.style.display     = "flex";
+      notice.style.alignItems  = "center";
+      notice.style.gap         = "8px";
+      notice.style.background  = "#f0fdf4";
+      notice.style.borderColor = "#86efac";
+      notice.style.color       = "#15803d";
+      notice.innerHTML = '🔒 Showing leaves for <strong>' + verifiedEmpId + '</strong> · Verified via today\'s attendance';
+    }
+    if (empInfo) empInfo.textContent = "Your leave applications — " + verifiedEmpId;
+    modal.classList.add("open");
+    loadMyLeaves();
+
+  } else {
+    // 🔒 Not checked in today — block access entirely
+    if (inputRow) inputRow.style.display = "none";
+    if (inp) inp.value = "";
+
+    if (notice) {
+      notice.style.display     = "block";
+      notice.style.background  = "#fffbeb";
+      notice.style.borderColor = "#fde68a";
+      notice.style.color       = "#92400e";
+      notice.innerHTML =
+        '🔒 <strong>Access restricted.</strong><br>' +
+        'You must <strong>check in first</strong> before you can view your leave status. ' +
+        'This prevents other people from looking up your (or anyone else\'s) leave records.<br><br>' +
+        '💡 Alternatively, check the <strong>email notification</strong> that was sent to you when your leave application was processed.';
+    }
+    if (empInfo) empInfo.textContent = "Identity verification required";
+    if (listEl)  listEl.innerHTML = "";
+    modal.classList.add("open");
+  }
 }
 
 function loadMyLeaves() {
-  var empId = getEngId("myLeavesEmpId");
   var list  = document.getElementById("myLeavesList");
   var info  = document.getElementById("myLeavesEmpInfo");
-  if (!empId || empId === "Eng" || !list) {
-    if (list) list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--red);font-size:.88rem">Please enter your Engineer number (e.g. type <strong>01</strong> for Eng01).</div>';
+
+  // ── Security: resolve verified identity (same logic as showMyLeaves) ──
+  var sess = getSess();
+  var today = new Date().toLocaleDateString("en-SG");
+  var verifiedEmpId = null;
+
+  if (sess && sess.empId && sess.checkinTimestamp) {
+    verifiedEmpId = sess.empId;
+  } else {
+    var ci = localStorage.getItem("_at_ci_" + today);
+    if (ci) verifiedEmpId = ci;
+  }
+
+  // Block if no verified session at all
+  if (!verifiedEmpId) {
+    if (list) list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--red);font-size:.88rem">🔒 Please check in first to view your leave status.<br><br>Or check the email notification sent to you when your leave was processed.</div>';
     return;
   }
 
+  // Block if someone tries to query a different engineer's ID (UI bypass attempt)
+  var requestedId = getEngId("myLeavesEmpId");
+  if (requestedId && requestedId !== verifiedEmpId) {
+    if (list) list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--red);font-size:.88rem">🔒 You can only view your own leave applications.</div>';
+    return;
+  }
+
+  // Use verified identity — never the raw input
+  var empId = verifiedEmpId;
+
+  if (!list) return;
   list.innerHTML = '<div style="text-align:center;padding:24px;color:var(--ink3)"><span class="spin" style="border-color:rgba(0,0,0,.15);border-top-color:var(--blue)"></span> Loading…</div>';
 
   function renderMyList(recs) {
