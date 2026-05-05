@@ -1740,14 +1740,22 @@ function chkBtn() {
     if (!emailOk) {
       statusEl.innerHTML = '<div class="pill pill-bad" style="margin-top:4px">✗ Invalid email format</div>';
     } else {
-      var devId = getDeviceId();
-      var binding = getEmailBinding(devId);
-      if (!binding) {
-        statusEl.innerHTML = '<div class="pill pill-info" style="margin-top:4px">🔗 This device will be linked to <strong>'+sanitizeHtml(email.trim())+'</strong> on check-in</div>';
-      } else if (binding.email === email.trim().toLowerCase()) {
-        statusEl.innerHTML = '<div class="pill pill-ok" style="margin-top:4px">✅ Device recognised — linked to <strong>'+sanitizeHtml(binding.email)+'</strong></div>';
+      var emailKey = email.trim().toLowerCase();
+      // Check local cache of email binding first (fast, cross-browser fallback)
+      var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(e){}
+      var xb = {}; try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(e){}
+      var id = getEngId("empId");
+
+      if (eb[emailKey] && id && eb[emailKey].empId !== id) {
+        // Email is already bound to a different engineer
+        statusEl.innerHTML = '<div class="pill pill-bad" style="margin-top:4px">⛔ This email is registered to <strong>' + sanitizeHtml(eb[emailKey].empId) + '</strong> — use your own email.</div>';
+      } else if (id && xb[id] && xb[id].email !== emailKey) {
+        // This engineer ID is already bound to a different email
+        statusEl.innerHTML = '<div class="pill pill-bad" style="margin-top:4px">⛔ <strong>' + sanitizeHtml(id) + '</strong> is registered to a different email. Contact admin to update.</div>';
+      } else if (eb[emailKey] && eb[emailKey].empId === id) {
+        statusEl.innerHTML = '<div class="pill pill-ok" style="margin-top:4px">✅ Email recognised — registered to <strong>' + sanitizeHtml(id) + '</strong></div>';
       } else {
-        statusEl.innerHTML = '<div class="pill pill-bad" style="margin-top:4px">⚠️ This device is registered to <strong>'+sanitizeHtml(binding.email)+'</strong>. Admin will be notified of the email change.</div>';
+        statusEl.innerHTML = '<div class="pill pill-info" style="margin-top:4px">🔗 This email will be permanently linked to <strong>' + sanitizeHtml(id||'your Engineer ID') + '</strong> on check-in</div>';
       }
     }
   } else if (statusEl) {
@@ -1977,63 +1985,71 @@ function doCheckin() {
     return;
   }
 
-  // ✅ EMAIL–DEVICE BINDING: check & record (never blocks check-in, just flags it)
+  // ✅ IDENTITY BINDING: verify email↔empId before allowing check-in
+  //    This is cross-browser (Firestore-backed) so switching browsers won't help.
   var devId = getDeviceId();
-  var emailConflict = checkAndRecordEmailBinding(devId, empEmail, empId, empName);
-
-  var site    = WORK_SITES[parseInt(siteIdx)];
-  var gps     = GPS.in;
-  var now     = new Date();
-  var isLate  = now.getHours() >= WORK_HOUR_LATE + 1;
-
-  var rec = {
-    empId:empId, empName:empName, empEmail:empEmail, site:site.name,
-    checkinTime:now.toLocaleTimeString("en-SG"),
-    checkinDate:now.toLocaleDateString("en-SG"),
-    checkinISO:now.toISOString(),
-    checkinTimestamp:now.getTime(),
-    checkinLat:gps.lat, checkinLng:gps.lng, checkinDist:gps.dist, checkinAcc:gps.accuracy,
-    checkoutTime:null, checkoutTimestamp:null,
-    checkoutLat:null, checkoutLng:null, checkoutDist:null,
-    status:"in", isLate:isLate, isOvertime:false, duration:null,
-    // ✅ ANTI-BUDDY-PUNCH: Store selfie photo and device ID
-    selfiePhoto: selfieData,
-    deviceId: devId,
-    // ✅ EMAIL–DEVICE: flag if email mismatch on this device
-    emailConflict: emailConflict || false,
-    // ✅ SECURITY: Track submission source for audit purposes
-    _source: "web", _userAgent: navigator.userAgent.slice(0, 100)
-  };
-
-  var btn = document.getElementById("ciBtn");
+  var btn   = document.getElementById("ciBtn");
   btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> Saving…';
+  btn.innerHTML = '<span class="spin"></span> Verifying identity…';
 
-  function onSaved(docId) {
-    recordDeviceCheckin(empId); // ✅ ANTI-BUDDY-PUNCH: mark this device as used today
-    setSess(rec); setSessDocId(docId);
-    btn.innerHTML = "✅ Check In";
-    showResult("ci", rec, isLate, false);
-    toast("✅ Checked in successfully!", "t-ok");
-    // Check if this engineer has any leave decisions to show
-    setTimeout(function(){ checkApprovedLeaveForEmp(empId); }, 1800);
-    setTimeout(function(){
-      document.getElementById("ciForm").style.display    = "none";
-      document.getElementById("coSection").style.display = "block";
-      document.getElementById("sessBadge").style.display = "block";
-      document.getElementById("sb-emp").textContent  = rec.empName+" ("+rec.empId+")";
-      document.getElementById("sb-site").textContent = rec.site;
-      document.getElementById("sb-cin").textContent  = rec.checkinTime;
-    }, 1600);
-  }
+  verifyIdentityBinding(empEmail, empId, empName, devId, function(result) {
+    if (!result.ok) {
+      toast(result.reason, "t-err");
+      btn.disabled = false;
+      btn.innerHTML = "✅ Check In";
+      setTimeout(function(){ alert(result.reason + "\n\nIf you believe this is an error, please contact admin."); }, 200);
+      return;
+    }
 
-  if (fbOk && db) {
-    db.collection("attendance").add(rec)
-      .then(function(ref){ onSaved(ref.id); })
-      .catch(function(e){ console.warn(e); saveLocal(rec); onSaved(null); });
-  } else {
-    saveLocal(rec); onSaved(null);
-  }
+    // ── Identity verified — proceed with check-in ──────────
+    btn.innerHTML = '<span class="spin"></span> Saving…';
+
+    var site   = WORK_SITES[parseInt(siteIdx)];
+    var gps    = GPS.in;
+    var now    = new Date();
+    var isLate = now.getHours() >= WORK_HOUR_LATE + 1;
+
+    var rec = {
+      empId:empId, empName:empName, empEmail:empEmail, site:site.name,
+      checkinTime:now.toLocaleTimeString("en-SG"),
+      checkinDate:now.toLocaleDateString("en-SG"),
+      checkinISO:now.toISOString(),
+      checkinTimestamp:now.getTime(),
+      checkinLat:gps.lat, checkinLng:gps.lng, checkinDist:gps.dist, checkinAcc:gps.accuracy,
+      checkoutTime:null, checkoutTimestamp:null,
+      checkoutLat:null, checkoutLng:null, checkoutDist:null,
+      status:"in", isLate:isLate, isOvertime:false, duration:null,
+      selfiePhoto: selfieData,
+      deviceId: devId,
+      emailConflict: false, // binding already enforced above — no conflict possible here
+      _source: "web", _userAgent: navigator.userAgent.slice(0, 100)
+    };
+
+    function onSaved(docId) {
+      recordDeviceCheckin(empId);
+      setSess(rec); setSessDocId(docId);
+      btn.innerHTML = "✅ Check In";
+      showResult("ci", rec, isLate, false);
+      toast("✅ Checked in successfully!", "t-ok");
+      setTimeout(function(){ checkApprovedLeaveForEmp(empId); }, 1800);
+      setTimeout(function(){
+        document.getElementById("ciForm").style.display    = "none";
+        document.getElementById("coSection").style.display = "block";
+        document.getElementById("sessBadge").style.display = "block";
+        document.getElementById("sb-emp").textContent  = rec.empName+" ("+rec.empId+")";
+        document.getElementById("sb-site").textContent = rec.site;
+        document.getElementById("sb-cin").textContent  = rec.checkinTime;
+      }, 1600);
+    }
+
+    if (fbOk && db) {
+      db.collection("attendance").add(rec)
+        .then(function(ref){ onSaved(ref.id); })
+        .catch(function(e){ console.warn(e); saveLocal(rec); onSaved(null); });
+    } else {
+      saveLocal(rec); onSaved(null);
+    }
+  });
 }
 
 // ── Check-out ──────────────────────────────────────
@@ -3179,7 +3195,118 @@ function renderDeviceAudit() {
 
 // ══════════════════════════════════════════════════════
 // EMAIL–DEVICE BINDING  (localStorage + Firestore mirror)
-// Key: "at_email_bindings"  →  { [deviceId]: BindingObject }
+// ══════════════════════════════════════════════════════
+// IDENTITY BINDING  (email ↔ empId, cross-browser via Firestore)
+// ══════════════════════════════════════════════════════
+// Two Firestore collections:
+//   emailBindings/{email}  → { email, empId, empName, registeredAt, lastSeenAt, deviceIds:[] }
+//   empBindings/{empId}    → { empId, email, empName, lastSeenAt }
+//
+// localStorage fallback for demo mode (still keyed by email, not deviceId):
+//   at_email_bind_v2  →  { [email]: binding }
+//   at_emp_bind_v2    →  { [empId]: { email } }
+// ══════════════════════════════════════════════════════
+
+function verifyIdentityBinding(email, empId, empName, devId, cb) {
+  var emailKey = email.trim().toLowerCase();
+  var now = new Date();
+  var ts  = now.getTime();
+  var iso = now.toISOString();
+
+  function saveBindingLocal(isNew) {
+    // localStorage fallback
+    var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(e){}
+    var xb = {}; try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(e){}
+
+    var existing = eb[emailKey] || {};
+    var dids = existing.deviceIds || [];
+    if (dids.indexOf(devId) < 0) dids.push(devId);
+
+    eb[emailKey] = { email:emailKey, empId:empId, empName:empName,
+      registeredAt:existing.registeredAt||ts, lastSeenAt:ts, deviceIds:dids, status:"ok" };
+    xb[empId]    = { empId:empId, email:emailKey, empName:empName, lastSeenAt:ts };
+
+    localStorage.setItem("at_email_bind_v2", JSON.stringify(eb));
+    localStorage.setItem("at_emp_bind_v2",   JSON.stringify(xb));
+    cb({ ok:true, isNew:isNew });
+  }
+
+  if (fbOk && db) {
+    var emailRef = db.collection("emailBindings").doc(emailKey);
+    var empRef   = db.collection("empBindings").doc(empId);
+
+    Promise.all([emailRef.get(), empRef.get()])
+      .then(function(results) {
+        var eDok = results[0]; // email doc
+        var xDok = results[1]; // empId doc
+
+        // 1. Is this email already owned by a DIFFERENT engineer?
+        if (eDok.exists && eDok.data().empId !== empId) {
+          var bd = eDok.data();
+          return cb({ ok:false, reason:
+            "⛔ This email (" + emailKey + ") is already registered to engineer " +
+            bd.empId + " (" + bd.empName + ").\n\n" +
+            "Each email address can only be used by ONE engineer. " +
+            "Please use your own company email." });
+        }
+
+        // 2. Is this engineer already bound to a DIFFERENT email?
+        if (xDok.exists && xDok.data().email !== emailKey) {
+          var xd = xDok.data();
+          return cb({ ok:false, reason:
+            "⛔ " + empId + " is already registered with a different email (" + xd.email + ").\n\n" +
+            "If your email has changed, ask admin to update your binding before checking in." });
+        }
+
+        // 3. All clear — update bindings
+        var isNew = !eDok.exists;
+        var existing = eDok.exists ? eDok.data() : {};
+        var dids = existing.deviceIds || [];
+        if (dids.indexOf(devId) < 0) dids.push(devId);
+
+        var emailBinding = {
+          email: emailKey, empId: empId, empName: empName,
+          registeredAt:  existing.registeredAt  || ts,
+          registeredIso: existing.registeredIso || iso,
+          lastSeenAt: ts, lastSeenIso: iso,
+          deviceIds: dids, status: "ok"
+        };
+        var empBinding = { empId:empId, email:emailKey, empName:empName, lastSeenAt:ts, lastSeenIso:iso };
+
+        var batch = db.batch();
+        batch.set(emailRef, emailBinding, { merge:true });
+        batch.set(empRef,   empBinding,   { merge:true });
+        batch.commit()
+          .then(function(){ saveBindingLocal(isNew); })
+          .catch(function(e){ console.warn("binding write:", e); saveBindingLocal(isNew); });
+      })
+      .catch(function(e) {
+        console.warn("binding read failed:", e);
+        // Network error — fall back to local check only, don't block engineer
+        saveBindingLocal(false);
+      });
+
+  } else {
+    // Demo mode — localStorage only
+    var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(e){}
+    var xb = {}; try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(e){}
+
+    if (eb[emailKey] && eb[emailKey].empId !== empId) {
+      var bd = eb[emailKey];
+      return cb({ ok:false, reason:
+        "⛔ This email (" + emailKey + ") is already registered to engineer " +
+        bd.empId + " (" + bd.empName + ").\n\nEach email address can only be used by ONE engineer." });
+    }
+    if (xb[empId] && xb[empId].email !== emailKey) {
+      return cb({ ok:false, reason:
+        "⛔ " + empId + " is already registered with a different email (" + xb[empId].email + ").\n\n" +
+        "Ask admin to update your email binding." });
+    }
+    saveBindingLocal(!eb[emailKey]);
+  }
+}
+
+// ── Legacy per-deviceId binding helpers (kept for admin display compatibility) ──
 // BindingObject: { email, empId, empName, registeredAt, registeredIso,
 //                  lastSeenEmail, lastSeenAt, lastSeenIso,
 //                  history:[{email,empId,empName,ts,iso,note}],
