@@ -899,8 +899,22 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     <!-- FEED TAB -->
     <div id="dTab-feed" style="display:none">
+      <div class="toolbar">
+        <input type="text" id="ffSearch" placeholder="Search name / ID…" oninput="renderFeed()"/>
+        <select id="ffSite" onchange="renderFeed()"><option value="">All Sites</option></select>
+        <select id="ffType" onchange="renderFeed()">
+          <option value="">All Events</option>
+          <option value="in">✅ Check-Ins only</option>
+          <option value="out">🔴 Check-Outs only</option>
+        </select>
+        <input type="date" id="ffDate" onchange="renderFeed()"/>
+        <button class="tb-btn tb-out" onclick="feedClearFilters()" title="Clear all filters">✕ Clear</button>
+      </div>
       <div class="tbl-wrap" style="padding:20px">
-        <div class="card-lbl" style="margin-bottom:16px">Recent Activity</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:10px;flex-wrap:wrap">
+          <div class="card-lbl" style="margin:0">Recent Activity</div>
+          <span class="tbl-count" id="feedCount" style="font-size:.78rem;color:var(--ink3);font-weight:600">0 events</span>
+        </div>
         <div id="feedList"><div class="empty"><div class="empty-icon">⏳</div><div class="empty-t">No activity yet</div></div></div>
       </div>
     </div>
@@ -962,7 +976,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
       <!-- Firestore Rules Reminder -->
       <div style="background:#fffbeb;border-radius:var(--r);padding:14px 16px;border:1px solid #fde68a;font-size:.82rem;color:#78350f;margin-top:16px">
-        <strong>⚙️ Remember:</strong> Add the <code style="background:#fef3c7;padding:1px 5px;border-radius:4px;font-family:var(--mono)">leaveApplications</code> Firestore rules from the Setup Guide → Step 10 for this feature to work.
+        <strong>⚙️ Remember:</strong> The <code style="background:#fef3c7;padding:1px 5px;border-radius:4px;font-family:var(--mono)">leaveApplications</code> Firestore rules are included in the Setup Guide → Step 7 unified rules block. If approve/reject fails, re-paste Step 7.
       </div>
     </div>
 
@@ -1277,13 +1291,18 @@ service cloud.firestore {
           </div>
         </div>
 
-        <div class="guide-step">
-          <div class="gs-title">Step 7 — Set Firestore Security Rules (🔒 Critical)</div>
+        <div class="guide-step" style="border-left:4px solid var(--red)">
+          <div class="gs-title">Step 7 — Set Firestore Security Rules — ALL Collections (🔒 Critical)</div>
           <div class="gs-body">
+            <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:var(--r);padding:12px 14px;margin-bottom:12px;font-size:.83rem;color:#991b1b;line-height:1.7">
+              <strong>⚠️ If admin Edit / Delete / Reset-Devices buttons fail with "permission denied" or "Firebase write failed",</strong> it means the rules below are missing or incomplete. The app uses <strong>4 collections</strong> — <code>attendance</code>, <code>emailBindings</code>, <code>empBindings</code>, <code>leaveApplications</code> — and <strong>all of them need rules</strong>. Paste the entire block below, don't skip any.
+            </div>
             <p>In Firebase Console → <strong>Firestore Database</strong> → <strong>Rules</strong> tab, replace all existing rules with:</p>
-            <pre>rules_version = '2';
+            <pre id="step7Rules">rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ── 1. Attendance records ─────────────────────────
     match /attendance/{docId} {
       // Engineers can check in (create record) without login
       allow create: if request.resource.data.keys().hasAll([
@@ -1307,9 +1326,47 @@ service cloud.firestore {
       // Only signed-in admin can read or delete records
       allow read, delete: if request.auth != null;
     }
+
+    // ── 2. Email ↔ Engineer ID bindings ──────────────
+    // REQUIRED for engineer registration AND admin CRUD (Edit / Delete / Reset Devices).
+    // Without this block, the Engineer Accounts tab will fail with "permission denied".
+    match /emailBindings/{email} {
+      // Engineers (no auth) need read+create+update to register and detect conflicts
+      allow read, create, update: if true;
+      // Only signed-in admin can permanently delete a binding
+      allow delete: if request.auth != null;
+    }
+    match /empBindings/{empId} {
+      allow read, create, update: if true;
+      allow delete: if request.auth != null;
+    }
+
+    // ── 3. Leave applications ────────────────────────
+    match /leaveApplications/{docId} {
+      // Any engineer can submit a leave application
+      allow create: if request.resource.data.keys().hasAll([
+                      'empId','empName','empEmail','leaveType',
+                      'fromDate','toDate','numDays','status'])
+                    && request.resource.data.empId is string
+                    && request.resource.data.empId.size() &gt; 0
+                    && request.resource.data.status == 'pending';
+      // Engineers can read leave records (to check status)
+      allow read: if true;
+      // Only signed-in admin can update (approve/reject) or delete
+      allow update, delete: if request.auth != null;
+    }
   }
 }</pre>
-            <p style="margin-top:10px;color:#15803d;font-weight:600">✅ This ensures only your admin can view data. Engineers can only write their own records.</p>
+            <button onclick="var t=document.getElementById('step7Rules');var r=document.createRange();r.selectNode(t);window.getSelection().removeAllRanges();window.getSelection().addRange(r);try{document.execCommand('copy');toast('✅ Rules copied!','t-ok');}catch(e){toast('Select + copy manually','t-err');}" style="margin-top:8px;padding:8px 16px;border-radius:var(--r);background:#0d1117;color:#e6edf3;border:none;font-size:.82rem;font-weight:600;cursor:pointer;font-family:var(--body)">📋 Copy All Rules</button>
+            <p style="margin-top:12px;color:#15803d;font-weight:600">✅ Paste this <strong>entire</strong> block. After clicking <strong>Publish</strong> in Firebase, wait ~30 seconds for the rules to propagate, then reload the dashboard.</p>
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--r);padding:12px 14px;margin-top:10px;font-size:.8rem;color:#1e40af;line-height:1.7">
+              <strong>🔍 How to verify rules are active:</strong><br>
+              1. Open the dashboard → <strong>Engineer Accounts</strong> tab.<br>
+              2. If you see registered engineers listed, reads are working.<br>
+              3. Click <strong>✏️ Edit</strong> on any engineer, change the name, click Save.<br>
+              4. If a green "✅ Account updated" toast appears, writes are working.<br>
+              5. If you see "❌ Firebase write failed: permission-denied", re-check Step 7 — you missed pasting the <code>emailBindings</code> / <code>empBindings</code> blocks.
+            </div>
           </div>
         </div>
 
@@ -1345,26 +1402,19 @@ service cloud.firestore {
           1 GB storage · 50,000 reads/day · 20,000 writes/day — more than enough for 100 engineers.
         </div>
 
-        <div class="guide-step" style="margin-top:20px;border-left:4px solid var(--blue)">
-          <div class="gs-title">Step 10 — Add Leave Application Firestore Rules</div>
+        <div class="guide-step" style="margin-top:20px;border-left:4px solid var(--green)">
+          <div class="gs-title">Step 10 — Verify All Collections (🩺 Troubleshooting)</div>
           <div class="gs-body">
-            <p>In Firebase Console → <strong>Firestore Database</strong> → <strong>Rules</strong> tab, add the <code>leaveApplications</code> collection rules inside the existing <code>match /databases/{database}/documents</code> block:</p>
-            <pre>match /leaveApplications/{docId} {
-  // Any engineer can submit a leave application
-  allow create: if request.resource.data.keys().hasAll([
-                  'empId','empName','empEmail','leaveType',
-                  'fromDate','toDate','numDays','status'])
-                && request.resource.data.empId is string
-                && request.resource.data.empId.size() > 0
-                && request.resource.data.status == 'pending';
-
-  // Engineers can read leave records (to check status)
-  allow read: if true;
-
-  // Only signed-in admin can update (approve/reject) or delete
-  allow update, delete: if request.auth != null;
-}</pre>
-            <p style="margin-top:10px;color:#15803d;font-weight:600">✅ This allows engineers to submit and view leave applications. Only your admin can approve or reject them.</p>
+            <p style="margin-bottom:8px">Since <strong>Step 7</strong> now contains the <strong>complete</strong> rules block for all 4 collections (<code>attendance</code>, <code>emailBindings</code>, <code>empBindings</code>, <code>leaveApplications</code>), there's nothing extra to paste here. Use this checklist if anything misbehaves:</p>
+            <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:var(--r);padding:12px 14px;font-size:.83rem;color:#15803d;line-height:1.9">
+              <strong>✓ Symptom → Likely cause</strong><br>
+              <strong>"Engineer Accounts" tab is empty</strong> → <code>emailBindings</code> read rule missing in Step 7. Re-paste the full block.<br>
+              <strong>Edit / Delete / Reset Devices fails with "permission-denied"</strong> → <code>emailBindings</code> or <code>empBindings</code> write/delete rules missing. Re-paste Step 7.<br>
+              <strong>Engineer can't check in (binding write fails silently)</strong> → <code>emailBindings</code> create/update rules missing. Re-paste Step 7.<br>
+              <strong>Leave application submit fails</strong> → <code>leaveApplications</code> create rule missing. Re-paste Step 7.<br>
+              <strong>Approve/Reject leave fails</strong> → <code>leaveApplications</code> update rule needs <code>request.auth != null</code>. Confirm you're signed in as admin.<br>
+              <strong>Rules look right but still failing</strong> → After clicking <strong>Publish</strong>, wait 30–60 seconds and hard-refresh the dashboard (Ctrl+Shift+R). Rule propagation is not instant.
+            </div>
           </div>
         </div>
 
@@ -2454,10 +2504,17 @@ function initDash() {
   var fd = document.getElementById("fDate");
   if (fd && !fd.value) fd.value = new Date().toISOString().split("T")[0];
 
-  // populate site filter
+  // populate site filter (live tab)
   var fs = document.getElementById("fSite");
   fs.innerHTML = '<option value="">All Sites</option>';
   WORK_SITES.forEach(function(s){ var o=document.createElement("option"); o.value=s.name; o.textContent=s.name; fs.appendChild(o); });
+
+  // populate site filter (activity feed tab)
+  var ffs = document.getElementById("ffSite");
+  if (ffs) {
+    ffs.innerHTML = '<option value="">All Sites</option>';
+    WORK_SITES.forEach(function(s){ var o=document.createElement("option"); o.value=s.name; o.textContent=s.name; ffs.appendChild(o); });
+  }
 
   if (fbOk && db) {
     if (fbUnsub) fbUnsub();
@@ -2564,13 +2621,50 @@ function renderTable() {
 
 function renderFeed() {
   var feed = document.getElementById("feedList"); if(!feed) return;
-  if (!allRecs.length) { feed.innerHTML='<div class="empty"><div class="empty-icon">⏳</div><div class="empty-t">No activity yet</div></div>'; return; }
+  var cnt  = document.getElementById("feedCount");
+
+  // Read filter values
+  var q   = ((document.getElementById("ffSearch")||{}).value||"").trim().toLowerCase();
+  var fSt = (document.getElementById("ffSite")||{}).value||"";
+  var fTy = (document.getElementById("ffType")||{}).value||"";
+  var fDt = (document.getElementById("ffDate")||{}).value||"";
+
+  if (!allRecs.length) {
+    feed.innerHTML='<div class="empty"><div class="empty-icon">⏳</div><div class="empty-t">No activity yet</div></div>';
+    if (cnt) cnt.textContent = "0 events";
+    return;
+  }
+
+  // Build event list — one entry per check-in / check-out
   var evs = [];
   allRecs.forEach(function(r){
-    if (r.checkinTimestamp)  evs.push({type:"in", r:r,  ts:r.checkinTimestamp});
+    if (r.checkinTimestamp)  evs.push({type:"in",  r:r, ts:r.checkinTimestamp});
     if (r.checkoutTimestamp) evs.push({type:"out", r:r, ts:r.checkoutTimestamp});
   });
+
+  // Apply filters
+  evs = evs.filter(function(e){
+    var r = e.r;
+    if (q && !((r.empId||"").toLowerCase().indexOf(q)>=0
+            || (r.empName||"").toLowerCase().indexOf(q)>=0)) return false;
+    if (fSt && r.site !== fSt) return false;
+    if (fTy && e.type !== fTy) return false;
+    if (fDt) {
+      var ed = new Date(e.ts).toISOString().split("T")[0];
+      if (ed !== fDt) return false;
+    }
+    return true;
+  });
+
   evs.sort(function(a,b){ return b.ts-a.ts; });
+
+  if (cnt) cnt.textContent = evs.length + " event" + (evs.length!==1?"s":"");
+
+  if (!evs.length) {
+    feed.innerHTML='<div class="empty"><div class="empty-icon">🔍</div><div class="empty-t">No events match your filters</div><div>Try clearing or widening the filters above</div></div>';
+    return;
+  }
+
   feed.innerHTML = evs.slice(0,60).map(function(e){
     var t = new Date(e.ts).toLocaleTimeString("en-SG",{hour:"2-digit",minute:"2-digit"});
     var d = new Date(e.ts).toLocaleDateString("en-SG",{month:"short",day:"numeric"});
@@ -2581,6 +2675,13 @@ function renderFeed() {
       +'<div><div class="ft">'+t+'</div><div style="font-size:.72rem;color:var(--ink3);text-align:right">'+d+'</div></div>'
       +'</div>';
   }).join("");
+}
+
+function feedClearFilters() {
+  var ids = ["ffSearch","ffSite","ffType","ffDate"];
+  ids.forEach(function(id){ var el=document.getElementById(id); if(el) el.value=""; });
+  renderFeed();
+  toast("Filters cleared", "t-ok");
 }
 
 function updateStats() {
