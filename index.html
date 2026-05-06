@@ -269,22 +269,6 @@ tr:hover td{background:#fafdf8}
 /* Engineer container */
 .emp-wrap{max-width:480px;margin:0 auto;padding:20px 16px 60px}
 
-/* ── SELFIE ── */
-.selfie-wrap{position:relative;width:100%;background:#0d1117;border-radius:var(--r);overflow:hidden;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center}
-.selfie-wrap video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
-.selfie-wrap canvas{display:none}
-.selfie-placeholder{color:#4b5563;font-size:.9rem;text-align:center;padding:20px}
-.selfie-preview{width:100%;border-radius:var(--r);transform:scaleX(-1);display:none}
-.selfie-actions{display:flex;gap:8px;margin-top:10px}
-.selfie-btn{flex:1;padding:10px;border-radius:var(--r);font-size:.85rem;font-weight:700;transition:all .2s;font-family:var(--body)}
-.selfie-btn-cam{background:var(--blue);color:#fff}
-.selfie-btn-cam:hover{background:#0066dd}
-.selfie-btn-snap{background:var(--green);color:#0d1117}
-.selfie-btn-snap:hover{background:#00e5aa}
-.selfie-btn-retake{background:transparent;border:1.5px solid var(--border);color:var(--ink2)}
-.selfie-btn-retake:hover{background:var(--ink);color:#fff}
-.selfie-thumb{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid var(--green);transform:scaleX(-1)}
-
 /* Setup guide */
 .guide-step{background:#f8fafc;border-radius:var(--r);padding:18px 20px;border:1px solid var(--border);margin-bottom:14px}
 .gs-title{font-weight:800;color:var(--ink);margin-bottom:10px;font-size:.95rem}
@@ -675,32 +659,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <div id="gpsCiStatus"></div>
       </div>
 
-      <!-- Selfie verification card -->
-      <div class="card">
-        <div class="card-lbl">🤳 Identity Selfie <span style="color:var(--red);font-size:.75rem;font-weight:800">REQUIRED</span></div>
-        <div style="background:linear-gradient(135deg,#0d1117,#1a2233);border-radius:10px;padding:12px 14px;margin-bottom:12px">
-          <div style="color:#fff;font-size:.82rem;font-weight:700;margin-bottom:6px">📸 Selfie Requirements:</div>
-          <div style="color:#9ca3af;font-size:.79rem;line-height:1.7">
-            ① <strong style="color:#e5e7eb">Face clearly visible</strong> — no mask, no sunglasses, face centred<br>
-            ② <strong style="color:#e5e7eb">Show your location</strong> — your surroundings must be recognisable (worksite, building, signage)<br>
-            ③ <strong style="color:#e5e7eb">Good lighting</strong> — avoid dark or blurry photos<br>
-            <span style="color:var(--orange);font-weight:700">⚠ Selfies that do not show a clear location will be flagged by admin.</span>
-          </div>
-        </div>
-        <div class="selfie-wrap" id="selfieWrap">
-          <div class="selfie-placeholder" id="selfiePlaceholder">📷<br><br>Tap "Open Camera" below</div>
-          <video id="selfieVideo" autoplay playsinline style="display:none"></video>
-          <canvas id="selfieCanvas"></canvas>
-        </div>
-        <img id="selfiePreview" class="selfie-preview" alt="Your selfie"/>
-        <div class="selfie-actions">
-          <button class="selfie-btn selfie-btn-cam" id="selfieCamBtn" onclick="startCamera()">📷 Open Camera</button>
-          <button class="selfie-btn selfie-btn-snap" id="selfieSnapBtn" onclick="takeSelfie()" style="display:none">📸 Take Photo</button>
-          <button class="selfie-btn selfie-btn-retake" id="selfieRetakeBtn" onclick="retakeSelfie()" style="display:none">🔄 Retake</button>
-        </div>
-        <div id="selfieStatus"></div>
-      </div>
-
       <button class="act-btn btn-ci" id="ciBtn" disabled onclick="doCheckin()">
         ✅ Check In
       </button>
@@ -882,7 +840,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <div style="overflow-x:auto">
           <table>
             <thead><tr>
-              <th>Engineer</th><th>Selfie</th><th>Site</th><th>Status</th>
+              <th>Engineer</th><th>Site</th><th>Status</th>
               <th>Check-In</th><th>Check-Out</th><th>Duration</th>
               <th>GPS In</th><th>GPS Out</th><th>Device</th><th>Date</th>
             </tr></thead>
@@ -1023,8 +981,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <strong>💡 How to investigate a flagged device:</strong><br>
         1. Note the Device ID from the flagged row above<br>
         2. Go to <strong>Live Status</strong> tab and search for the Engineer ID of any suspicious record<br>
-        3. Compare the selfie photos for each engineer who used that device — if the same face appears, it confirms buddy punching<br>
-        4. Cross-reference GPS check-in locations if needed
+        3. Compare the GPS check-in coordinates and timestamps — same device + same coords + close timestamps across different engineers strongly suggests buddy punching<br>
+        4. Cross-reference with the engineer's normal device fingerprint in the Engineer Accounts tab — a sudden device change is a red flag
       </div>
 
       <!-- EMAIL–DEVICE BINDING REGISTRY -->
@@ -1521,13 +1479,6 @@ service cloud.firestore {
   </div>
 </div>
 
-<!-- Selfie lightbox -->
-<div id="selfieLightbox" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9998;align-items:center;justify-content:center;flex-direction:column;gap:16px" onclick="this.style.display='none'">
-  <img id="lightboxImg" style="max-width:90vw;max-height:80vh;border-radius:16px;transform:scaleX(-1)" alt="Selfie"/>
-  <div id="lightboxInfo" style="color:#fff;font-size:.9rem;text-align:center"></div>
-  <button onclick="document.getElementById('selfieLightbox').style.display='none'" style="background:rgba(255,255,255,.15);color:#fff;border:none;padding:10px 28px;border-radius:30px;font-size:.9rem;cursor:pointer">✕ Close</button>
-</div>
-
 <!-- ══ MY LEAVES MODAL (engineer) ════════════════════ -->
 <div id="myLeavesModal" class="modal-overlay">
   <div class="modal-box" style="max-width:540px;max-height:90vh;overflow-y:auto">
@@ -1961,7 +1912,7 @@ function chkBtn() {
   }
 
   var ci = document.getElementById("ciBtn");
-  if (ci) ci.disabled = !(id && name.trim() && site && emailOk && GPS.in && GPS.in.ok && selfieData);
+  if (ci) ci.disabled = !(id && name.trim() && site && emailOk && GPS.in && GPS.in.ok);
   var co = document.getElementById("coBtn");
   if (co) co.disabled = !(GPS.out && GPS.out.ok);
 }
@@ -1985,24 +1936,6 @@ function initEmp() {
 
   // Reset leave banner
   var lb = document.getElementById("leaveActiveBanner"); if(lb) lb.style.display="none";
-
-  // Reset selfie state
-  selfieData = null;
-  if (selfieStream) { selfieStream.getTracks().forEach(function(t){ t.stop(); }); selfieStream = null; }
-  var preview = document.getElementById("selfiePreview");
-  if (preview) { preview.src=""; preview.style.display="none"; }
-  var vid = document.getElementById("selfieVideo");
-  if (vid) vid.style.display="none";
-  var ph = document.getElementById("selfiePlaceholder");
-  if (ph) ph.style.display="block";
-  var camBtn = document.getElementById("selfieCamBtn");
-  if (camBtn) { camBtn.style.display="flex"; }
-  var snapBtn = document.getElementById("selfieSnapBtn");
-  if (snapBtn) snapBtn.style.display="none";
-  var retakeBtn = document.getElementById("selfieRetakeBtn");
-  if (retakeBtn) retakeBtn.style.display="none";
-  var statEl = document.getElementById("selfieStatus");
-  if (statEl) statEl.innerHTML="";
 
   var sess = getSess();
   if (sess && sess.checkinTimestamp && !sess.checkoutTimestamp) {
@@ -2058,78 +1991,6 @@ function sanitize(str, maxLen) {
     })
     .trim()
     .slice(0, maxLen || 100);
-}
-
-// ── Selfie camera ──────────────────────────────────
-var selfieStream = null;
-var selfieData = null; // base64 JPEG
-
-function startCamera() {
-  var constraints = { video: { facingMode: "user", width: 320, height: 240 }, audio: false };
-  navigator.mediaDevices.getUserMedia(constraints)
-    .then(function(stream) {
-      selfieStream = stream;
-      var video = document.getElementById("selfieVideo");
-      var placeholder = document.getElementById("selfiePlaceholder");
-      video.srcObject = stream;
-      video.style.display = "block";
-      placeholder.style.display = "none";
-      document.getElementById("selfiePreview").style.display = "none";
-      document.getElementById("selfieCamBtn").style.display = "none";
-      document.getElementById("selfieSnapBtn").style.display = "flex";
-      document.getElementById("selfieRetakeBtn").style.display = "none";
-      document.getElementById("selfieStatus").innerHTML = '<div class="pill pill-info" style="margin-top:8px">📷 Camera active — face + visible location in frame, then tap Take Photo</div>';
-      selfieData = null;
-      chkBtn();
-    })
-    .catch(function(err) {
-      document.getElementById("selfieStatus").innerHTML = '<div class="pill pill-bad" style="margin-top:8px">❌ Camera access denied. Please allow camera and try again.</div>';
-    });
-}
-
-function takeSelfie() {
-  var video = document.getElementById("selfieVideo");
-  var canvas = document.getElementById("selfieCanvas");
-  canvas.width = 320; canvas.height = 240;
-  var ctx = canvas.getContext("2d");
-  // Mirror horizontally to match preview
-  ctx.translate(320, 0); ctx.scale(-1, 1);
-  ctx.drawImage(video, 0, 0, 320, 240);
-  selfieData = canvas.toDataURL("image/jpeg", 0.6); // ~15-25KB compressed
-
-  // Stop camera stream
-  if (selfieStream) { selfieStream.getTracks().forEach(function(t){ t.stop(); }); selfieStream = null; }
-
-  // Show preview
-  var preview = document.getElementById("selfiePreview");
-  preview.src = selfieData;
-  preview.style.display = "block";
-  document.getElementById("selfieVideo").style.display = "none";
-  document.getElementById("selfieSnapBtn").style.display = "none";
-  document.getElementById("selfieRetakeBtn").style.display = "flex";
-  document.getElementById("selfieCamBtn").style.display = "none";
-  document.getElementById("selfieStatus").innerHTML = '<div class="pill pill-ok" style="margin-top:8px">✅ Selfie captured — make sure your face is clearly visible</div>';
-  chkBtn();
-}
-
-function retakeSelfie() {
-  selfieData = null;
-  document.getElementById("selfiePreview").style.display = "none";
-  document.getElementById("selfieRetakeBtn").style.display = "none";
-  document.getElementById("selfieCamBtn").style.display = "flex";
-  document.getElementById("selfieStatus").innerHTML = "";
-  chkBtn();
-  startCamera();
-}
-
-// ── Selfie lightbox (admin) ────────────────────────
-function showSelfie(recordId) {
-  var rec = allRecs.find(function(r){ return r.id === recordId; });
-  if (!rec || !rec.selfiePhoto) return;
-  var lb = document.getElementById("selfieLightbox");
-  document.getElementById("lightboxImg").src = rec.selfiePhoto;
-  document.getElementById("lightboxInfo").textContent = (rec.empName||"") + " · " + (rec.empId||"") + " · " + (rec.checkinDate||"") + " " + (rec.checkinTime||"");
-  lb.style.display = "flex";
 }
 
 // ── Device Hardware Fingerprint (cross-browser, anti-buddy-punch) ──────────
@@ -2283,9 +2144,6 @@ function doCheckin() {
   if (!empName || empName.length < 2) { toast("Please enter a valid full name", "t-err"); return; }
   if (!empEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(empEmail)) { toast("Please enter a valid email address", "t-err"); return; }
 
-  // ✅ ANTI-BUDDY-PUNCH: Require selfie photo
-  if (!selfieData) { toast("📷 Please take a selfie first", "t-err"); return; }
-
   // ✅ ANTI-BUDDY-PUNCH: Block if this device already checked in a different person today
   var alreadyCheckedIn = deviceAlreadyCheckedIn(empId);
   if (alreadyCheckedIn) {
@@ -2332,7 +2190,6 @@ function doCheckin() {
         checkoutTime:null, checkoutTimestamp:null,
         checkoutLat:null, checkoutLng:null, checkoutDist:null,
         status:"in", isLate:isLate, isOvertime:false, duration:null,
-        selfiePhoto: selfieData,
         deviceId: devId,
         emailConflict: false,
         _source: "web", _userAgent: navigator.userAgent.slice(0, 100)
@@ -2590,9 +2447,6 @@ function renderTable() {
     if (r.isOvertime) stat += ' <span class="bdg bdg-ot">OT</span>';
     var mapIn  = r.checkinLat  ? '<a class="map-lnk" href="https://maps.google.com/?q='+r.checkinLat+','+r.checkinLng+'" target="_blank">📍 '+r.checkinDist+'m</a>' : "—";
     var mapOut = r.checkoutLat ? '<a class="map-lnk" href="https://maps.google.com/?q='+r.checkoutLat+','+r.checkoutLng+'" target="_blank">📍 '+r.checkoutDist+'m</a>' : "—";
-    var selfieCell = r.selfiePhoto
-      ? '<img src="'+r.selfiePhoto+'" class="selfie-thumb" title="Click to enlarge" onclick="showSelfie(\''+r.id+'\')" style="cursor:pointer"/>'
-      : '<span style="font-size:.75rem;color:var(--red);font-weight:700">⚠ No photo</span>';
 
     // Device cell — show short ID + flag if same device used by another engineer same day
     var devId = r.deviceId || "";
@@ -2605,7 +2459,6 @@ function renderTable() {
 
     return '<tr' + (isSuspicious ? ' style="background:#fff5f5"' : '') + '>'
       +'<td><div class="ec"><div class="av">'+ini+'</div><div><div class="en">'+(r.empName||"—")+'</div><div class="eid">'+(r.empId||"—")+'</div></div></div></td>'
-      +'<td>'+selfieCell+'</td>'
       +'<td style="font-size:.82rem;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(r.site||"—")+'</td>'
       +'<td>'+stat+'</td>'
       +'<td><span class="dur">'+(r.checkinTime||"—")+'</span></td>'
