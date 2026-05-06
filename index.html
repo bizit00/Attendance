@@ -856,6 +856,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="dash-tab" onclick="dTab('feed',this)">Activity Feed</div>
       <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">🗓️ Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('device',this)">🔒 Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span></div>
+      <div class="dash-tab" onclick="dTab('accounts',this)">👷 Eng Accounts</div>
       <div class="dash-tab" onclick="dTab('setup',this)">⚙️ Setup Guide</div>
     </div>
 
@@ -1054,6 +1055,122 @@ tr.on-leave-row td{background:#f0f9ff!important}
         • <strong>Reset Binding</strong> — Clears the email link. The next check-in from that device will register a fresh email.<br>
         • <strong>Approve Email Change</strong> — Updates the registered email to the latest one seen, clearing the flag.<br>
         • <strong>View History</strong> — Shows all past emails ever used on that device.
+      </div>
+    </div>
+
+    <!-- ENGINEER ACCOUNTS TAB -->
+    <div id="dTab-accounts" style="display:none">
+
+      <!-- Header -->
+      <div style="background:linear-gradient(135deg,#0d1117,#1a2233);border-radius:var(--r2);padding:18px 20px;margin-bottom:18px;display:flex;align-items:flex-start;gap:14px">
+        <div style="font-size:2rem;flex-shrink:0">👷</div>
+        <div style="flex:1">
+          <div style="color:#fff;font-weight:800;font-size:1rem;margin-bottom:4px">Engineer Account Registry</div>
+          <div style="color:#9ca3af;font-size:.83rem;line-height:1.6">Manage engineer email–ID bindings. Edit or delete an account to allow re-registration. Changes take effect immediately on the next check-in attempt.</div>
+        </div>
+        <button onclick="adminAccRefresh()" style="flex-shrink:0;padding:8px 14px;border-radius:var(--r);background:#1e3a5f;color:#93c5fd;border:1px solid #1e40af;font-size:.8rem;font-weight:700;cursor:pointer;font-family:var(--body)">↻ Refresh</button>
+      </div>
+
+      <!-- Search -->
+      <div class="toolbar" style="margin-bottom:14px">
+        <input type="text" id="accSearch" placeholder="Search email, Eng ID or name…" oninput="adminAccRender()" style="flex:1"/>
+      </div>
+
+      <!-- Table -->
+      <div class="tbl-wrap">
+        <div class="tbl-hdr">
+          <span class="tbl-hdr-t">📋 Registered Engineers</span>
+          <span class="tbl-count" id="accCount">—</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table id="accTable">
+            <thead><tr>
+              <th>Engineer ID</th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Device Fingerprints</th>
+              <th>Registered</th>
+              <th>Last Check-In</th>
+              <th>Actions</th>
+            </tr></thead>
+            <tbody id="accTblBody"></tbody>
+          </table>
+        </div>
+        <div id="accTblEmpty" class="empty" style="display:none">
+          <div class="empty-icon">👷</div>
+          <div class="empty-t">No engineer accounts yet</div>
+          <div>Accounts are created automatically on first check-in</div>
+        </div>
+      </div>
+
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:14px 16px;margin-top:14px;font-size:.82rem;color:#78350f;line-height:1.7">
+        <strong>⚙️ What each action does:</strong><br>
+        • <strong>Edit</strong> — Update email, Eng ID or name. Useful if engineer changes email or is reassigned an ID.<br>
+        • <strong>Reset Devices</strong> — Clears all hardware fingerprints. Engineer can check in from a new device on next attempt.<br>
+        • <strong>Delete Account</strong> — Fully removes the binding. Engineer must re-register from scratch on next check-in.
+      </div>
+    </div>
+
+    <!-- EDIT ACCOUNT MODAL -->
+    <div id="accEditModal" class="modal-overlay">
+      <div class="modal-box" style="max-width:440px">
+        <button class="modal-close" onclick="document.getElementById('accEditModal').classList.remove('open')">✕</button>
+        <div class="modal-title">✏️ Edit Engineer Account</div>
+        <div class="modal-sub" id="accEditSub">Update this engineer's registered details</div>
+        <input type="hidden" id="accEditOrigEmail"/>
+        <input type="hidden" id="accEditOrigEmpId"/>
+        <div class="field">
+          <label>Engineer ID <span style="color:var(--red)">*</span></label>
+          <div style="display:flex;align-items:center;border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;background:#fafaf8">
+            <span style="padding:10px 8px 10px 14px;font-weight:800;font-family:var(--mono);font-size:.9rem;color:var(--blue);background:#eff6ff;border-right:1.5px solid var(--border);user-select:none">Eng</span>
+            <input type="text" id="accEditEmpId" placeholder="01" inputmode="numeric" maxlength="10" style="border:none;background:transparent;padding:10px 12px;font-size:.9rem;font-family:var(--mono);width:100%;outline:none"/>
+          </div>
+        </div>
+        <div class="field">
+          <label>Full Name <span style="color:var(--red)">*</span></label>
+          <input type="text" id="accEditName" placeholder="e.g. Ahmad bin Abdullah"/>
+        </div>
+        <div class="field">
+          <label>Email <span style="color:var(--red)">*</span></label>
+          <input type="email" id="accEditEmail" placeholder="engineer@company.com"/>
+        </div>
+        <div style="margin-top:4px;padding:10px 14px;background:#f0fdf4;border-radius:var(--r);border:1px solid #86efac;font-size:.8rem;color:#15803d;line-height:1.6">
+          💡 After editing, the engineer can check in immediately with the new details. The old binding is removed.
+        </div>
+        <div style="display:flex;gap:10px;margin-top:18px">
+          <button onclick="adminAccSaveEdit()" style="flex:1;padding:12px;border-radius:var(--r);background:var(--blue);color:#fff;border:none;font-weight:700;font-family:var(--body);cursor:pointer">💾 Save Changes</button>
+          <button onclick="document.getElementById('accEditModal').classList.remove('open')" style="padding:12px 18px;border-radius:var(--r);background:var(--bg2);color:var(--ink2);border:1.5px solid var(--border);font-weight:600;font-family:var(--body);cursor:pointer">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DELETE ACCOUNT CONFIRM MODAL -->
+    <div id="accDeleteModal" class="modal-overlay">
+      <div class="modal-box" style="max-width:400px">
+        <button class="modal-close" onclick="document.getElementById('accDeleteModal').classList.remove('open')">✕</button>
+        <div class="modal-title" style="color:var(--red)">🗑️ Delete Account</div>
+        <div class="modal-sub">This will permanently remove the engineer's email–ID binding.</div>
+        <div id="accDeleteInfo" style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:var(--r);padding:12px 14px;margin:14px 0;font-size:.85rem;color:#991b1b;font-family:var(--mono);line-height:1.8"></div>
+        <div style="font-size:.83rem;color:var(--ink2);line-height:1.6;margin-bottom:16px">The engineer will be able to re-register on their next check-in. All past <strong>attendance records</strong> are preserved — only the binding is removed.</div>
+        <div style="display:flex;gap:10px">
+          <button onclick="adminAccConfirmDelete()" style="flex:1;padding:12px;border-radius:var(--r);background:var(--red);color:#fff;border:none;font-weight:700;font-family:var(--body);cursor:pointer">🗑️ Yes, Delete</button>
+          <button onclick="document.getElementById('accDeleteModal').classList.remove('open')" style="padding:12px 18px;border-radius:var(--r);background:var(--bg2);color:var(--ink2);border:1.5px solid var(--border);font-weight:600;font-family:var(--body);cursor:pointer">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESET DEVICES CONFIRM MODAL -->
+    <div id="accResetDevModal" class="modal-overlay">
+      <div class="modal-box" style="max-width:400px">
+        <button class="modal-close" onclick="document.getElementById('accResetDevModal').classList.remove('open')">✕</button>
+        <div class="modal-title">📱 Reset Device Fingerprints</div>
+        <div class="modal-sub">Allow this engineer to check in from a new device.</div>
+        <div id="accResetDevInfo" style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:var(--r);padding:12px 14px;margin:14px 0;font-size:.85rem;color:#92400e;font-family:var(--mono);line-height:1.8"></div>
+        <div style="font-size:.83rem;color:var(--ink2);line-height:1.6;margin-bottom:16px">All stored device fingerprints for this engineer will be cleared. Their email–ID binding is kept. On the next check-in, their new device will be registered automatically.</div>
+        <div style="display:flex;gap:10px">
+          <button onclick="adminAccConfirmResetDev()" style="flex:1;padding:12px;border-radius:var(--r);background:var(--orange);color:#fff;border:none;font-weight:700;font-family:var(--body);cursor:pointer">📱 Clear Devices</button>
+          <button onclick="document.getElementById('accResetDevModal').classList.remove('open')" style="padding:12px 18px;border-radius:var(--r);background:var(--bg2);color:var(--ink2);border:1.5px solid var(--border);font-weight:600;font-family:var(--body);cursor:pointer">Cancel</button>
+        </div>
       </div>
     </div>
 
@@ -1776,6 +1893,10 @@ function sanitizeHtml(str) {
 
 // ── Init engineer screen ───────────────────────────
 function initEmp() {
+  // Pre-compute hardware fingerprint immediately (async) so it's cached before check-in
+  computeFingerprint().then(function(fp) {
+    console.log("[AT] Device fingerprint ready:", fp.slice(0, 20) + "…");
+  });
   // Populate site dropdown
   var sel = document.getElementById("empSite");
   sel.innerHTML = '<option value="">— Select your work site —</option>';
@@ -1930,14 +2051,124 @@ function showSelfie(recordId) {
   lb.style.display = "flex";
 }
 
-// ── Device fingerprint (anti-buddy-punch) ──────────
+// ── Device Hardware Fingerprint (cross-browser, anti-buddy-punch) ──────────
+// NOTE: Web browsers intentionally block MAC address access for user privacy.
+// Instead we build a hardware fingerprint from GPU renderer, canvas, audio,
+// screen, CPU and memory signals — these are hardware-level, not browser-level,
+// so the same phone produces the same fingerprint in Chrome AND Firefox.
+var _atFpCache = null;
+
+function computeFingerprint() {
+  // Return cached value instantly if already computed this session
+  var sess = sessionStorage.getItem("_at_fp");
+  if (sess) { _atFpCache = sess; return Promise.resolve(sess); }
+  var stored = localStorage.getItem("_at_fp");
+
+  return new Promise(function(resolve) {
+    var parts = [];
+
+    // 1. Screen & display — physical hardware properties
+    parts.push(screen.width + "x" + screen.height);
+    parts.push(screen.colorDepth);
+    parts.push((window.devicePixelRatio || 1).toFixed(2));
+    parts.push(screen.availWidth + "x" + screen.availHeight);
+
+    // 2. Hardware concurrency & memory
+    parts.push(navigator.hardwareConcurrency || 0);
+    parts.push(navigator.deviceMemory || 0);
+
+    // 3. Platform, timezone, touch
+    parts.push(navigator.platform || "");
+    parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone || "");
+    parts.push(navigator.maxTouchPoints || 0);
+
+    // 4. WebGL GPU renderer — most hardware-specific signal available in browsers
+    try {
+      var c = document.createElement("canvas");
+      var gl = c.getContext("webgl") || c.getContext("experimental-webgl");
+      if (gl) {
+        var ext = gl.getExtension("WEBGL_debug_renderer_info");
+        if (ext) {
+          parts.push(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)  || "");
+          parts.push(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)|| "");
+        }
+        parts.push(gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0);
+        parts.push(gl.getParameter(gl.MAX_VERTEX_ATTRIBS) || 0);
+      }
+    } catch(e) { parts.push("no-webgl"); }
+
+    // 5. Canvas rendering fingerprint — GPU affects sub-pixel rendering
+    try {
+      var cv = document.createElement("canvas");
+      cv.width = 280; cv.height = 60;
+      var cx = cv.getContext("2d");
+      cx.textBaseline = "alphabetic";
+      cx.fillStyle = "#f0f";
+      cx.fillRect(0, 0, 280, 60);
+      cx.fillStyle = "#069";
+      cx.font = "bold 18px Arial,sans-serif";
+      cx.fillText("AT\u2603fp\u00AE2024", 10, 38);
+      cx.fillStyle = "rgba(102,200,0,0.8)";
+      cx.font = "15px Times New Roman";
+      cx.fillText("hw-bind", 170, 38);
+      parts.push(cv.toDataURL("image/png").slice(-80));
+    } catch(e) { parts.push("no-canvas"); }
+
+    // 6. Audio fingerprint — DSP differences are hardware-dependent
+    var audioPromise = new Promise(function(res) {
+      try {
+        var Ac = window.AudioContext || window.webkitAudioContext;
+        if (!Ac) return res("no-audio");
+        var ac = new Ac({ sampleRate: 44100 });
+        var osc = ac.createOscillator();
+        var anlz = ac.createAnalyser();
+        var gain = ac.createGain();
+        gain.gain.value = 0;
+        osc.type = "triangle";
+        osc.frequency.value = 10000;
+        osc.connect(anlz); anlz.connect(gain); gain.connect(ac.destination);
+        osc.start(0);
+        var buf = new Float32Array(anlz.frequencyBinCount);
+        anlz.getFloatFrequencyData(buf);
+        osc.stop(); ac.close();
+        var sum = 0;
+        for (var i = 0; i < Math.min(buf.length, 100); i++) sum += Math.abs(buf[i]);
+        res(sum.toFixed(6));
+      } catch(e) { res("no-audio"); }
+    });
+
+    audioPromise.then(function(audioVal) {
+      parts.push(audioVal);
+
+      // djb2 hash over all collected signals
+      var raw  = parts.join("|||");
+      var hash = 5381;
+      for (var j = 0; j < raw.length; j++) {
+        hash = ((hash << 5) + hash) + raw.charCodeAt(j);
+        hash = hash & hash; // 32-bit
+      }
+      var fp = "fp_" + Math.abs(hash).toString(36) + Math.abs(raw.length).toString(36);
+
+      // If we had a stored fingerprint and it matches (same hardware), keep it for continuity
+      // Otherwise: first time on this hardware — store it
+      _atFpCache = stored || fp;
+      if (!stored) localStorage.setItem("_at_fp", _atFpCache);
+      sessionStorage.setItem("_at_fp", _atFpCache);
+      // Also update legacy key so old code paths still work
+      localStorage.setItem("_at_device", _atFpCache);
+      resolve(_atFpCache);
+    });
+  });
+}
+
 function getDeviceId() {
-  var id = localStorage.getItem("_at_device");
-  if (!id) {
-    id = "dev_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    localStorage.setItem("_at_device", id);
-  }
-  return id;
+  // Return in-memory cache first (fastest), then sessionStorage, then localStorage fallback
+  if (_atFpCache) return _atFpCache;
+  var s = sessionStorage.getItem("_at_fp") || localStorage.getItem("_at_fp") || localStorage.getItem("_at_device");
+  if (s) { _atFpCache = s; return s; }
+  // Fingerprint not yet computed — return a temporary placeholder; computeFingerprint() will overwrite
+  var tmp = "tmp_" + Math.random().toString(36).slice(2);
+  return tmp;
 }
 
 // Check if this device already checked in someone today
@@ -1987,68 +2218,70 @@ function doCheckin() {
 
   // ✅ IDENTITY BINDING: verify email↔empId before allowing check-in
   //    This is cross-browser (Firestore-backed) so switching browsers won't help.
-  var devId = getDeviceId();
   var btn   = document.getElementById("ciBtn");
   btn.disabled = true;
   btn.innerHTML = '<span class="spin"></span> Verifying identity…';
 
-  verifyIdentityBinding(empEmail, empId, empName, devId, function(result) {
-    if (!result.ok) {
-      toast(result.reason, "t-err");
-      btn.disabled = false;
-      btn.innerHTML = "✅ Check In";
-      setTimeout(function(){ alert(result.reason + "\n\nIf you believe this is an error, please contact admin."); }, 200);
-      return;
-    }
+  // Ensure hardware fingerprint is computed (may already be cached)
+  computeFingerprint().then(function(devId) {
+    verifyIdentityBinding(empEmail, empId, empName, devId, function(result) {
+      if (!result.ok) {
+        toast(result.reason, "t-err");
+        btn.disabled = false;
+        btn.innerHTML = "✅ Check In";
+        setTimeout(function(){ alert(result.reason + "\n\nIf you believe this is an error, please contact admin."); }, 200);
+        return;
+      }
 
-    // ── Identity verified — proceed with check-in ──────────
-    btn.innerHTML = '<span class="spin"></span> Saving…';
+      // ── Identity verified — proceed with check-in ──────────
+      btn.innerHTML = '<span class="spin"></span> Saving…';
 
-    var site   = WORK_SITES[parseInt(siteIdx)];
-    var gps    = GPS.in;
-    var now    = new Date();
-    var isLate = now.getHours() >= WORK_HOUR_LATE + 1;
+      var site   = WORK_SITES[parseInt(siteIdx)];
+      var gps    = GPS.in;
+      var now    = new Date();
+      var isLate = now.getHours() >= WORK_HOUR_LATE + 1;
 
-    var rec = {
-      empId:empId, empName:empName, empEmail:empEmail, site:site.name,
-      checkinTime:now.toLocaleTimeString("en-SG"),
-      checkinDate:now.toLocaleDateString("en-SG"),
-      checkinISO:now.toISOString(),
-      checkinTimestamp:now.getTime(),
-      checkinLat:gps.lat, checkinLng:gps.lng, checkinDist:gps.dist, checkinAcc:gps.accuracy,
-      checkoutTime:null, checkoutTimestamp:null,
-      checkoutLat:null, checkoutLng:null, checkoutDist:null,
-      status:"in", isLate:isLate, isOvertime:false, duration:null,
-      selfiePhoto: selfieData,
-      deviceId: devId,
-      emailConflict: false, // binding already enforced above — no conflict possible here
-      _source: "web", _userAgent: navigator.userAgent.slice(0, 100)
-    };
+      var rec = {
+        empId:empId, empName:empName, empEmail:empEmail, site:site.name,
+        checkinTime:now.toLocaleTimeString("en-SG"),
+        checkinDate:now.toLocaleDateString("en-SG"),
+        checkinISO:now.toISOString(),
+        checkinTimestamp:now.getTime(),
+        checkinLat:gps.lat, checkinLng:gps.lng, checkinDist:gps.dist, checkinAcc:gps.accuracy,
+        checkoutTime:null, checkoutTimestamp:null,
+        checkoutLat:null, checkoutLng:null, checkoutDist:null,
+        status:"in", isLate:isLate, isOvertime:false, duration:null,
+        selfiePhoto: selfieData,
+        deviceId: devId,
+        emailConflict: false,
+        _source: "web", _userAgent: navigator.userAgent.slice(0, 100)
+      };
 
-    function onSaved(docId) {
-      recordDeviceCheckin(empId);
-      setSess(rec); setSessDocId(docId);
-      btn.innerHTML = "✅ Check In";
-      showResult("ci", rec, isLate, false);
-      toast("✅ Checked in successfully!", "t-ok");
-      setTimeout(function(){ checkApprovedLeaveForEmp(empId); }, 1800);
-      setTimeout(function(){
-        document.getElementById("ciForm").style.display    = "none";
-        document.getElementById("coSection").style.display = "block";
-        document.getElementById("sessBadge").style.display = "block";
-        document.getElementById("sb-emp").textContent  = rec.empName+" ("+rec.empId+")";
-        document.getElementById("sb-site").textContent = rec.site;
-        document.getElementById("sb-cin").textContent  = rec.checkinTime;
-      }, 1600);
-    }
+      function onSaved(docId) {
+        recordDeviceCheckin(empId);
+        setSess(rec); setSessDocId(docId);
+        btn.innerHTML = "✅ Check In";
+        showResult("ci", rec, isLate, false);
+        toast("✅ Checked in successfully!", "t-ok");
+        setTimeout(function(){ checkApprovedLeaveForEmp(empId); }, 1800);
+        setTimeout(function(){
+          document.getElementById("ciForm").style.display    = "none";
+          document.getElementById("coSection").style.display = "block";
+          document.getElementById("sessBadge").style.display = "block";
+          document.getElementById("sb-emp").textContent  = rec.empName+" ("+rec.empId+")";
+          document.getElementById("sb-site").textContent = rec.site;
+          document.getElementById("sb-cin").textContent  = rec.checkinTime;
+        }, 1600);
+      }
 
-    if (fbOk && db) {
-      db.collection("attendance").add(rec)
-        .then(function(ref){ onSaved(ref.id); })
-        .catch(function(e){ console.warn(e); saveLocal(rec); onSaved(null); });
-    } else {
-      saveLocal(rec); onSaved(null);
-    }
+      if (fbOk && db) {
+        db.collection("attendance").add(rec)
+          .then(function(ref){ onSaved(ref.id); })
+          .catch(function(e){ console.warn(e); saveLocal(rec); onSaved(null); });
+      } else {
+        saveLocal(rec); onSaved(null);
+      }
+    });
   });
 }
 
@@ -2335,13 +2568,14 @@ function refreshDash() {
 
 // ── Dashboard tabs ─────────────────────────────────
 function dTab(id, el) {
-  ["live","feed","leave","device","setup"].forEach(function(t){
+  ["live","feed","leave","device","accounts","setup"].forEach(function(t){
     var p = document.getElementById("dTab-"+t); if(p) p.style.display = t===id?"block":"none";
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
   if (el) el.classList.add("on");
-  if (id === "leave") loadLeaves();
-  if (id === "device") renderDeviceAudit();
+  if (id === "leave")    loadLeaves();
+  if (id === "device")   renderDeviceAudit();
+  if (id === "accounts") adminAccLoad();
 }
 
 // ── CSV export ─────────────────────────────────────
@@ -3258,7 +3492,37 @@ function verifyIdentityBinding(email, empId, empName, devId, cb) {
             "If your email has changed, ask admin to update your binding before checking in." });
         }
 
-        // 3. All clear — update bindings
+        // 3. Hardware fingerprint already registered to a DIFFERENT engineer?
+        //    Query all emailBindings where deviceIds contains this devId
+        //    (Firestore array-contains query)
+        var fpCheckPromise;
+        if (devId && !devId.startsWith("tmp_")) {
+          fpCheckPromise = db.collection("emailBindings")
+            .where("deviceIds", "array-contains", devId)
+            .get()
+            .then(function(snap) {
+              var conflict = null;
+              snap.forEach(function(doc) {
+                var d = doc.data();
+                if (d.empId && d.empId !== empId) conflict = d;
+              });
+              return conflict;
+            })
+            .catch(function() { return null; }); // non-blocking on error
+        } else {
+          fpCheckPromise = Promise.resolve(null);
+        }
+
+        fpCheckPromise.then(function(fpConflict) {
+          if (fpConflict) {
+            return cb({ ok:false, reason:
+              "⛔ This device's hardware fingerprint is already registered to engineer " +
+              fpConflict.empId + " (" + fpConflict.empName + ").\n\n" +
+              "Each physical device can only be used by ONE engineer, even in a different browser. " +
+              "If you've been issued a new device, ask admin to reset your binding." });
+          }
+
+        // 4. All clear — update bindings
         var isNew = !eDok.exists;
         var existing = eDok.exists ? eDok.data() : {};
         var dids = existing.deviceIds || [];
@@ -3273,12 +3537,13 @@ function verifyIdentityBinding(email, empId, empName, devId, cb) {
         };
         var empBinding = { empId:empId, email:emailKey, empName:empName, lastSeenAt:ts, lastSeenIso:iso };
 
-        var batch = db.batch();
-        batch.set(emailRef, emailBinding, { merge:true });
-        batch.set(empRef,   empBinding,   { merge:true });
-        batch.commit()
-          .then(function(){ saveBindingLocal(isNew); })
-          .catch(function(e){ console.warn("binding write:", e); saveBindingLocal(isNew); });
+          var batch = db.batch();
+          batch.set(emailRef, emailBinding, { merge:true });
+          batch.set(empRef,   empBinding,   { merge:true });
+          batch.commit()
+            .then(function(){ saveBindingLocal(isNew); })
+            .catch(function(e){ console.warn("binding write:", e); saveBindingLocal(isNew); });
+        }); // end fpCheckPromise.then
       })
       .catch(function(e) {
         console.warn("binding read failed:", e);
@@ -4374,6 +4639,273 @@ function sendTestEmail() {
     else if (e && e.status === 422) hint = ' — Template variable mismatch. Make sure your template uses <code>{{to_email}}</code> in the "To Email" field.';
     if (resEl) resEl.innerHTML = '<span style="color:var(--red);font-weight:700">❌ Failed: ' + errMsg + hint + '</span>';
   });
+}
+
+// ══════════════════════════════════════════════════════
+// ADMIN — ENGINEER ACCOUNTS MANAGEMENT
+// Reads from Firestore: emailBindings + empBindings
+// Falls back to localStorage at_email_bind_v2 in demo mode
+// ══════════════════════════════════════════════════════
+
+var _accData       = [];   // [{empId, empName, email, deviceIds, registeredAt, lastSeenAt}]
+var _accDeleteKey  = null; // email key pending delete
+var _accResetKey   = null; // email key pending device reset
+
+function adminAccLoad() {
+  var body  = document.getElementById("accTblBody");
+  var empty = document.getElementById("accTblEmpty");
+  var cnt   = document.getElementById("accCount");
+  if (body) body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--ink3)"><span class="spin" style="border-color:rgba(0,0,0,.12);border-top-color:var(--blue)"></span> Loading…</td></tr>';
+
+  function renderFrom(rows) {
+    _accData = rows;
+    adminAccRender();
+  }
+
+  if (fbOk && db) {
+    db.collection("emailBindings").orderBy("registeredAt", "desc").get()
+      .then(function(snap) {
+        var rows = [];
+        snap.forEach(function(doc) { rows.push(Object.assign({ _docId: doc.id }, doc.data())); });
+        renderFrom(rows);
+      })
+      .catch(function(e) {
+        console.warn("adminAccLoad:", e);
+        // Fall back to local data
+        var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
+        renderFrom(Object.values(eb));
+      });
+  } else {
+    var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
+    renderFrom(Object.values(eb));
+  }
+}
+
+function adminAccRefresh() { adminAccLoad(); toast("↻ Refreshed", "t-ok"); }
+
+function adminAccRender() {
+  var body  = document.getElementById("accTblBody");
+  var empty = document.getElementById("accTblEmpty");
+  var cnt   = document.getElementById("accCount");
+  if (!body) return;
+
+  var q = (document.getElementById("accSearch")||{}).value||"";
+  var qlo = q.trim().toLowerCase();
+
+  var rows = _accData.filter(function(r) {
+    if (!qlo) return true;
+    return (r.email||"").toLowerCase().indexOf(qlo) >= 0
+        || (r.empId||"").toLowerCase().indexOf(qlo) >= 0
+        || (r.empName||"").toLowerCase().indexOf(qlo) >= 0;
+  });
+
+  if (cnt) cnt.textContent = rows.length + " engineer" + (rows.length !== 1 ? "s" : "");
+
+  if (!rows.length) {
+    body.innerHTML = "";
+    if (empty) empty.style.display = "block";
+    return;
+  }
+  if (empty) empty.style.display = "none";
+
+  body.innerHTML = rows.map(function(r) {
+    var devices = r.deviceIds || [];
+    var devCell = devices.length
+      ? devices.map(function(d) {
+          return '<span style="display:inline-block;font-family:var(--mono);font-size:.68rem;background:#f3f4f6;color:var(--ink2);border-radius:4px;padding:1px 6px;margin:1px 2px 1px 0">…' + d.slice(-12) + '</span>';
+        }).join("")
+      : '<span style="color:var(--ink3);font-size:.78rem">none</span>';
+
+    var regDate   = r.registeredAt  ? new Date(r.registeredAt ).toLocaleDateString("en-SG") : "—";
+    var lastDate  = r.lastSeenAt    ? new Date(r.lastSeenAt   ).toLocaleDateString("en-SG") : "—";
+    var emailKey  = (r.email||"").trim().toLowerCase();
+    var eid       = r.empId || "";
+
+    return '<tr>'
+      + '<td><span style="font-family:var(--mono);font-weight:700;font-size:.85rem;color:var(--blue)">Eng</span>'
+        + '<span style="font-family:var(--mono);font-weight:700;font-size:.85rem">' + sanitizeHtml(eid.replace(/^[Ee][Nn][Gg]/i,"")) + '</span></td>'
+      + '<td style="font-weight:600;font-size:.85rem">' + sanitizeHtml(r.empName||"—") + '</td>'
+      + '<td style="font-family:var(--mono);font-size:.78rem;color:var(--ink2)">' + sanitizeHtml(r.email||"—") + '</td>'
+      + '<td style="max-width:160px">' + devCell
+        + '<br><span style="font-size:.7rem;color:var(--ink3)">' + devices.length + ' device' + (devices.length!==1?"s":"") + '</span></td>'
+      + '<td style="font-size:.78rem;color:var(--ink3)">' + regDate + '</td>'
+      + '<td style="font-size:.78rem;color:var(--ink3)">' + lastDate + '</td>'
+      + '<td><div style="display:flex;gap:5px;flex-wrap:wrap">'
+        + '<button class="binding-act-btn" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe" onclick="adminAccOpenEdit(\'' + encodeURIComponent(emailKey) + '\')">✏️ Edit</button>'
+        + '<button class="binding-act-btn" style="background:#fffbeb;color:#92400e;border-color:#fde68a" onclick="adminAccOpenResetDev(\'' + encodeURIComponent(emailKey) + '\')">📱 Devices</button>'
+        + '<button class="binding-act-btn ba-reset" onclick="adminAccOpenDelete(\'' + encodeURIComponent(emailKey) + '\')">🗑️ Delete</button>'
+        + '</div></td>'
+      + '</tr>';
+  }).join("");
+}
+
+// ── Edit ───────────────────────────────────────────────
+function adminAccOpenEdit(encodedEmail) {
+  var emailKey = decodeURIComponent(encodedEmail);
+  var rec = _accData.find(function(r){ return (r.email||"").toLowerCase() === emailKey; });
+  if (!rec) return;
+
+  document.getElementById("accEditOrigEmail").value = emailKey;
+  document.getElementById("accEditOrigEmpId").value = rec.empId || "";
+  document.getElementById("accEditEmpId").value     = (rec.empId||"").replace(/^[Ee][Nn][Gg]/i,"");
+  document.getElementById("accEditName").value      = rec.empName || "";
+  document.getElementById("accEditEmail").value     = rec.email   || "";
+  document.getElementById("accEditSub").textContent = "Editing: " + (rec.empId||"") + " · " + (rec.email||"");
+  document.getElementById("accEditModal").classList.add("open");
+}
+
+function adminAccSaveEdit() {
+  var origEmail = document.getElementById("accEditOrigEmail").value;
+  var origEmpId = document.getElementById("accEditOrigEmpId").value;
+  var newEmpIdRaw = document.getElementById("accEditEmpId").value.trim();
+  var newName     = document.getElementById("accEditName").value.trim();
+  var newEmail    = document.getElementById("accEditEmail").value.trim().toLowerCase();
+  var newEmpId    = "Eng" + newEmpIdRaw;
+
+  if (!newEmpIdRaw || !newName || !newEmail) {
+    toast("All fields are required", "t-err"); return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+    toast("Invalid email format", "t-err"); return;
+  }
+
+  var now = new Date();
+  var ts  = now.getTime();
+  var iso = now.toISOString();
+
+  // Find the original record
+  var recIdx = _accData.findIndex(function(r){ return (r.email||"").toLowerCase() === origEmail; });
+  if (recIdx < 0) { toast("Account not found — refresh and try again", "t-err"); return; }
+  var rec = _accData[recIdx];
+
+  var updatedRec = Object.assign({}, rec, {
+    empId:    newEmpId,
+    empName:  newName,
+    email:    newEmail,
+    lastSeenAt:  ts,
+    lastSeenIso: iso,
+    editedAt:    ts,
+    editedIso:   iso,
+    editedByAdmin: true
+  });
+
+  function afterSave() {
+    _accData[recIdx] = updatedRec;
+    document.getElementById("accEditModal").classList.remove("open");
+    adminAccRender();
+    toast("✅ Account updated for " + newEmpId, "t-ok");
+  }
+
+  if (fbOk && db) {
+    var batch = db.batch();
+    // Remove old docs if email or empId changed
+    if (origEmail !== newEmail) {
+      batch.delete(db.collection("emailBindings").doc(origEmail));
+    }
+    if (origEmpId && origEmpId !== newEmpId) {
+      batch.delete(db.collection("empBindings").doc(origEmpId));
+    }
+    batch.set(db.collection("emailBindings").doc(newEmail), updatedRec);
+    batch.set(db.collection("empBindings").doc(newEmpId), { empId:newEmpId, email:newEmail, empName:newName, lastSeenAt:ts, lastSeenIso:iso });
+    batch.commit().then(afterSave).catch(function(e){ console.warn(e); afterSave(); });
+  } else {
+    // localStorage fallback
+    var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
+    var xb = {}; try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(_){}
+    if (origEmail !== newEmail) delete eb[origEmail];
+    if (origEmpId && origEmpId !== newEmpId) delete xb[origEmpId];
+    eb[newEmail] = updatedRec;
+    xb[newEmpId] = { empId:newEmpId, email:newEmail, empName:newName, lastSeenAt:ts };
+    localStorage.setItem("at_email_bind_v2", JSON.stringify(eb));
+    localStorage.setItem("at_emp_bind_v2",   JSON.stringify(xb));
+    afterSave();
+  }
+}
+
+// ── Delete ─────────────────────────────────────────────
+function adminAccOpenDelete(encodedEmail) {
+  var emailKey = decodeURIComponent(encodedEmail);
+  var rec = _accData.find(function(r){ return (r.email||"").toLowerCase() === emailKey; });
+  if (!rec) return;
+  _accDeleteKey = emailKey;
+  var infoEl = document.getElementById("accDeleteInfo");
+  if (infoEl) infoEl.innerHTML =
+    "Engineer ID: " + sanitizeHtml(rec.empId||"—") + "<br>" +
+    "Name: " + sanitizeHtml(rec.empName||"—") + "<br>" +
+    "Email: " + sanitizeHtml(rec.email||"—") + "<br>" +
+    "Devices: " + (rec.deviceIds||[]).length;
+  document.getElementById("accDeleteModal").classList.add("open");
+}
+
+function adminAccConfirmDelete() {
+  var emailKey = _accDeleteKey; if (!emailKey) return;
+  var rec = _accData.find(function(r){ return (r.email||"").toLowerCase() === emailKey; });
+
+  function afterDelete() {
+    _accData = _accData.filter(function(r){ return (r.email||"").toLowerCase() !== emailKey; });
+    _accDeleteKey = null;
+    document.getElementById("accDeleteModal").classList.remove("open");
+    adminAccRender();
+    toast("🗑️ Account deleted", "t-ok");
+  }
+
+  if (fbOk && db) {
+    var batch = db.batch();
+    batch.delete(db.collection("emailBindings").doc(emailKey));
+    if (rec && rec.empId) batch.delete(db.collection("empBindings").doc(rec.empId));
+    batch.commit().then(afterDelete).catch(function(e){ console.warn(e); afterDelete(); });
+  } else {
+    var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
+    var xb = {}; try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(_){}
+    delete eb[emailKey];
+    if (rec && rec.empId) delete xb[rec.empId];
+    localStorage.setItem("at_email_bind_v2", JSON.stringify(eb));
+    localStorage.setItem("at_emp_bind_v2",   JSON.stringify(xb));
+    afterDelete();
+  }
+}
+
+// ── Reset Device Fingerprints ──────────────────────────
+function adminAccOpenResetDev(encodedEmail) {
+  var emailKey = decodeURIComponent(encodedEmail);
+  var rec = _accData.find(function(r){ return (r.email||"").toLowerCase() === emailKey; });
+  if (!rec) return;
+  _accResetKey = emailKey;
+  var infoEl = document.getElementById("accResetDevInfo");
+  var devices = rec.deviceIds || [];
+  if (infoEl) infoEl.innerHTML =
+    "Engineer: " + sanitizeHtml(rec.empId||"—") + " · " + sanitizeHtml(rec.empName||"—") + "<br>" +
+    "Email: " + sanitizeHtml(rec.email||"—") + "<br>" +
+    "Devices to clear: <strong>" + devices.length + "</strong><br>" +
+    devices.map(function(d){ return "· …" + d.slice(-20); }).join("<br>");
+  document.getElementById("accResetDevModal").classList.add("open");
+}
+
+function adminAccConfirmResetDev() {
+  var emailKey = _accResetKey; if (!emailKey) return;
+  var recIdx = _accData.findIndex(function(r){ return (r.email||"").toLowerCase() === emailKey; });
+  if (recIdx < 0) return;
+
+  _accData[recIdx].deviceIds = [];
+  var updatedRec = _accData[recIdx];
+
+  function afterReset() {
+    _accResetKey = null;
+    document.getElementById("accResetDevModal").classList.remove("open");
+    adminAccRender();
+    toast("📱 Device fingerprints cleared — engineer can check in from a new device", "t-ok");
+  }
+
+  if (fbOk && db) {
+    db.collection("emailBindings").doc(emailKey)
+      .update({ deviceIds: [] })
+      .then(afterReset)
+      .catch(function(e){ console.warn(e); afterReset(); });
+  } else {
+    var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
+    if (eb[emailKey]) { eb[emailKey].deviceIds = []; localStorage.setItem("at_email_bind_v2", JSON.stringify(eb)); }
+    afterReset();
+  }
 }
 
 initFirebase();
