@@ -1109,6 +1109,37 @@ tr.on-leave-row td{background:#f0f9ff!important}
         • <strong>Reset Devices</strong> — Clears all hardware fingerprints. Engineer can check in from a new device on next attempt.<br>
         • <strong>Delete Account</strong> — Fully removes the binding. Engineer must re-register from scratch on next check-in.
       </div>
+
+      <!-- Firestore Rules Reference -->
+      <div style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:var(--r);padding:16px;margin-top:12px">
+        <div style="font-weight:700;font-size:.82rem;color:var(--ink2);margin-bottom:8px">🔐 Required Firestore Security Rules</div>
+        <div style="font-size:.78rem;color:var(--ink3);margin-bottom:8px">If CRUD operations are failing, paste these rules in your Firebase Console → Firestore → Rules:</div>
+        <pre id="fsRulesPre" style="background:#0d1117;color:#e6edf3;border-radius:8px;padding:12px 14px;font-size:.72rem;line-height:1.7;overflow-x:auto;font-family:var(--mono);white-space:pre-wrap">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Attendance records — anyone can write (check-in), admin can read all
+    match /attendance/{doc} {
+      allow create: if true;
+      allow read, update, delete: if request.auth != null;
+    }
+
+    // Email ↔ Engineer ID bindings — read/write for binding checks + admin CRUD
+    match /emailBindings/{email} {
+      allow read, write: if true;  // Engineers need to read during check-in
+    }
+    match /empBindings/{empId} {
+      allow read, write: if true;  // Engineers need to read during check-in
+    }
+
+    // Leave applications
+    match /leaveApplications/{doc} {
+      allow read, write: if true;
+    }
+  }
+}</pre>
+        <button onclick="var t=document.getElementById('fsRulesPre');var r=document.createRange();r.selectNode(t);window.getSelection().removeAllRanges();window.getSelection().addRange(r);try{document.execCommand('copy');toast('✅ Rules copied!','t-ok');}catch(e){toast('Select + copy manually','t-err');}" style="margin-top:8px;padding:6px 14px;border-radius:var(--r);background:#0d1117;color:#e6edf3;border:none;font-size:.78rem;font-weight:600;cursor:pointer;font-family:var(--body)">📋 Copy Rules</button>
+      </div>
     </div>
 
     <!-- EDIT ACCOUNT MODAL -->
@@ -4655,25 +4686,39 @@ function adminAccLoad() {
   var body  = document.getElementById("accTblBody");
   var empty = document.getElementById("accTblEmpty");
   var cnt   = document.getElementById("accCount");
-  if (body) body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--ink3)"><span class="spin" style="border-color:rgba(0,0,0,.12);border-top-color:var(--blue)"></span> Loading…</td></tr>';
+  if (body) body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--ink3)"><span class="spin" style="border-color:rgba(0,0,0,.12);border-top-color:var(--blue)"></span> Loading from Firebase…</td></tr>';
+  if (empty) empty.style.display = "none";
 
   function renderFrom(rows) {
+    // Sort client-side — no Firestore index needed
+    rows.sort(function(a,b){ return (b.registeredAt||0)-(a.registeredAt||0); });
     _accData = rows;
     adminAccRender();
   }
 
   if (fbOk && db) {
-    db.collection("emailBindings").orderBy("registeredAt", "desc").get()
+    db.collection("emailBindings").get()
       .then(function(snap) {
         var rows = [];
         snap.forEach(function(doc) { rows.push(Object.assign({ _docId: doc.id }, doc.data())); });
+        if (!rows.length) {
+          // Also check empBindings for any orphaned records
+          return db.collection("empBindings").get().then(function(snap2) {
+            var seen = {};
+            rows.forEach(function(r){ seen[(r.email||"").toLowerCase()] = true; });
+            snap2.forEach(function(doc) {
+              var d = doc.data();
+              var ek = (d.email||"").toLowerCase();
+              if (ek && !seen[ek]) rows.push(Object.assign({ _docId: doc.id, _orphan: true }, d));
+            });
+            renderFrom(rows);
+          });
+        }
         renderFrom(rows);
       })
       .catch(function(e) {
-        console.warn("adminAccLoad:", e);
-        // Fall back to local data
-        var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
-        renderFrom(Object.values(eb));
+        console.error("adminAccLoad Firebase error:", e);
+        if (body) body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--red);font-size:.85rem">⚠️ Firebase error: ' + (e.message||e.code||"unknown") + '<br><span style="font-size:.78rem;color:var(--ink3)">Check Firestore security rules — admin needs read access to emailBindings collection</span></td></tr>';
       });
   } else {
     var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
@@ -4755,8 +4800,8 @@ function adminAccOpenEdit(encodedEmail) {
 }
 
 function adminAccSaveEdit() {
-  var origEmail = document.getElementById("accEditOrigEmail").value;
-  var origEmpId = document.getElementById("accEditOrigEmpId").value;
+  var origEmail   = document.getElementById("accEditOrigEmail").value;
+  var origEmpId   = document.getElementById("accEditOrigEmpId").value;
   var newEmpIdRaw = document.getElementById("accEditEmpId").value.trim();
   var newName     = document.getElementById("accEditName").value.trim();
   var newEmail    = document.getElementById("accEditEmail").value.trim().toLowerCase();
@@ -4769,56 +4814,81 @@ function adminAccSaveEdit() {
     toast("Invalid email format", "t-err"); return;
   }
 
-  var now = new Date();
-  var ts  = now.getTime();
-  var iso = now.toISOString();
-
-  // Find the original record
   var recIdx = _accData.findIndex(function(r){ return (r.email||"").toLowerCase() === origEmail; });
   if (recIdx < 0) { toast("Account not found — refresh and try again", "t-err"); return; }
   var rec = _accData[recIdx];
 
+  // Disable save button and show saving state
+  var saveBtn = document.querySelector("#accEditModal button[onclick='adminAccSaveEdit()']");
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<span class="spin" style="border-color:rgba(255,255,255,.3);border-top-color:#fff;width:14px;height:14px"></span> Saving…'; }
+
+  var now = new Date();
+  var ts  = now.getTime();
+  var iso = now.toISOString();
+
   var updatedRec = Object.assign({}, rec, {
-    empId:    newEmpId,
-    empName:  newName,
-    email:    newEmail,
-    lastSeenAt:  ts,
-    lastSeenIso: iso,
-    editedAt:    ts,
-    editedIso:   iso,
+    empId:         newEmpId,
+    empName:       newName,
+    email:         newEmail,
+    lastSeenAt:    ts,
+    lastSeenIso:   iso,
+    editedAt:      ts,
+    editedIso:     iso,
     editedByAdmin: true
   });
+  // Remove internal key before writing to Firestore
+  delete updatedRec._docId;
+  delete updatedRec._orphan;
+
+  function resetBtn() {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = "💾 Save Changes"; }
+  }
 
   function afterSave() {
-    _accData[recIdx] = updatedRec;
+    // Sync local cache
+    _accData[recIdx] = Object.assign({}, updatedRec, { _docId: newEmail });
+    // Also sync localStorage mirror
+    var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
+    var xb = {}; try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(_){}
+    if (origEmail !== newEmail) delete eb[origEmail];
+    if (origEmpId && origEmpId !== newEmpId) delete xb[origEmpId];
+    eb[newEmail]  = updatedRec;
+    xb[newEmpId]  = { empId:newEmpId, email:newEmail, empName:newName, lastSeenAt:ts };
+    localStorage.setItem("at_email_bind_v2", JSON.stringify(eb));
+    localStorage.setItem("at_emp_bind_v2",   JSON.stringify(xb));
+    resetBtn();
     document.getElementById("accEditModal").classList.remove("open");
     adminAccRender();
     toast("✅ Account updated for " + newEmpId, "t-ok");
   }
 
+  function onError(e) {
+    resetBtn();
+    var msg = e && (e.message || e.code) ? (e.message || e.code) : "Unknown Firebase error";
+    toast("❌ Save failed: " + msg, "t-err");
+    alert("❌ Firebase write failed:\n" + msg + "\n\nCheck your Firestore security rules:\n• emailBindings — allow read, write if admin\n• empBindings — allow read, write if admin");
+  }
+
   if (fbOk && db) {
     var batch = db.batch();
-    // Remove old docs if email or empId changed
+    // Delete old docs if key fields changed
     if (origEmail !== newEmail) {
       batch.delete(db.collection("emailBindings").doc(origEmail));
     }
     if (origEmpId && origEmpId !== newEmpId) {
       batch.delete(db.collection("empBindings").doc(origEmpId));
     }
+    // Write new/updated docs
     batch.set(db.collection("emailBindings").doc(newEmail), updatedRec);
-    batch.set(db.collection("empBindings").doc(newEmpId), { empId:newEmpId, email:newEmail, empName:newName, lastSeenAt:ts, lastSeenIso:iso });
-    batch.commit().then(afterSave).catch(function(e){ console.warn(e); afterSave(); });
+    batch.set(db.collection("empBindings").doc(newEmpId), {
+      empId:newEmpId, email:newEmail, empName:newName,
+      lastSeenAt:ts, lastSeenIso:iso, editedByAdmin:true
+    });
+    batch.commit()
+      .then(afterSave)
+      .catch(onError);
   } else {
-    // localStorage fallback
-    var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
-    var xb = {}; try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(_){}
-    if (origEmail !== newEmail) delete eb[origEmail];
-    if (origEmpId && origEmpId !== newEmpId) delete xb[origEmpId];
-    eb[newEmail] = updatedRec;
-    xb[newEmpId] = { empId:newEmpId, email:newEmail, empName:newName, lastSeenAt:ts };
-    localStorage.setItem("at_email_bind_v2", JSON.stringify(eb));
-    localStorage.setItem("at_emp_bind_v2",   JSON.stringify(xb));
-    afterSave();
+    afterSave(); // localStorage-only mode — always succeeds
   }
 }
 
@@ -4841,26 +4911,45 @@ function adminAccConfirmDelete() {
   var emailKey = _accDeleteKey; if (!emailKey) return;
   var rec = _accData.find(function(r){ return (r.email||"").toLowerCase() === emailKey; });
 
-  function afterDelete() {
-    _accData = _accData.filter(function(r){ return (r.email||"").toLowerCase() !== emailKey; });
-    _accDeleteKey = null;
-    document.getElementById("accDeleteModal").classList.remove("open");
-    adminAccRender();
-    toast("🗑️ Account deleted", "t-ok");
+  // Show deleting state on button
+  var delBtn = document.querySelector("#accDeleteModal button[onclick='adminAccConfirmDelete()']");
+  if (delBtn) { delBtn.disabled = true; delBtn.innerHTML = '<span class="spin" style="border-color:rgba(255,255,255,.3);border-top-color:#fff;width:14px;height:14px"></span> Deleting…'; }
+
+  function resetBtn() {
+    if (delBtn) { delBtn.disabled = false; delBtn.innerHTML = "🗑️ Yes, Delete"; }
   }
 
-  if (fbOk && db) {
-    var batch = db.batch();
-    batch.delete(db.collection("emailBindings").doc(emailKey));
-    if (rec && rec.empId) batch.delete(db.collection("empBindings").doc(rec.empId));
-    batch.commit().then(afterDelete).catch(function(e){ console.warn(e); afterDelete(); });
-  } else {
+  function afterDelete() {
+    // Sync local cache and localStorage
+    _accData = _accData.filter(function(r){ return (r.email||"").toLowerCase() !== emailKey; });
     var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
     var xb = {}; try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(_){}
     delete eb[emailKey];
     if (rec && rec.empId) delete xb[rec.empId];
     localStorage.setItem("at_email_bind_v2", JSON.stringify(eb));
     localStorage.setItem("at_emp_bind_v2",   JSON.stringify(xb));
+    _accDeleteKey = null;
+    resetBtn();
+    document.getElementById("accDeleteModal").classList.remove("open");
+    adminAccRender();
+    toast("🗑️ Account deleted", "t-ok");
+  }
+
+  function onError(e) {
+    resetBtn();
+    var msg = e && (e.message || e.code) ? (e.message || e.code) : "Unknown Firebase error";
+    toast("❌ Delete failed: " + msg, "t-err");
+    alert("❌ Firebase delete failed:\n" + msg + "\n\nCheck your Firestore security rules allow admin to delete from emailBindings and empBindings.");
+  }
+
+  if (fbOk && db) {
+    var batch = db.batch();
+    batch.delete(db.collection("emailBindings").doc(emailKey));
+    if (rec && rec.empId) batch.delete(db.collection("empBindings").doc(rec.empId));
+    batch.commit()
+      .then(afterDelete)
+      .catch(onError);
+  } else {
     afterDelete();
   }
 }
@@ -4886,24 +4975,47 @@ function adminAccConfirmResetDev() {
   var recIdx = _accData.findIndex(function(r){ return (r.email||"").toLowerCase() === emailKey; });
   if (recIdx < 0) return;
 
-  _accData[recIdx].deviceIds = [];
-  var updatedRec = _accData[recIdx];
+  var rstBtn = document.querySelector("#accResetDevModal button[onclick='adminAccConfirmResetDev()']");
+  if (rstBtn) { rstBtn.disabled = true; rstBtn.innerHTML = '<span class="spin" style="border-color:rgba(255,255,255,.3);border-top-color:#fff;width:14px;height:14px"></span> Clearing…'; }
+
+  function resetBtn() {
+    if (rstBtn) { rstBtn.disabled = false; rstBtn.innerHTML = "📱 Clear Devices"; }
+  }
 
   function afterReset() {
+    // Sync local cache
+    _accData[recIdx] = Object.assign({}, _accData[recIdx], { deviceIds: [] });
+    // Sync localStorage mirror
+    var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
+    if (eb[emailKey]) { eb[emailKey].deviceIds = []; localStorage.setItem("at_email_bind_v2", JSON.stringify(eb)); }
+    // Clear the hardware fingerprint from local storage too so THIS browser can re-enroll
+    // (only if it belongs to this engineer)
+    var sess = getSess();
+    if (sess && sess.empEmail && sess.empEmail.toLowerCase() === emailKey) {
+      localStorage.removeItem("_at_fp");
+      sessionStorage.removeItem("_at_fp");
+      _atFpCache = null;
+    }
     _accResetKey = null;
+    resetBtn();
     document.getElementById("accResetDevModal").classList.remove("open");
     adminAccRender();
     toast("📱 Device fingerprints cleared — engineer can check in from a new device", "t-ok");
   }
 
+  function onError(e) {
+    resetBtn();
+    var msg = e && (e.message || e.code) ? (e.message || e.code) : "Unknown Firebase error";
+    toast("❌ Reset failed: " + msg, "t-err");
+    alert("❌ Firebase update failed:\n" + msg + "\n\nCheck Firestore security rules allow admin to update emailBindings.");
+  }
+
   if (fbOk && db) {
     db.collection("emailBindings").doc(emailKey)
-      .update({ deviceIds: [] })
+      .update({ deviceIds: [], deviceResetAt: new Date().getTime(), deviceResetByAdmin: true })
       .then(afterReset)
-      .catch(function(e){ console.warn(e); afterReset(); });
+      .catch(onError);
   } else {
-    var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
-    if (eb[emailKey]) { eb[emailKey].deviceIds = []; localStorage.setItem("at_email_bind_v2", JSON.stringify(eb)); }
     afterReset();
   }
 }
