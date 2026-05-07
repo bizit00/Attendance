@@ -317,6 +317,92 @@ pre{background:#1a2233;color:#e5e7eb;padding:14px;border-radius:8px;font-size:.7
 .file-upload-wrap .fu-txt strong{color:var(--blue)}
 #leaveAttName{font-size:.82rem;color:var(--green);font-weight:600;margin-top:6px;min-height:18px}
 
+/* ── CAMERA CAPTURE (Leave attachment) ──────────── */
+.cam-btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.cam-btn{
+  padding:11px;border-radius:var(--r);font-size:.85rem;font-weight:600;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  border:1.5px solid var(--border);background:#fafaf8;color:var(--ink2);
+  transition:all .2s;cursor:pointer;font-family:var(--body);
+}
+.cam-btn:hover{border-color:var(--blue);color:var(--blue);background:#eff6ff}
+.cam-btn-primary{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.cam-btn-primary:hover{background:#1d4ed8;color:#fff;border-color:#1d4ed8}
+#leaveAttPreview{margin-top:10px;text-align:center}
+#leaveAttPreview img{max-width:100%;max-height:200px;border-radius:var(--r);border:1.5px solid var(--border)}
+
+/* Camera modal */
+.cam-modal{
+  display:none;position:fixed;inset:0;z-index:1000;
+  background:rgba(0,0,0,.85);
+  align-items:center;justify-content:center;
+  padding:16px;
+}
+.cam-modal.open{display:flex}
+.cam-modal-inner{
+  background:#0d1117;border-radius:var(--r2);
+  width:100%;max-width:520px;
+  display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:var(--sh2);
+}
+.cam-modal-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08);
+  color:#fff;
+}
+.cam-modal-title{font-weight:700;font-size:1rem;display:flex;align-items:center;gap:8px}
+.cam-modal-close{
+  background:transparent;border:none;color:#fff;font-size:1.4rem;
+  width:32px;height:32px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:background .15s;
+}
+.cam-modal-close:hover{background:rgba(255,255,255,.1)}
+.cam-stage{
+  position:relative;background:#000;
+  aspect-ratio:4/3;width:100%;
+  display:flex;align-items:center;justify-content:center;
+  overflow:hidden;
+}
+.cam-stage video,.cam-stage img{width:100%;height:100%;object-fit:cover;display:block}
+.cam-loading{position:absolute;color:#fff;font-size:.9rem;display:flex;flex-direction:column;align-items:center;gap:10px}
+.cam-spinner{
+  width:36px;height:36px;border:3px solid rgba(255,255,255,.2);
+  border-top-color:var(--green);border-radius:50%;
+  animation:spin 1s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.cam-error{
+  position:absolute;color:#fca5a5;font-size:.85rem;text-align:center;
+  padding:20px;line-height:1.6;max-width:90%;
+}
+.cam-controls{
+  display:flex;gap:10px;padding:14px 18px;
+  background:#0d1117;border-top:1px solid rgba(255,255,255,.08);
+}
+.cam-ctrl-btn{
+  flex:1;padding:13px;border-radius:var(--r);
+  font-weight:700;font-size:.9rem;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  border:none;cursor:pointer;font-family:var(--body);
+  transition:all .2s;
+}
+.cam-ctrl-shoot{background:linear-gradient(135deg,#00c896,#00a878);color:#fff}
+.cam-ctrl-shoot:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,200,150,.35)}
+.cam-ctrl-shoot:disabled{opacity:.4;cursor:not-allowed}
+.cam-ctrl-retake{background:rgba(255,255,255,.08);color:#fff;border:1.5px solid rgba(255,255,255,.15)}
+.cam-ctrl-retake:hover{background:rgba(255,255,255,.14)}
+.cam-ctrl-use{background:linear-gradient(135deg,#0077ff,#005acc);color:#fff}
+.cam-ctrl-use:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,119,255,.35)}
+.cam-switch{
+  position:absolute;top:12px;right:12px;
+  background:rgba(0,0,0,.5);border:1.5px solid rgba(255,255,255,.2);
+  color:#fff;width:40px;height:40px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  font-size:1.05rem;transition:background .15s;backdrop-filter:blur(8px);
+}
+.cam-switch:hover{background:rgba(0,0,0,.7)}
+
 /* Leave submit btn */
 #leaveSubmitBtn{background:linear-gradient(135deg,#0077ff,#005acc)}
 #leaveSubmitBtn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,119,255,.35)}
@@ -760,10 +846,62 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <p style="font-size:.82rem;color:var(--ink3);margin-bottom:12px">Upload a photo or screenshot of your physical leave application form / MC slip. <strong style="color:var(--red)">This is mandatory</strong> — leave applications without an attachment will not be accepted. (Max 700 KB — JPG, PNG, or PDF)</p>
         <div class="file-upload-wrap" id="leaveAttWrap">
           <div class="fu-icon">📄</div>
-          <div class="fu-txt">Tap to upload<br><strong>Leave Form / MC / Supporting Document</strong></div>
+          <div class="fu-txt">Tap to upload from gallery / files<br><strong>Leave Form / MC / Supporting Document</strong></div>
           <input type="file" id="leaveAttachment" accept="image/*,.pdf" onchange="handleLeaveAttachment(this)"/>
         </div>
+        <div class="cam-btn-row">
+          <button type="button" class="cam-btn cam-btn-primary" onclick="openLeaveCamera()">
+            📷 Take Photo with Camera
+          </button>
+          <button type="button" class="cam-btn" id="leaveAttClearBtn" onclick="clearLeaveAttachment()" style="display:none">
+            🗑️ Remove Attachment
+          </button>
+        </div>
         <div id="leaveAttName"></div>
+        <div id="leaveAttPreview" style="display:none">
+          <img id="leaveAttPreviewImg" alt="Attachment preview"/>
+        </div>
+      </div>
+
+      <!-- Camera capture modal -->
+      <div id="leaveCamModal" class="cam-modal" onclick="if(event.target===this)closeLeaveCamera()">
+        <div class="cam-modal-inner">
+          <div class="cam-modal-hdr">
+            <div class="cam-modal-title">📷 Capture Leave Document</div>
+            <button class="cam-modal-close" onclick="closeLeaveCamera()" aria-label="Close">✕</button>
+          </div>
+
+          <!-- Live camera view -->
+          <div id="leaveCamLiveWrap" class="cam-stage">
+            <video id="leaveCamVideo" playsinline autoplay muted></video>
+            <button class="cam-switch" onclick="switchLeaveCamera()" title="Switch camera" aria-label="Switch camera">🔄</button>
+            <div id="leaveCamLoading" class="cam-loading">
+              <div class="cam-spinner"></div>
+              <div>Starting camera…</div>
+            </div>
+            <div id="leaveCamError" class="cam-error" style="display:none"></div>
+          </div>
+
+          <!-- Captured preview view -->
+          <div id="leaveCamPreviewWrap" class="cam-stage" style="display:none">
+            <img id="leaveCamPreview" alt="Captured photo"/>
+          </div>
+
+          <!-- Hidden canvas for capture -->
+          <canvas id="leaveCamCanvas" style="display:none"></canvas>
+
+          <!-- Controls when in live view -->
+          <div id="leaveCamLiveCtrls" class="cam-controls">
+            <button class="cam-ctrl-btn cam-ctrl-retake" onclick="closeLeaveCamera()">✕ Cancel</button>
+            <button class="cam-ctrl-btn cam-ctrl-shoot" onclick="captureLeavePhoto()">📸 Capture</button>
+          </div>
+
+          <!-- Controls when previewing capture -->
+          <div id="leaveCamPreviewCtrls" class="cam-controls" style="display:none">
+            <button class="cam-ctrl-btn cam-ctrl-retake" onclick="retakeLeavePhoto()">↻ Retake</button>
+            <button class="cam-ctrl-btn cam-ctrl-use" onclick="useLeavePhoto()">✓ Use Photo</button>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -2676,6 +2814,10 @@ function initLeaveForm() {
   var ra = document.getElementById("leaveReason"); if(ra) ra.value = "";
   var lf2 = document.getElementById("leaveFrom"); if(lf2) lf2.value = "";
   var lt3 = document.getElementById("leaveTo"); if(lt3) lt3.value = "";
+  // Reset attachment preview + clear button (camera/upload share these)
+  var prevWrap = document.getElementById("leaveAttPreview"); if (prevWrap) prevWrap.style.display = "none";
+  var clrBtn = document.getElementById("leaveAttClearBtn");  if (clrBtn) clrBtn.style.display = "none";
+  var attWrap = document.getElementById("leaveAttWrap"); if (attWrap) { attWrap.style.borderColor=""; attWrap.style.background=""; }
   // Pre-fill from session — strip "Eng" prefix since input only takes the number
   var sess = getSess();
   var ei = document.getElementById("leaveEmpId"), en = document.getElementById("leaveEmpName");
@@ -2709,7 +2851,7 @@ function handleLeaveAttachment(input) {
     var an = document.getElementById("leaveAttName");
     if (an) an.innerHTML = '<span style="color:var(--red)">❌ File too large ('
       + Math.round(file.size/1024) + ' KB). Max 700 KB.<br>'
-      + 'Compress at <a href="https://tinypng.com" target="_blank" style="color:var(--blue)">tinypng.com</a> then try again.</span>';
+      + 'Tip: use 📷 <strong>Take Photo with Camera</strong> instead — it auto-compresses, or compress at <a href="https://tinypng.com" target="_blank" style="color:var(--blue)">tinypng.com</a>.</span>';
     if (wrap) { wrap.style.borderColor="var(--red)"; wrap.style.background="#fef2f2"; }
     input.value=""; leaveAttachment=null; return;
   }
@@ -2720,10 +2862,277 @@ function handleLeaveAttachment(input) {
     var an = document.getElementById("leaveAttName");
     if (an) an.innerHTML = '✅ <strong>' + file.name + '</strong> ('
       + Math.round(file.size/1024) + ' KB) — ready to upload';
+
+    // Show image preview thumbnail (only for images, not PDFs)
+    var prevWrap = document.getElementById("leaveAttPreview");
+    var prevImg  = document.getElementById("leaveAttPreviewImg");
+    if (prevWrap && prevImg) {
+      if (file.type && file.type.indexOf("image/") === 0) {
+        prevImg.src = e.target.result;
+        prevWrap.style.display = "block";
+      } else {
+        prevWrap.style.display = "none";
+      }
+    }
+    // Show clear/remove button
+    var clrBtn = document.getElementById("leaveAttClearBtn");
+    if (clrBtn) clrBtn.style.display = "flex";
+
     toast("📎 Attachment ready", "t-ok");
   };
   reader.readAsDataURL(file);
 }
+
+// ── Clear Leave Attachment (used by both upload + camera) ──
+function clearLeaveAttachment() {
+  leaveAttachment = null;
+  var inp = document.getElementById("leaveAttachment");
+  if (inp) inp.value = "";
+  var an = document.getElementById("leaveAttName");
+  if (an) an.innerHTML = "";
+  var prevWrap = document.getElementById("leaveAttPreview");
+  if (prevWrap) prevWrap.style.display = "none";
+  var clrBtn = document.getElementById("leaveAttClearBtn");
+  if (clrBtn) clrBtn.style.display = "none";
+  var wrap = document.getElementById("leaveAttWrap");
+  if (wrap) { wrap.style.borderColor=""; wrap.style.background=""; }
+  toast("🗑️ Attachment removed", "t-ok");
+}
+
+// ══════════════════════════════════════════════════════
+//  CAMERA CAPTURE — for leave application attachment
+// ══════════════════════════════════════════════════════
+var _camStream = null;
+var _camFacing = "environment"; // 'environment' = back camera, 'user' = front
+var _camCapturedDataUrl = null;
+
+function openLeaveCamera() {
+  var modal = document.getElementById("leaveCamModal");
+  if (!modal) return;
+  _camCapturedDataUrl = null;
+  _showLeaveCamLive();
+  modal.classList.add("open");
+  _startLeaveCamera();
+}
+
+function _startLeaveCamera() {
+  var video    = document.getElementById("leaveCamVideo");
+  var loadingEl= document.getElementById("leaveCamLoading");
+  var errorEl  = document.getElementById("leaveCamError");
+
+  if (loadingEl) loadingEl.style.display = "flex";
+  if (errorEl)   errorEl.style.display   = "none";
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    _showLeaveCamError("⚠️ Camera not supported on this browser.<br>Please use the upload option instead.");
+    return;
+  }
+
+  // Stop any existing stream first (e.g. when switching camera)
+  _stopLeaveCamStream();
+
+  var constraints = {
+    video: {
+      facingMode: { ideal: _camFacing },
+      width:  { ideal: 1280 },
+      height: { ideal: 960 }
+    },
+    audio: false
+  };
+
+  navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+    _camStream = stream;
+    if (video) {
+      video.srcObject = stream;
+      video.onloadedmetadata = function() {
+        video.play().catch(function(){});
+        if (loadingEl) loadingEl.style.display = "none";
+      };
+    }
+  }).catch(function(err) {
+    var name = (err && err.name) || "";
+    // OverconstrainedError → retry with no facingMode hint
+    if (name === "OverconstrainedError" || name === "ConstraintNotSatisfiedError") {
+      navigator.mediaDevices.getUserMedia({ video:true, audio:false }).then(function(stream) {
+        _camStream = stream;
+        if (video) {
+          video.srcObject = stream;
+          video.onloadedmetadata = function() {
+            video.play().catch(function(){});
+            if (loadingEl) loadingEl.style.display = "none";
+          };
+        }
+      }).catch(function(){
+        _showLeaveCamError("⚠️ Camera could not start.<br>Please use the upload option instead.");
+      });
+      return;
+    }
+    var msg;
+    if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
+      msg = "🚫 <strong>Camera permission denied</strong><br>Please allow camera access in your browser settings, or use the upload option.";
+    } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      msg = "📷 <strong>No camera found</strong> on this device.<br>Please use the upload option instead.";
+    } else if (name === "NotReadableError" || name === "TrackStartError") {
+      msg = "⚠️ <strong>Camera is in use by another app</strong>.<br>Close other camera apps and try again.";
+    } else {
+      msg = "⚠️ Camera error: " + (err && (err.message || err.name) || "unknown") + "<br>Please use the upload option instead.";
+    }
+    _showLeaveCamError(msg);
+  });
+}
+
+function _showLeaveCamError(html) {
+  var loadingEl = document.getElementById("leaveCamLoading");
+  var errorEl   = document.getElementById("leaveCamError");
+  if (loadingEl) loadingEl.style.display = "none";
+  if (errorEl) {
+    errorEl.style.display = "block";
+    errorEl.innerHTML = html;
+  }
+}
+
+function switchLeaveCamera() {
+  _camFacing = (_camFacing === "environment") ? "user" : "environment";
+  _startLeaveCamera();
+}
+
+function captureLeavePhoto() {
+  var video  = document.getElementById("leaveCamVideo");
+  var canvas = document.getElementById("leaveCamCanvas");
+  var preview= document.getElementById("leaveCamPreview");
+  if (!video || !canvas || !video.videoWidth) {
+    toast("⚠️ Camera not ready yet — wait a moment", "t-err");
+    return;
+  }
+
+  // Cap output width at 1280 px to keep file size reasonable
+  var srcW = video.videoWidth, srcH = video.videoHeight;
+  var maxW = 1280;
+  var w = srcW, h = srcH;
+  if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+
+  canvas.width  = w;
+  canvas.height = h;
+  var ctx = canvas.getContext("2d");
+  ctx.drawImage(video, 0, 0, w, h);
+
+  // Step down JPEG quality until under 700 KB
+  var MAX_BYTES = 700 * 1024;
+  var qualities = [0.92, 0.85, 0.78, 0.7, 0.6, 0.5, 0.4];
+  var dataUrl = "";
+  for (var i = 0; i < qualities.length; i++) {
+    dataUrl = canvas.toDataURL("image/jpeg", qualities[i]);
+    if (_dataUrlBytes(dataUrl) <= MAX_BYTES) break;
+  }
+
+  // If still too big, downscale and try once more
+  if (_dataUrlBytes(dataUrl) > MAX_BYTES) {
+    var bytes = _dataUrlBytes(dataUrl);
+    var scale = Math.sqrt(MAX_BYTES / bytes) * 0.95;
+    canvas.width  = Math.max(320, Math.round(w * scale));
+    canvas.height = Math.max(240, Math.round(h * scale));
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+  }
+
+  _camCapturedDataUrl = dataUrl;
+  if (preview) preview.src = dataUrl;
+  _showLeaveCamPreview();
+}
+
+function _dataUrlBytes(dataUrl) {
+  if (!dataUrl) return 0;
+  var comma = dataUrl.indexOf(",");
+  if (comma < 0) return 0;
+  // base64 → bytes ≈ length * 3/4
+  return Math.ceil((dataUrl.length - comma - 1) * 0.75);
+}
+
+function retakeLeavePhoto() {
+  _camCapturedDataUrl = null;
+  _showLeaveCamLive();
+  // Stream is still running, just toggle UI back to live view
+}
+
+function useLeavePhoto() {
+  if (!_camCapturedDataUrl) {
+    toast("⚠️ No photo captured yet", "t-err");
+    return;
+  }
+
+  var ts = Date.now();
+  var fileName = "leave-photo-" + ts + ".jpg";
+  // Match the shape used by file upload: { name, type, base64 }
+  leaveAttachment = { name: fileName, type: "image/jpeg", base64: _camCapturedDataUrl };
+
+  // Update name label
+  var an = document.getElementById("leaveAttName");
+  var bytes = _dataUrlBytes(_camCapturedDataUrl);
+  if (an) an.innerHTML = '✅ <strong>' + fileName + '</strong> ('
+    + Math.round(bytes/1024) + ' KB) — captured from camera';
+
+  // Reset upload border (in case it was red from a prior failure)
+  var wrap = document.getElementById("leaveAttWrap");
+  if (wrap) { wrap.style.borderColor=""; wrap.style.background=""; }
+
+  // Clear any file input value so the user can re-upload a different file later
+  var fileInp = document.getElementById("leaveAttachment");
+  if (fileInp) fileInp.value = "";
+
+  // Show preview thumbnail in form
+  var prevWrap = document.getElementById("leaveAttPreview");
+  var prevImg  = document.getElementById("leaveAttPreviewImg");
+  if (prevWrap && prevImg) {
+    prevImg.src = _camCapturedDataUrl;
+    prevWrap.style.display = "block";
+  }
+  // Show clear/remove button
+  var clrBtn = document.getElementById("leaveAttClearBtn");
+  if (clrBtn) clrBtn.style.display = "flex";
+
+  toast("📷 Photo attached", "t-ok");
+  closeLeaveCamera();
+}
+
+function closeLeaveCamera() {
+  _stopLeaveCamStream();
+  var modal = document.getElementById("leaveCamModal");
+  if (modal) modal.classList.remove("open");
+}
+
+function _stopLeaveCamStream() {
+  if (_camStream) {
+    try { _camStream.getTracks().forEach(function(t){ t.stop(); }); } catch(_){}
+    _camStream = null;
+  }
+  var video = document.getElementById("leaveCamVideo");
+  if (video) { try { video.srcObject = null; } catch(_){} }
+}
+
+function _showLeaveCamLive() {
+  var live        = document.getElementById("leaveCamLiveWrap");
+  var preview     = document.getElementById("leaveCamPreviewWrap");
+  var liveCtrls   = document.getElementById("leaveCamLiveCtrls");
+  var previewCtrls= document.getElementById("leaveCamPreviewCtrls");
+  if (live)         live.style.display = "flex";
+  if (preview)      preview.style.display = "none";
+  if (liveCtrls)    liveCtrls.style.display = "flex";
+  if (previewCtrls) previewCtrls.style.display = "none";
+}
+
+function _showLeaveCamPreview() {
+  var live        = document.getElementById("leaveCamLiveWrap");
+  var preview     = document.getElementById("leaveCamPreviewWrap");
+  var liveCtrls   = document.getElementById("leaveCamLiveCtrls");
+  var previewCtrls= document.getElementById("leaveCamPreviewCtrls");
+  if (live)         live.style.display = "none";
+  if (preview)      preview.style.display = "flex";
+  if (liveCtrls)    liveCtrls.style.display = "none";
+  if (previewCtrls) previewCtrls.style.display = "flex";
+}
+
+// Stop camera if user navigates away with the modal open
+window.addEventListener("beforeunload", function(){ _stopLeaveCamStream(); });
 
 // ── Translate Firebase error codes to plain English ─
 function fbErrMsg(e) {
