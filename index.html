@@ -132,6 +132,16 @@ input,select{font-family:var(--body);outline:none}
 .gps-btn.ok{background:#f0fdf4;border-color:var(--green);border-style:solid;color:#15803d}
 .gps-btn.fail{background:#fef2f2;border-color:#fca5a5;border-style:solid;color:#b91c1c}
 
+/* Network reminder note (above Verify Location button) */
+.gps-net-note{
+  background:#fffbeb;border:1px solid #fde68a;border-left:3px solid #f59e0b;
+  border-radius:10px;padding:10px 12px;margin-bottom:10px;
+  font-size:.78rem;color:#92400e;line-height:1.55;
+  display:flex;gap:8px;align-items:flex-start;
+}
+.gps-net-note-icon{font-size:1rem;flex-shrink:0;line-height:1.4}
+.gps-net-note strong{color:#78350f}
+
 /* ── PILLS ── */
 .pill{display:inline-flex;align-items:center;gap:6px;border-radius:30px;padding:7px 14px;font-size:.82rem;font-weight:600;margin-top:10px;width:100%;justify-content:center}
 .pill-info{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
@@ -739,6 +749,12 @@ tr.on-leave-row td{background:#f0f9ff!important}
       </div>
       <div class="card">
         <div class="card-lbl">📍 Location Verification</div>
+        <div class="gps-net-note">
+          <span class="gps-net-note-icon">📱</span>
+          <div>
+            <strong>Use your mobile data or personal hotspot.</strong> Public WiFi (e.g. <em>Wireless@SGx</em>, mall / cafe WiFi) routes through shared servers and can return an inaccurate location, causing verification to fail.
+          </div>
+        </div>
         <button class="gps-btn" id="gpsCiBtn" onclick="verifyGps('in')">
           <span id="gpsCiIcon">🔍</span> <span id="gpsCiTxt">Tap to Verify My Location</span>
         </button>
@@ -755,6 +771,12 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="card">
         <div class="card-lbl">🚪 Ready to Leave?</div>
         <p style="font-size:.84rem;color:var(--ink3);margin-bottom:14px">Verify your location to check out.</p>
+        <div class="gps-net-note">
+          <span class="gps-net-note-icon">📱</span>
+          <div>
+            <strong>Use your mobile data or personal hotspot.</strong> Public WiFi (e.g. <em>Wireless@SGx</em>, mall / cafe WiFi) routes through shared servers and can return an inaccurate location, causing verification to fail.
+          </div>
+        </div>
         <button class="gps-btn" id="gpsCoBtnEl" onclick="verifyGps('out')">
           <span id="gpsCoIcon">🔍</span> <span id="gpsCoTxt">Tap to Verify My Location</span>
         </button>
