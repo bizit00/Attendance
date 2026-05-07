@@ -317,6 +317,17 @@ pre{background:#1a2233;color:#e5e7eb;padding:14px;border-radius:8px;font-size:.7
 .file-upload-wrap .fu-txt strong{color:var(--blue)}
 #leaveAttName{font-size:.82rem;color:var(--green);font-weight:600;margin-top:6px;min-height:18px}
 
+/* Leave attachment dual buttons (camera + file) */
+.leave-att-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;padding:14px 8px;border:2px dashed var(--border);border-radius:var(--r);
+  background:#fafaf8;cursor:pointer;transition:all .2s;
+  font-size:.82rem;font-weight:700;color:var(--ink2);font-family:var(--body);
+}
+.leave-att-btn:hover{border-color:var(--blue);background:#eff6ff;color:var(--blue);transform:translateY(-1px)}
+.leave-att-btn:active{transform:translateY(0)}
+.leave-att-cam:hover{border-color:var(--green);background:#f0fdf4;color:#15803d}
+
 /* Leave submit btn */
 #leaveSubmitBtn{background:linear-gradient(135deg,#0077ff,#005acc)}
 #leaveSubmitBtn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,119,255,.35)}
@@ -657,6 +668,9 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <span id="gpsCiIcon">🔍</span> <span id="gpsCiTxt">Tap to Verify My Location</span>
         </button>
         <div id="gpsCiStatus"></div>
+        <div style="margin-top:10px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.76rem;color:#78350f;line-height:1.6">
+          <strong>📡 Tip:</strong> If on public/office Wi-Fi or VPN, your location may be wrong. Turn ON phone <strong>Location Services / GPS</strong>, briefly turn OFF Wi-Fi, and stand near a window so GPS can lock.
+        </div>
       </div>
 
       <button class="act-btn btn-ci" id="ciBtn" disabled onclick="doCheckin()">
@@ -757,12 +771,34 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
       <div class="card">
         <div class="card-lbl">📎 Supporting Documents <span style="color:var(--red);font-size:.75rem;font-weight:800">REQUIRED</span></div>
-        <p style="font-size:.82rem;color:var(--ink3);margin-bottom:12px">Upload a photo or screenshot of your physical leave application form / MC slip. <strong style="color:var(--red)">This is mandatory</strong> — leave applications without an attachment will not be accepted. (Max 700 KB — JPG, PNG, or PDF)</p>
-        <div class="file-upload-wrap" id="leaveAttWrap">
-          <div class="fu-icon">📄</div>
-          <div class="fu-txt">Tap to upload<br><strong>Leave Form / MC / Supporting Document</strong></div>
-          <input type="file" id="leaveAttachment" accept="image/*,.pdf" onchange="handleLeaveAttachment(this)"/>
+        <p style="font-size:.82rem;color:var(--ink3);margin-bottom:12px">Take a photo of your physical leave form / MC slip with your camera, or upload an existing image / PDF. <strong style="color:var(--red)">This is mandatory</strong> — leave applications without an attachment will not be accepted. (Max 700 KB — JPG, PNG, or PDF)</p>
+
+        <div style="display:flex;gap:10px;margin-bottom:10px">
+          <label class="leave-att-btn leave-att-cam" for="leaveAttCamera">
+            <span style="font-size:1.3rem">📷</span>
+            <span>Take Photo</span>
+            <input type="file" id="leaveAttCamera" accept="image/*" capture="environment" onchange="handleLeaveAttachment(this)" style="display:none"/>
+          </label>
+          <label class="leave-att-btn leave-att-file" for="leaveAttachment">
+            <span style="font-size:1.3rem">📁</span>
+            <span>Choose File</span>
+            <input type="file" id="leaveAttachment" accept="image/*,.pdf" onchange="handleLeaveAttachment(this)" style="display:none"/>
+          </label>
         </div>
+
+        <!-- Preview of chosen / captured file -->
+        <div id="leaveAttPreviewWrap" style="display:none;margin-top:10px;border:1.5px solid var(--border);border-radius:var(--r);padding:10px;background:#fafaf8">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <img id="leaveAttPreviewImg" style="width:80px;height:80px;object-fit:cover;border-radius:8px;flex-shrink:0;display:none"/>
+            <div id="leaveAttPreviewIcon" style="width:80px;height:80px;border-radius:8px;background:#eff6ff;display:none;align-items:center;justify-content:center;font-size:2rem;flex-shrink:0">📄</div>
+            <div style="flex:1;min-width:0">
+              <div id="leaveAttPreviewName" style="font-size:.85rem;font-weight:600;color:var(--ink);word-break:break-all"></div>
+              <div id="leaveAttPreviewSize" style="font-size:.75rem;color:var(--ink3);margin-top:2px"></div>
+              <button type="button" onclick="clearLeaveAttachment()" style="margin-top:6px;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;border-radius:6px;padding:4px 10px;font-size:.75rem;font-weight:600;cursor:pointer">✕ Remove</button>
+            </div>
+          </div>
+        </div>
+
         <div id="leaveAttName"></div>
       </div>
 
@@ -1754,6 +1790,8 @@ var GPS = { in: null, out: null };
 
 function resetGps(dir) {
   GPS[dir] = null;
+  // Stop any active watcher/timer for this direction
+  if (typeof clearGpsWatch === "function") clearGpsWatch(dir);
   var btnId = dir==="in" ? "gpsCiBtn" : "gpsCoBtnEl";
   var iconId = dir==="in" ? "gpsCiIcon" : "gpsCoIcon";
   var txtId  = dir==="in" ? "gpsCiTxt"  : "gpsCoTxt";
@@ -1764,6 +1802,19 @@ function resetGps(dir) {
   var tx = document.getElementById(txtId);  if (tx) tx.textContent="Tap to Verify My Location";
   var st = document.getElementById(statId); if (st) st.innerHTML="";
   chkBtn();
+}
+
+// Track active watchers per direction so we can clean them up
+var _gpsWatchId = { in:null, out:null };
+var _gpsTimer   = { in:null, out:null };
+// Maximum acceptable accuracy radius (metres). Above this we assume Wi-Fi/IP fix, not real GPS.
+var GPS_MAX_ACCURACY = 75;
+// Total time we keep listening for a better fix (ms)
+var GPS_WATCH_DURATION = 25000;
+
+function clearGpsWatch(dir) {
+  if (_gpsWatchId[dir] != null) { try { navigator.geolocation.clearWatch(_gpsWatchId[dir]); } catch(e){} _gpsWatchId[dir] = null; }
+  if (_gpsTimer[dir]) { clearTimeout(_gpsTimer[dir]); _gpsTimer[dir] = null; }
 }
 
 function verifyGps(dir) {
@@ -1779,7 +1830,7 @@ function verifyGps(dir) {
   btn.className = "gps-btn checking";
   document.getElementById(iconId).textContent = "⏳";
   document.getElementById(txtId).textContent  = "Detecting location…";
-  document.getElementById(statId).innerHTML   = "";
+  document.getElementById(statId).innerHTML   = '<div class="pill pill-info">📡 Acquiring GPS — this may take 10–25s on first try, especially indoors. Please stand near a window or step outside.</div>';
   GPS[dir] = null;
   chkBtn();
 
@@ -1795,24 +1846,74 @@ function verifyGps(dir) {
     if (!site) { setGpsUI(dir,"error","Session site not found.",null); return; }
   }
 
-  navigator.geolocation.getCurrentPosition(
+  // Clean any prior watch for this direction
+  clearGpsWatch(dir);
+
+  var bestFix  = null;     // best (lowest accuracy radius) fix seen so far
+  var firstFixAt = null;
+
+  // ── watchPosition: keep listening, accept only when accuracy is good enough ──
+  // This bypasses Wi-Fi/IP-based first-fix and waits for a real GPS lock.
+  _gpsWatchId[dir] = navigator.geolocation.watchPosition(
     function(pos) {
-      var lat=pos.coords.latitude, lng=pos.coords.longitude, acc=Math.round(pos.coords.accuracy);
-      var dist = haversine(lat,lng,site.lat,site.lng);
-      var ok = dist <= GEOFENCE_M;
-      GPS[dir] = { lat:lat, lng:lng, accuracy:acc, dist:dist, ok:ok };
-      setGpsUI(dir, ok?"ok":"fail", site.name, dist);
-      chkBtn();
+      var lat = pos.coords.latitude;
+      var lng = pos.coords.longitude;
+      var acc = Math.round(pos.coords.accuracy);
+      var src = pos.coords.altitudeAccuracy != null ? "GPS" : "Network"; // rough heuristic
+
+      // Update the live progress message
+      var elapsed = firstFixAt ? Math.round((Date.now() - firstFixAt)/1000) : 0;
+      if (!firstFixAt) firstFixAt = Date.now();
+      document.getElementById(statId).innerHTML =
+        '<div class="pill pill-info">📡 Got fix · accuracy ±' + acc + 'm' +
+        (acc > GPS_MAX_ACCURACY ? ' — too coarse (likely Wi-Fi/IP). Waiting for GPS lock…' : ' — locking in…') +
+        '</div>';
+
+      // Track best (smallest radius) fix
+      if (!bestFix || acc < bestFix.acc) bestFix = { lat:lat, lng:lng, acc:acc };
+
+      // Accept only when accuracy is below threshold
+      if (acc <= GPS_MAX_ACCURACY) {
+        clearGpsWatch(dir);
+        var dist = haversine(lat,lng,site.lat,site.lng);
+        var ok = dist <= GEOFENCE_M;
+        GPS[dir] = { lat:lat, lng:lng, accuracy:acc, dist:dist, ok:ok };
+        setGpsUI(dir, ok?"ok":"fail", site.name, dist, acc);
+        chkBtn();
+      }
     },
     function(err) {
-      var msgs = {1:"Permission denied. Enable location in your browser.",2:"Location unavailable.",3:"Request timed out."};
+      clearGpsWatch(dir);
+      var msgs = {1:"Permission denied. Enable location in your browser settings, then retry.",2:"Location unavailable. Turn on phone Location Services / GPS.",3:"Request timed out."};
       setGpsUI(dir,"error", msgs[err.code]||"Location error.", null);
     },
-    { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
+    { enableHighAccuracy:true, timeout:30000, maximumAge:0 }
   );
+
+  // Hard cutoff — after GPS_WATCH_DURATION, decide what to do with whatever we have
+  _gpsTimer[dir] = setTimeout(function() {
+    if (GPS[dir]) return; // already accepted
+    clearGpsWatch(dir);
+    if (!bestFix) {
+      setGpsUI(dir, "error", "Could not get a GPS fix. Move outdoors and try again.", null);
+      return;
+    }
+    // We have a fix but it never met the accuracy threshold. Reject and tell user why.
+    document.getElementById(statId).innerHTML =
+      '<div class="pill pill-bad">🚫 Could not get an accurate GPS fix (best was ±' + bestFix.acc + 'm, need ≤' + GPS_MAX_ACCURACY + 'm).<br>' +
+      '<strong>What to do:</strong><br>' +
+      '① Turn ON your phone <strong>Location Services / GPS</strong> (Settings → Location)<br>' +
+      '② If you\'re on <strong>public/office Wi-Fi</strong>, this can pin you to a wrong place — turn Wi-Fi off briefly so GPS takes over<br>' +
+      '③ Step <strong>near a window or outside</strong> — GPS doesn\'t work well indoors<br>' +
+      '④ Make sure <strong>airplane mode is OFF</strong> and you\'re not using a VPN<br>' +
+      '⑤ Tap <strong>Verify Location</strong> again</div>';
+    document.getElementById(btnId).className = "gps-btn fail";
+    document.getElementById(iconId).textContent = "📡";
+    document.getElementById(txtId).textContent  = "Inaccurate fix — see tips below";
+  }, GPS_WATCH_DURATION);
 }
 
-function setGpsUI(dir, state, name, dist) {
+function setGpsUI(dir, state, name, dist, acc) {
   var btnId  = dir==="in" ? "gpsCiBtn"    : "gpsCoBtnEl";
   var iconId = dir==="in" ? "gpsCiIcon"   : "gpsCoIcon";
   var txtId  = dir==="in" ? "gpsCiTxt"    : "gpsCoTxt";
@@ -1823,14 +1924,16 @@ function setGpsUI(dir, state, name, dist) {
   var tx  = document.getElementById(txtId);
   var st  = document.getElementById(statId);
 
+  var accSuffix = (acc != null) ? ' <span style="font-size:.72rem;color:var(--ink3);font-weight:500">(±'+acc+'m)</span>' : '';
+
   if (state==="ok") {
     btn.className="gps-btn ok";
     ic.textContent="✅"; tx.textContent="Verified — "+dist+"m from "+name;
-    st.innerHTML='<div class="pill pill-ok">✅ Within range · '+dist+'m from site</div>';
+    st.innerHTML='<div class="pill pill-ok">✅ Within range · '+dist+'m from site'+accSuffix+'</div>';
   } else if (state==="fail") {
     btn.className="gps-btn fail";
     ic.textContent="🚫"; tx.textContent="Out of range — "+dist+"m (max "+GEOFENCE_M+"m)";
-    st.innerHTML='<div class="pill pill-bad">🚫 Too far from '+name+' · You are '+dist+'m away. Must be within '+GEOFENCE_M+'m.</div>';
+    st.innerHTML='<div class="pill pill-bad">🚫 Too far from '+name+' · You are '+dist+'m away. Must be within '+GEOFENCE_M+'m.'+accSuffix+'</div>';
   } else {
     btn.className="gps-btn fail";
     ic.textContent="❌"; tx.textContent="Try again";
@@ -2673,6 +2776,8 @@ function initLeaveForm() {
   var an = document.getElementById("leaveAttName"); if(an) an.textContent = "";
   var nd = document.getElementById("leaveNumDays"); if(nd) nd.value = "";
   var att = document.getElementById("leaveAttachment"); if(att) att.value = "";
+  var attc = document.getElementById("leaveAttCamera"); if(attc) attc.value = "";
+  var pw = document.getElementById("leaveAttPreviewWrap"); if(pw) pw.style.display = "none";
   var ra = document.getElementById("leaveReason"); if(ra) ra.value = "";
   var lf2 = document.getElementById("leaveFrom"); if(lf2) lf2.value = "";
   var lt3 = document.getElementById("leaveTo"); if(lt3) lt3.value = "";
@@ -2700,29 +2805,64 @@ function calcLeaveDays() {
   nd.style.color = "var(--blue)";
 }
 
-// ── Handle Attachment Upload ────────────────────────
+// ── Handle Attachment Upload (Camera or File picker) ──
 function handleLeaveAttachment(input) {
   var file = input.files[0]; if (!file) return;
   var MAX_BYTES = 700 * 1024; // 700 KB raw → ~940 KB base64, safe under Firestore 1MB limit
-  var wrap = document.getElementById("leaveAttWrap");
+
+  // Reset the OTHER input so re-selection works (e.g., camera then file)
+  var otherId = input.id === "leaveAttCamera" ? "leaveAttachment" : "leaveAttCamera";
+  var other = document.getElementById(otherId); if (other) other.value = "";
+
   if (file.size > MAX_BYTES) {
     var an = document.getElementById("leaveAttName");
     if (an) an.innerHTML = '<span style="color:var(--red)">❌ File too large ('
       + Math.round(file.size/1024) + ' KB). Max 700 KB.<br>'
-      + 'Compress at <a href="https://tinypng.com" target="_blank" style="color:var(--blue)">tinypng.com</a> then try again.</span>';
-    if (wrap) { wrap.style.borderColor="var(--red)"; wrap.style.background="#fef2f2"; }
-    input.value=""; leaveAttachment=null; return;
+      + 'Compress at <a href="https://tinypng.com" target="_blank" style="color:var(--blue)">tinypng.com</a>, or retake at lower resolution.</span>';
+    input.value=""; leaveAttachment=null;
+    var pw = document.getElementById("leaveAttPreviewWrap"); if (pw) pw.style.display="none";
+    return;
   }
-  if (wrap) { wrap.style.borderColor=""; wrap.style.background=""; }
+
   var reader = new FileReader();
   reader.onload = function(e) {
     leaveAttachment = { name: file.name, type: file.type, base64: e.target.result };
+
+    // Render preview
+    var pw   = document.getElementById("leaveAttPreviewWrap");
+    var img  = document.getElementById("leaveAttPreviewImg");
+    var icon = document.getElementById("leaveAttPreviewIcon");
+    var nm   = document.getElementById("leaveAttPreviewName");
+    var sz   = document.getElementById("leaveAttPreviewSize");
+    var isImg = file.type && file.type.indexOf("image/") === 0;
+    if (pw) pw.style.display = "block";
+    if (isImg && img) {
+      img.src = e.target.result;
+      img.style.display = "block";
+      if (icon) icon.style.display = "none";
+    } else {
+      if (img) img.style.display = "none";
+      if (icon) icon.style.display = "flex";
+    }
+    if (nm) nm.textContent = file.name + (input.id === "leaveAttCamera" ? "  📷" : "");
+    if (sz) sz.textContent = Math.round(file.size/1024) + " KB · " + (file.type||"unknown") + (input.id === "leaveAttCamera" ? " · taken just now" : "");
+
     var an = document.getElementById("leaveAttName");
-    if (an) an.innerHTML = '✅ <strong>' + file.name + '</strong> ('
-      + Math.round(file.size/1024) + ' KB) — ready to upload';
-    toast("📎 Attachment ready", "t-ok");
+    if (an) an.innerHTML = '✅ Ready to submit';
+    toast(input.id === "leaveAttCamera" ? "📷 Photo captured" : "📎 File selected", "t-ok");
   };
   reader.readAsDataURL(file);
+}
+
+// ── Clear chosen / captured attachment ──────────────────
+function clearLeaveAttachment() {
+  leaveAttachment = null;
+  ["leaveAttachment","leaveAttCamera"].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.value = "";
+  });
+  var pw = document.getElementById("leaveAttPreviewWrap"); if (pw) pw.style.display="none";
+  var an = document.getElementById("leaveAttName"); if (an) an.textContent = "";
+  toast("Attachment removed", "t-ok");
 }
 
 // ── Translate Firebase error codes to plain English ─
@@ -2783,9 +2923,16 @@ function submitLeave() {
 
   // ── Attachment is MANDATORY ──────────────────────
   if (!leaveAttachment || !leaveAttachment.base64) {
-    var wrap = document.getElementById("leaveAttWrap");
-    if (wrap) { wrap.style.borderColor="var(--red)"; wrap.style.background="#fef2f2"; setTimeout(function(){ wrap.style.borderColor=""; wrap.style.background=""; },3000); }
-    showLeaveError("📎 Supporting document is required.\n\nPlease upload your leave form, MC slip, or any supporting document.\n\nTip: You can photograph your physical form with your phone camera.");
+    // Flash both buttons red briefly so user knows where to look
+    var camBtn  = document.querySelector("label.leave-att-cam");
+    var fileBtn = document.querySelector("label.leave-att-file");
+    [camBtn, fileBtn].forEach(function(b){
+      if (!b) return;
+      var origBd = b.style.borderColor, origBg = b.style.background, origC = b.style.color;
+      b.style.borderColor="var(--red)"; b.style.background="#fef2f2"; b.style.color="#b91c1c";
+      setTimeout(function(){ b.style.borderColor=origBd; b.style.background=origBg; b.style.color=origC; }, 3000);
+    });
+    showLeaveError("📎 Supporting document is required.\n\nTap 📷 Take Photo to capture your leave form / MC slip with your camera, or 📁 Choose File to upload from your gallery.");
     return;
   }
 
