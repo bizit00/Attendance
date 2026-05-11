@@ -6,7 +6,7 @@
 <!-- ✅ SECURITY: Content Security Policy — blocks XSS and unauthorized scripts -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com;
+  script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://cdn.jsdelivr.net https://unpkg.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src https://fonts.gstatic.com;
   connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com;
@@ -37,6 +37,32 @@ function loadEmailJSFallback() {
     // Re-init after fallback load
     if (typeof initEmailJS === "function") initEmailJS();
   };
+  document.head.appendChild(s);
+}
+</script>
+
+<!-- Chart.js for Attendance Analytics tab -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" onerror="loadChartJsFallback()"></script>
+<script>
+function loadChartJsFallback() {
+  console.warn("Chart.js: jsdelivr failed, trying unpkg fallback…");
+  var s = document.createElement("script");
+  s.src = "https://unpkg.com/chart.js@4.4.0/dist/chart.umd.js";
+  s.onerror = function(){ console.error("Chart.js: both CDNs failed."); };
+  s.onload  = function(){ console.log("Chart.js: loaded via unpkg fallback"); if (typeof renderAnalytics === "function") renderAnalytics(); };
+  document.head.appendChild(s);
+}
+</script>
+
+<!-- SheetJS (xlsx) for Excel export in Analytics tab -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="loadXlsxFallback()"></script>
+<script>
+function loadXlsxFallback() {
+  console.warn("SheetJS: jsdelivr failed, trying unpkg fallback…");
+  var s = document.createElement("script");
+  s.src = "https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js";
+  s.onerror = function(){ console.error("SheetJS: both CDNs failed — Excel export disabled."); };
+  s.onload  = function(){ console.log("SheetJS: loaded via unpkg fallback"); };
   document.head.appendChild(s);
 }
 </script>
@@ -258,6 +284,23 @@ tr:hover td{background:#fafdf8}
 
 /* Empty */
 .empty{text-align:center;padding:60px 20px;color:var(--ink3)}
+
+/* ── ANALYTICS TAB ── */
+.analytics-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.chart-card{background:var(--card);border-radius:var(--r2);padding:18px 20px;border:1px solid var(--border);box-shadow:var(--sh);margin-bottom:16px}
+.chart-card-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:12px;flex-wrap:wrap}
+.chart-card-title{font-weight:700;font-size:.95rem;color:var(--ink);margin-bottom:3px}
+.chart-card-sub{font-size:.72rem;color:var(--ink3);font-family:var(--mono);letter-spacing:.3px}
+.chart-canvas-wrap{position:relative;height:320px;width:100%}
+.analytics-grid .chart-canvas-wrap{height:240px}
+.chart-toggle{display:flex;gap:3px;background:#f3f4f6;border-radius:10px;padding:3px;flex-wrap:wrap}
+.chart-toggle button{padding:6px 12px;border-radius:7px;font-size:.75rem;font-weight:600;background:transparent;color:var(--ink3);font-family:var(--body);border:none;cursor:pointer;transition:all .18s;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.chart-toggle button.on{background:var(--ink);color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.chart-toggle button:hover:not(.on){background:rgba(0,0,0,.05);color:var(--ink2)}
+.chart-empty{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;color:var(--ink3);font-size:.85rem;gap:6px}
+.chart-empty-icon{font-size:2rem;opacity:.5}
+.an-live-badge{display:inline-flex;align-items:center;gap:5px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:20px;padding:3px 10px;font-size:.7rem;font-weight:700;letter-spacing:.4px}
+.an-live-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.5s ease-in-out infinite}
 .empty-icon{font-size:3rem;margin-bottom:12px}
 .empty-t{font-size:1rem;font-weight:700;color:var(--ink2);margin-bottom:6px}
 
@@ -576,6 +619,9 @@ tr.on-leave-row td{background:#f0f9ff!important}
   .dash-tab{font-size:.77rem;padding:6px 10px}
   .toolbar{gap:8px}
   .toolbar input,.toolbar select{font-size:.82rem}
+  .analytics-grid{grid-template-columns:1fr}
+  .chart-canvas-wrap{height:280px}
+  .analytics-grid .chart-canvas-wrap{height:220px}
 }
 @media(max-width:768px){
   .topbar{padding:10px 14px;gap:8px}
@@ -972,6 +1018,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <div class="dash-tabs">
       <div class="dash-tab on" onclick="dTab('live',this)">Live Status</div>
       <div class="dash-tab" onclick="dTab('feed',this)">Activity Feed</div>
+      <div class="dash-tab" onclick="dTab('analytics',this)">📊 Analytics</div>
       <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">🗓️ Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('device',this)">🔒 Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span></div>
       <div class="dash-tab" onclick="dTab('accounts',this)">👷 Eng Accounts</div>
@@ -1035,6 +1082,113 @@ tr.on-leave-row td{background:#f0f9ff!important}
         </div>
         <div id="feedList"><div class="empty"><div class="empty-icon">⏳</div><div class="empty-t">No activity yet</div></div></div>
       </div>
+    </div>
+
+    <!-- ATTENDANCE ANALYTICS TAB -->
+    <div id="dTab-analytics" style="display:none">
+
+      <!-- Filter toolbar -->
+      <div class="toolbar">
+        <select id="anSite" onchange="renderAnalytics()" title="Filter by site">
+          <option value="">🏢 All Sites</option>
+        </select>
+        <input type="date" id="anDateFrom" onchange="renderAnalytics()" title="From date" style="flex:0 0 150px"/>
+        <input type="date" id="anDateTo" onchange="renderAnalytics()" title="To date" style="flex:0 0 150px"/>
+        <select id="anGroupBy" onchange="renderAnalytics()" title="Group data by">
+          <option value="site">📍 Group by Site</option>
+          <option value="engineer">👷 Group by Engineer</option>
+          <option value="date">📅 Group by Date</option>
+          <option value="status">🚦 Group by Status</option>
+        </select>
+        <button class="tb-btn tb-pri" onclick="exportAnalyticsXLSX()" title="Download filtered dataset as Excel">⬇ Excel</button>
+        <button class="tb-btn tb-out" onclick="analyticsClearFilters()" title="Reset all filters">✕ Clear</button>
+      </div>
+
+      <!-- KPI cards -->
+      <div class="stats-grid">
+        <div class="stat g"><div class="stat-n" id="ans-checkins">0</div><div class="stat-l">Total Check-ins</div></div>
+        <div class="stat b"><div class="stat-n" id="ans-engineers">0</div><div class="stat-l">Unique Engineers</div></div>
+        <div class="stat o"><div class="stat-n" id="ans-avgdur">—</div><div class="stat-l">Avg Duration</div></div>
+        <div class="stat r"><div class="stat-n" id="ans-late">0%</div><div class="stat-l">Late Rate</div></div>
+      </div>
+
+      <!-- Main interactive chart -->
+      <div class="chart-card">
+        <div class="chart-card-hdr">
+          <div>
+            <div class="chart-card-title" id="anMainTitle">Attendance by Site</div>
+            <div class="chart-card-sub" id="anMainSub">All sites · All dates</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="an-live-badge" title="Charts update automatically when new check-ins arrive">LIVE</span>
+            <div class="chart-toggle" id="anChartToggle">
+              <button class="on" data-type="bar"           onclick="anSetChartType('bar')"          >📊 Column</button>
+              <button             data-type="horizontalBar" onclick="anSetChartType('horizontalBar')">📈 Bar</button>
+              <button             data-type="pie"           onclick="anSetChartType('pie')"          >🥧 Pie</button>
+              <button             data-type="doughnut"      onclick="anSetChartType('doughnut')"     >🍩 Doughnut</button>
+              <button             data-type="line"          onclick="anSetChartType('line')"         >📉 Line</button>
+              <button             data-type="polarArea"     onclick="anSetChartType('polarArea')"    >🎯 Polar</button>
+            </div>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="anMainChart"></canvas>
+          <div id="anMainEmpty" class="chart-empty" style="display:none;position:absolute;inset:0">
+            <div class="chart-empty-icon">📊</div>
+            <div>No data for the selected filters</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Secondary charts -->
+      <div class="analytics-grid">
+        <div class="chart-card" style="margin-bottom:0">
+          <div class="chart-card-hdr">
+            <div>
+              <div class="chart-card-title">Status Breakdown</div>
+              <div class="chart-card-sub">In · Out · Late · Overtime</div>
+            </div>
+          </div>
+          <div class="chart-canvas-wrap">
+            <canvas id="anStatusChart"></canvas>
+            <div id="anStatusEmpty" class="chart-empty" style="display:none;position:absolute;inset:0">
+              <div class="chart-empty-icon">🍩</div>
+              <div>No status data</div>
+            </div>
+          </div>
+        </div>
+        <div class="chart-card" style="margin-bottom:0">
+          <div class="chart-card-hdr">
+            <div>
+              <div class="chart-card-title">14-Day Check-in Trend</div>
+              <div class="chart-card-sub">Daily volume</div>
+            </div>
+          </div>
+          <div class="chart-canvas-wrap">
+            <canvas id="anTrendChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Aggregated data table -->
+      <div class="tbl-wrap" style="margin-top:16px">
+        <div class="tbl-hdr">
+          <span class="tbl-hdr-t">📋 Aggregated Breakdown</span>
+          <span class="tbl-count" id="anTblCount">0 rows</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr id="anTblHead"></tr></thead>
+            <tbody id="anTblBody"></tbody>
+          </table>
+        </div>
+        <div id="anTblEmpty" class="empty" style="display:none">
+          <div class="empty-icon">📊</div>
+          <div class="empty-t">No data matching filters</div>
+          <div>Try clearing filters or widening the date range</div>
+        </div>
+      </div>
+
     </div>
 
     <!-- LEAVE MANAGEMENT TAB -->
@@ -1105,7 +1259,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <div style="font-size:2rem;flex-shrink:0">🔒</div>
         <div>
           <div style="color:#fff;font-weight:800;font-size:1rem;margin-bottom:4px">Device–Engineer Binding</div>
-          <div style="color:#9ca3af;font-size:.83rem;line-height:1.6">Each engineer's phone generates a unique <strong style="color:#e5e7eb">Device ID</strong> on first use. It is saved with every check-in record. If one device is used to check in <strong style="color:var(--orange)">more than one engineer on the same date</strong>, it is automatically flagged as a suspected buddy-punch attempt.</div>
+          <div style="color:#9ca3af;font-size:.83rem;line-height:1.6">Each engineer's phone generates a hardware-stable <strong style="color:#e5e7eb">Hardware ID</strong> from GPU, screen, CPU and platform signals — the same physical device produces the <strong style="color:#e5e7eb">same Hardware ID across Chrome, Firefox and Safari</strong>. If one device is used to check in <strong style="color:var(--orange)">more than one engineer on the same date</strong> — even from different browsers — it is automatically flagged as a suspected buddy-punch attempt.</div>
         </div>
       </div>
 
@@ -2159,30 +2313,49 @@ function sanitize(str, maxLen) {
 // screen, CPU and memory signals — these are hardware-level, not browser-level,
 // so the same phone produces the same fingerprint in Chrome AND Firefox.
 var _atFpCache = null;
+var _atHwCache = null;
+
+// djb2 hash helper
+function _atDjb2(raw) {
+  var h = 5381;
+  for (var j = 0; j < raw.length; j++) {
+    h = ((h << 5) + h) + raw.charCodeAt(j);
+    h = h & h; // 32-bit
+  }
+  return Math.abs(h).toString(36) + Math.abs(raw.length).toString(36);
+}
 
 function computeFingerprint() {
   // Return cached value instantly if already computed this session
-  var sess = sessionStorage.getItem("_at_fp");
-  if (sess) { _atFpCache = sess; return Promise.resolve(sess); }
-  var stored = localStorage.getItem("_at_fp");
+  var sessFp = sessionStorage.getItem("_at_fp");
+  var sessHw = sessionStorage.getItem("_at_hw");
+  if (sessFp && sessHw) {
+    _atFpCache = sessFp;
+    _atHwCache = sessHw;
+    return Promise.resolve(sessFp);
+  }
+  var storedFp = localStorage.getItem("_at_fp");
+  var storedHw = localStorage.getItem("_at_hw");
 
   return new Promise(function(resolve) {
-    var parts = [];
+    // ── HARDWARE-STABLE PARTS — same across browsers on same physical device ──
+    // (screen, CPU, memory, platform, timezone, touch points, GPU vendor/renderer)
+    var hwParts = [];
 
     // 1. Screen & display — physical hardware properties
-    parts.push(screen.width + "x" + screen.height);
-    parts.push(screen.colorDepth);
-    parts.push((window.devicePixelRatio || 1).toFixed(2));
-    parts.push(screen.availWidth + "x" + screen.availHeight);
+    hwParts.push(screen.width + "x" + screen.height);
+    hwParts.push(screen.colorDepth);
+    hwParts.push((window.devicePixelRatio || 1).toFixed(2));
+    hwParts.push(screen.availWidth + "x" + screen.availHeight);
 
     // 2. Hardware concurrency & memory
-    parts.push(navigator.hardwareConcurrency || 0);
-    parts.push(navigator.deviceMemory || 0);
+    hwParts.push(navigator.hardwareConcurrency || 0);
+    hwParts.push(navigator.deviceMemory || 0);
 
     // 3. Platform, timezone, touch
-    parts.push(navigator.platform || "");
-    parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone || "");
-    parts.push(navigator.maxTouchPoints || 0);
+    hwParts.push(navigator.platform || "");
+    hwParts.push(Intl.DateTimeFormat().resolvedOptions().timeZone || "");
+    hwParts.push(navigator.maxTouchPoints || 0);
 
     // 4. WebGL GPU renderer — most hardware-specific signal available in browsers
     try {
@@ -2191,13 +2364,21 @@ function computeFingerprint() {
       if (gl) {
         var ext = gl.getExtension("WEBGL_debug_renderer_info");
         if (ext) {
-          parts.push(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)  || "");
-          parts.push(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)|| "");
+          hwParts.push(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)  || "");
+          hwParts.push(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)|| "");
         }
-        parts.push(gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0);
-        parts.push(gl.getParameter(gl.MAX_VERTEX_ATTRIBS) || 0);
+        hwParts.push(gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0);
+        hwParts.push(gl.getParameter(gl.MAX_VERTEX_ATTRIBS) || 0);
       }
-    } catch(e) { parts.push("no-webgl"); }
+    } catch(e) { hwParts.push("no-webgl"); }
+
+    // Hardware-stable ID — used for cross-browser buddy-punch detection
+    var hwId = "hw_" + _atDjb2(hwParts.join("|||"));
+
+    // ── BROWSER-SPECIFIC ENTROPY (canvas + audio) — added on top of hwParts ──
+    // These vary across browsers on the same device, so they are kept ONLY for
+    // the full fingerprint, not for buddy-punch matching.
+    var fpParts = hwParts.slice();
 
     // 5. Canvas rendering fingerprint — GPU affects sub-pixel rendering
     try {
@@ -2213,8 +2394,8 @@ function computeFingerprint() {
       cx.fillStyle = "rgba(102,200,0,0.8)";
       cx.font = "15px Times New Roman";
       cx.fillText("hw-bind", 170, 38);
-      parts.push(cv.toDataURL("image/png").slice(-80));
-    } catch(e) { parts.push("no-canvas"); }
+      fpParts.push(cv.toDataURL("image/png").slice(-80));
+    } catch(e) { fpParts.push("no-canvas"); }
 
     // 6. Audio fingerprint — DSP differences are hardware-dependent
     var audioPromise = new Promise(function(res) {
@@ -2240,22 +2421,17 @@ function computeFingerprint() {
     });
 
     audioPromise.then(function(audioVal) {
-      parts.push(audioVal);
+      fpParts.push(audioVal);
 
-      // djb2 hash over all collected signals
-      var raw  = parts.join("|||");
-      var hash = 5381;
-      for (var j = 0; j < raw.length; j++) {
-        hash = ((hash << 5) + hash) + raw.charCodeAt(j);
-        hash = hash & hash; // 32-bit
-      }
-      var fp = "fp_" + Math.abs(hash).toString(36) + Math.abs(raw.length).toString(36);
+      var fpId = "fp_" + _atDjb2(fpParts.join("|||"));
 
-      // If we had a stored fingerprint and it matches (same hardware), keep it for continuity
-      // Otherwise: first time on this hardware — store it
-      _atFpCache = stored || fp;
-      if (!stored) localStorage.setItem("_at_fp", _atFpCache);
+      // If we had stored values, keep them for continuity; otherwise store fresh
+      _atFpCache = storedFp || fpId;
+      _atHwCache = storedHw || hwId;
+      if (!storedFp) localStorage.setItem("_at_fp", _atFpCache);
+      if (!storedHw) localStorage.setItem("_at_hw", _atHwCache);
       sessionStorage.setItem("_at_fp", _atFpCache);
+      sessionStorage.setItem("_at_hw", _atHwCache);
       // Also update legacy key so old code paths still work
       localStorage.setItem("_at_device", _atFpCache);
       resolve(_atFpCache);
@@ -2271,6 +2447,15 @@ function getDeviceId() {
   // Fingerprint not yet computed — return a temporary placeholder; computeFingerprint() will overwrite
   var tmp = "tmp_" + Math.random().toString(36).slice(2);
   return tmp;
+}
+
+// Hardware-stable ID — same value across Chrome/Firefox/Safari on the same device.
+// Used by the Device Audit to detect cross-browser buddy-punch attempts.
+function getHwId() {
+  if (_atHwCache) return _atHwCache;
+  var s = sessionStorage.getItem("_at_hw") || localStorage.getItem("_at_hw");
+  if (s) { _atHwCache = s; return s; }
+  return "tmp_" + Math.random().toString(36).slice(2);
 }
 
 // Check if this device already checked in someone today
@@ -2351,6 +2536,7 @@ function doCheckin() {
         checkoutLat:null, checkoutLng:null, checkoutDist:null,
         status:"in", isLate:isLate, isOvertime:false, duration:null,
         deviceId: devId,
+        hwId: getHwId(),
         emailConflict: false,
         _source: "web", _userAgent: navigator.userAgent.slice(0, 100)
       };
@@ -2533,6 +2719,13 @@ function initDash() {
     WORK_SITES.forEach(function(s){ var o=document.createElement("option"); o.value=s.name; o.textContent=s.name; ffs.appendChild(o); });
   }
 
+  // populate site filter (analytics tab)
+  var ans = document.getElementById("anSite");
+  if (ans) {
+    ans.innerHTML = '<option value="">🏢 All Sites</option>';
+    WORK_SITES.forEach(function(s){ var o=document.createElement("option"); o.value=s.name; o.textContent=s.name; ans.appendChild(o); });
+  }
+
   if (fbOk && db) {
     if (fbUnsub) fbUnsub();
     fbUnsub = db.collection("attendance").orderBy("checkinTimestamp","desc")
@@ -2558,17 +2751,21 @@ function initDash() {
   }
 }
 
-function renderAll() { renderTable(); renderFeed(); updateStats(); updateDeviceBadge(); }
+function renderAll() { renderTable(); renderFeed(); updateStats(); updateDeviceBadge(); renderAnalytics(); }
 
 function updateDeviceBadge() {
-  // Quick pass to see if any suspicious devices exist — updates the tab badge without full render
+  // Quick pass to see if any suspicious devices exist — updates the tab badge without full render.
+  // Groups by hwId (hardware-stable) so the same physical phone shows up once even when
+  // used across multiple browsers; falls back to deviceId for legacy records.
   var suspicious = false;
-  var devDateEmps = {}; // "deviceId|date" -> Set of empIds
+  var devDateEmps = {}; // "key|date" -> { empId: true }
   allRecs.forEach(function(r){
-    if (!r.deviceId || !r.checkinDate) return;
-    var key = r.deviceId + "|" + r.checkinDate;
-    if (!devDateEmps[key]) devDateEmps[key] = {};
-    devDateEmps[key][r.empId] = true;
+    if (!r.checkinDate) return;
+    var key = r.hwId || r.deviceId;
+    if (!key) return;
+    var k = key + "|" + r.checkinDate;
+    if (!devDateEmps[k]) devDateEmps[k] = {};
+    devDateEmps[k][r.empId] = true;
   });
   Object.keys(devDateEmps).forEach(function(key){
     if (Object.keys(devDateEmps[key]).length > 1) suspicious = true;
@@ -2611,7 +2808,7 @@ function renderTable() {
     // Device cell — show short ID + flag if same device used by another engineer same day
     var devId = r.deviceId || "";
     var devShort = devId ? devId.slice(-8) : "—";
-    var isSuspicious = devId ? isBuddyPunch(devId, r.empId, r.checkinDate) : false;
+    var isSuspicious = (devId || r.hwId) ? isBuddyPunch(r, r.empId, r.checkinDate) : false;
     var devCell = devId
       ? '<span style="font-family:var(--mono);font-size:.72rem;background:#f3f4f6;padding:2px 6px;border-radius:4px;color:var(--ink2)" title="'+devId+'">…'+devShort+'</span>'
         + (isSuspicious ? ' <span class="bdg" style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;font-size:.68rem" title="Same device used by another engineer on this date">⚠ Flagged</span>' : '')
@@ -2713,14 +2910,15 @@ function refreshDash() {
 
 // ── Dashboard tabs ─────────────────────────────────
 function dTab(id, el) {
-  ["live","feed","leave","device","accounts","setup"].forEach(function(t){
+  ["live","feed","analytics","leave","device","accounts","setup"].forEach(function(t){
     var p = document.getElementById("dTab-"+t); if(p) p.style.display = t===id?"block":"none";
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
   if (el) el.classList.add("on");
-  if (id === "leave")    loadLeaves();
-  if (id === "device")   renderDeviceAudit();
-  if (id === "accounts") adminAccLoad();
+  if (id === "leave")     loadLeaves();
+  if (id === "device")    renderDeviceAudit();
+  if (id === "accounts")  adminAccLoad();
+  if (id === "analytics") renderAnalytics();
 }
 
 // ── CSV export ─────────────────────────────────────
@@ -2735,6 +2933,520 @@ function exportCSV() {
   a.download="attendance_"+new Date().toISOString().split("T")[0]+".csv"; a.click();
   toast("CSV exported","t-ok");
 }
+
+// ╔══════════════════════════════════════════════════════╗
+// ║  ATTENDANCE ANALYTICS MODULE                         ║
+// ║  • Live aggregation across all sites                 ║
+// ║  • Site filter + date range + group-by               ║
+// ║  • Toggleable chart types (Column/Bar/Pie/Doughnut/  ║
+// ║    Line/Polar)                                       ║
+// ║  • Excel (.xlsx) export of the filtered dataset      ║
+// ╚══════════════════════════════════════════════════════╝
+var _anChartType  = "bar";   // current main-chart type
+var _anMainChart  = null;
+var _anStatusChart= null;
+var _anTrendChart = null;
+
+// Convert a record into a YYYY-MM-DD string (independent of locale formatting)
+function _anIsoDate(r) {
+  if (r.checkinISO && typeof r.checkinISO === "string") return r.checkinISO.split("T")[0];
+  if (r.checkinTimestamp) {
+    try { return new Date(r.checkinTimestamp).toISOString().split("T")[0]; } catch(_){}
+  }
+  // Fallback: parse en-SG locale "DD/MM/YYYY"
+  if (r.checkinDate) {
+    var p = String(r.checkinDate).split("/");
+    if (p.length === 3) {
+      var dd = p[0].padStart(2,"0"), mm = p[1].padStart(2,"0"), yyyy = p[2].length === 2 ? "20"+p[2] : p[2];
+      return yyyy + "-" + mm + "-" + dd;
+    }
+  }
+  return null;
+}
+
+// Parse duration string ("8h 30m", "8:30", "8.5") to total minutes
+function _anParseDuration(s) {
+  if (!s) return 0;
+  s = String(s).trim();
+  var h = s.match(/(\d+)\s*h/i);
+  var m = s.match(/(\d+)\s*m/i);
+  if (h || m) return (h ? parseInt(h[1],10)*60 : 0) + (m ? parseInt(m[1],10) : 0);
+  var c = s.match(/^(\d+):(\d+)$/);
+  if (c) return parseInt(c[1],10)*60 + parseInt(c[2],10);
+  var n = parseFloat(s);
+  return isNaN(n) ? 0 : n * 60; // assume bare number = hours
+}
+
+function _anFmtDuration(mins) {
+  if (!mins || mins <= 0) return "—";
+  var h = Math.floor(mins/60);
+  var m = Math.round(mins%60);
+  return h + "h " + (m < 10 ? "0" : "") + m + "m";
+}
+
+// Filter the global allRecs by Analytics tab's selected filters
+function _anFiltered() {
+  var siteEl = document.getElementById("anSite");
+  var fromEl = document.getElementById("anDateFrom");
+  var toEl   = document.getElementById("anDateTo");
+  var site = siteEl ? siteEl.value : "";
+  var from = fromEl ? fromEl.value : "";
+  var to   = toEl   ? toEl.value   : "";
+  return allRecs.filter(function(r){
+    if (site && r.site !== site) return false;
+    var iso = _anIsoDate(r);
+    if (!iso) return false;
+    if (from && iso < from) return false;
+    if (to   && iso > to)   return false;
+    return true;
+  });
+}
+
+// Build aggregated groups from filtered rows
+function _anAggregate(rows, groupBy) {
+  var groups = {};
+  rows.forEach(function(r){
+    var key;
+    if (groupBy === "site")          key = r.site || "Unknown";
+    else if (groupBy === "engineer") key = (r.empId || "?") + " · " + (r.empName || "—");
+    else if (groupBy === "date")     key = _anIsoDate(r) || "—";
+    else if (groupBy === "status")   key = r.status === "in" ? "Checked In" : (r.status === "out" ? "Checked Out" : "Unknown");
+    else                             key = "—";
+
+    if (!groups[key]) groups[key] = { key:key, count:0, checkedIn:0, checkedOut:0, late:0, overtime:0, totalDur:0, durCount:0 };
+    var g = groups[key];
+    g.count++;
+    if (r.status === "in")  g.checkedIn++;
+    if (r.status === "out") g.checkedOut++;
+    if (r.isLate)           g.late++;
+    if (r.isOvertime)       g.overtime++;
+    var d = _anParseDuration(r.duration);
+    if (d > 0) { g.totalDur += d; g.durCount++; }
+  });
+  var arr = Object.keys(groups).map(function(k){
+    groups[k].avgDur = groups[k].durCount > 0 ? groups[k].totalDur / groups[k].durCount : 0;
+    return groups[k];
+  });
+  // Sort: date ascending (chronological), everything else by count desc
+  if (groupBy === "date") arr.sort(function(a,b){ return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; });
+  else                    arr.sort(function(a,b){ return b.count - a.count; });
+  return arr;
+}
+
+// Generate a color palette of N colors
+function _anColors(n) {
+  var palette = ["#00c896","#0077ff","#f59e0b","#ff3b5c","#7e22ce","#06b6d4","#84cc16","#ec4899","#14b8a6","#a855f7","#f97316","#3b82f6","#22c55e","#eab308","#ef4444"];
+  var out = [];
+  for (var i = 0; i < n; i++) out.push(palette[i % palette.length]);
+  return out;
+}
+
+// ── Public actions wired to UI ──────────────────────
+function anSetChartType(type) {
+  _anChartType = type;
+  document.querySelectorAll("#anChartToggle button").forEach(function(b){
+    b.classList.toggle("on", b.getAttribute("data-type") === type);
+  });
+  renderAnalytics();
+}
+
+function analyticsClearFilters() {
+  var s = document.getElementById("anSite");      if (s) s.value = "";
+  var f = document.getElementById("anDateFrom");  if (f) f.value = "";
+  var t = document.getElementById("anDateTo");    if (t) t.value = "";
+  var g = document.getElementById("anGroupBy");   if (g) g.value = "site";
+  renderAnalytics();
+}
+
+// ── Main render — called by renderAll() (live) + on filter change ──
+function renderAnalytics() {
+  var panel = document.getElementById("dTab-analytics");
+  if (!panel) return; // tab not in DOM yet
+
+  // KPI updates work even if Chart.js hasn't loaded yet
+  var rows    = _anFiltered();
+  var groupBy = (document.getElementById("anGroupBy") || {}).value || "site";
+  var agg     = _anAggregate(rows, groupBy);
+
+  var uniq = {}, late = 0, totalDur = 0, durCount = 0;
+  rows.forEach(function(r){
+    if (r.empId) uniq[r.empId] = true;
+    if (r.isLate) late++;
+    var d = _anParseDuration(r.duration);
+    if (d > 0) { totalDur += d; durCount++; }
+  });
+  var setText = function(id, val){ var el = document.getElementById(id); if (el) el.textContent = val; };
+  setText("ans-checkins",  rows.length);
+  setText("ans-engineers", Object.keys(uniq).length);
+  setText("ans-avgdur",    durCount ? _anFmtDuration(totalDur/durCount) : "—");
+  setText("ans-late",      rows.length ? Math.round(late/rows.length*100) + "%" : "0%");
+
+  // Header text
+  var labels = { site:"Site", engineer:"Engineer", date:"Date", status:"Status" };
+  setText("anMainTitle", "Attendance by " + labels[groupBy]);
+  var siteFilter = (document.getElementById("anSite")||{}).value || "";
+  var df = (document.getElementById("anDateFrom")||{}).value || "";
+  var dt = (document.getElementById("anDateTo")||{}).value     || "";
+  var sub = [];
+  sub.push(siteFilter || "All sites");
+  sub.push((df || dt) ? ((df || "…") + " → " + (dt || "…")) : "All dates");
+  sub.push(rows.length + " record" + (rows.length !== 1 ? "s" : ""));
+  setText("anMainSub", sub.join("  ·  "));
+
+  // Render aggregated table (works without Chart.js)
+  _anRenderTable(agg, groupBy);
+
+  // Charts need Chart.js
+  if (typeof Chart === "undefined") {
+    // Mark canvases as "waiting" without crashing
+    return;
+  }
+  _anRenderMainChart(agg, groupBy);
+  _anRenderStatusChart(rows);
+  _anRenderTrendChart(rows);
+}
+
+// ── Main chart ──────────────────────────────────────
+function _anRenderMainChart(agg, groupBy) {
+  var canvas  = document.getElementById("anMainChart");
+  var emptyEl = document.getElementById("anMainEmpty");
+  if (!canvas) return;
+
+  if (_anMainChart) { _anMainChart.destroy(); _anMainChart = null; }
+
+  if (!agg.length) {
+    if (emptyEl) emptyEl.style.display = "flex";
+    canvas.style.display = "none";
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = "none";
+  canvas.style.display = "block";
+
+  var labels = agg.map(function(g){
+    return groupBy === "engineer" && g.key.length > 32 ? g.key.slice(0,30) + "…" : g.key;
+  });
+  var data   = agg.map(function(g){ return g.count; });
+  var colors = _anColors(agg.length);
+
+  var actualType  = _anChartType;
+  var isHorizontal = actualType === "horizontalBar";
+  if (isHorizontal) actualType = "bar";
+
+  var multiColor = (actualType === "pie" || actualType === "doughnut" || actualType === "polarArea");
+
+  var ds = {
+    label: "Check-ins",
+    data: data,
+    backgroundColor: multiColor ? colors : (actualType === "line" ? "rgba(0,119,255,.12)" : "rgba(0,119,255,.65)"),
+    borderColor:     multiColor ? "#ffffff" : "#0077ff",
+    borderWidth:     multiColor ? 2 : 1.5,
+    tension: 0.35,
+    fill: actualType === "line",
+    pointBackgroundColor: "#0077ff",
+    pointBorderColor: "#fff",
+    pointBorderWidth: 2,
+    pointRadius: actualType === "line" ? 4 : 0,
+    pointHoverRadius: 6
+  };
+
+  _anMainChart = new Chart(canvas, {
+    type: actualType,
+    data: { labels: labels, datasets: [ds] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: isHorizontal ? "y" : "x",
+      animation: { duration: 450 },
+      plugins: {
+        legend: {
+          display: multiColor,
+          position: "right",
+          labels: { font: { family: "'DM Sans',sans-serif", size: 11 }, boxWidth: 12, padding: 8 }
+        },
+        tooltip: {
+          backgroundColor: "rgba(13,17,23,.95)",
+          titleFont: { family: "'DM Sans',sans-serif", size: 12, weight: "700" },
+          bodyFont:  { family: "'DM Sans',sans-serif", size: 12 },
+          padding: 10,
+          callbacks: {
+            title: function(ctx){ return ctx[0] ? agg[ctx[0].dataIndex].key : ""; },
+            label: function(ctx){
+              var g = agg[ctx.dataIndex];
+              return [
+                "Total check-ins: " + g.count,
+                "Checked in: "  + g.checkedIn,
+                "Checked out: " + g.checkedOut,
+                "Late: "        + g.late,
+                "Avg duration: "+ _anFmtDuration(g.avgDur)
+              ];
+            }
+          }
+        }
+      },
+      scales: multiColor ? {} : {
+        x: { grid: { display: !isHorizontal, color: "#f3f4f6" }, ticks: { font: { size: 10 }, autoSkip: true, maxRotation: isHorizontal ? 0 : 35, minRotation: 0 } },
+        y: { grid: { color: "#f3f4f6" }, beginAtZero: true, ticks: { font: { size: 10 }, precision: 0 } }
+      }
+    }
+  });
+}
+
+// ── Status doughnut ─────────────────────────────────
+function _anRenderStatusChart(rows) {
+  var canvas  = document.getElementById("anStatusChart");
+  var emptyEl = document.getElementById("anStatusEmpty");
+  if (!canvas) return;
+
+  if (_anStatusChart) { _anStatusChart.destroy(); _anStatusChart = null; }
+
+  var ci = 0, co = 0, late = 0, ot = 0;
+  rows.forEach(function(r){
+    if (r.status === "in")  ci++;
+    if (r.status === "out") co++;
+    if (r.isLate)           late++;
+    if (r.isOvertime)       ot++;
+  });
+
+  if (!rows.length) {
+    if (emptyEl) emptyEl.style.display = "flex";
+    canvas.style.display = "none";
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = "none";
+  canvas.style.display = "block";
+
+  _anStatusChart = new Chart(canvas, {
+    type: "doughnut",
+    data: {
+      labels: ["Checked In","Checked Out","Late","Overtime"],
+      datasets: [{
+        data: [ci, co, late, ot],
+        backgroundColor: ["#00c896","#ff3b5c","#f59e0b","#7e22ce"],
+        borderColor: "#ffffff",
+        borderWidth: 2,
+        hoverOffset: 6
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: "55%",
+      animation: { duration: 450 },
+      plugins: {
+        legend: { position: "bottom", labels: { font: { family: "'DM Sans',sans-serif", size: 11 }, boxWidth: 12, padding: 8 } },
+        tooltip: { backgroundColor: "rgba(13,17,23,.95)", padding: 10 }
+      }
+    }
+  });
+}
+
+// ── 14-day trend line ───────────────────────────────
+function _anRenderTrendChart(rows) {
+  var canvas = document.getElementById("anTrendChart");
+  if (!canvas) return;
+
+  if (_anTrendChart) { _anTrendChart.destroy(); _anTrendChart = null; }
+
+  // Build last 14 days (inclusive of today)
+  var today = new Date(); today.setHours(0,0,0,0);
+  var days = [], counts = {};
+  for (var i = 13; i >= 0; i--) {
+    var d = new Date(today);
+    d.setDate(d.getDate() - i);
+    var iso = d.toISOString().split("T")[0];
+    days.push(iso);
+    counts[iso] = 0;
+  }
+  rows.forEach(function(r){
+    var iso = _anIsoDate(r);
+    if (iso && counts.hasOwnProperty(iso)) counts[iso]++;
+  });
+
+  _anTrendChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: days.map(function(d){ return d.slice(5); }), // MM-DD
+      datasets: [{
+        label: "Check-ins",
+        data: days.map(function(d){ return counts[d]; }),
+        backgroundColor: "rgba(0,200,150,.16)",
+        borderColor: "#00c896",
+        borderWidth: 2.5,
+        tension: 0.4,
+        fill: true,
+        pointBackgroundColor: "#00c896",
+        pointBorderColor: "#ffffff",
+        pointBorderWidth: 2,
+        pointRadius: 3.5,
+        pointHoverRadius: 6
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 450 },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: "rgba(13,17,23,.95)", padding: 10, callbacks: { title: function(ctx){ return days[ctx[0].dataIndex]; } } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: { grid: { color: "#f3f4f6" }, beginAtZero: true, ticks: { font: { size: 10 }, precision: 0 } }
+      }
+    }
+  });
+}
+
+// ── Aggregated data table ───────────────────────────
+function _anRenderTable(agg, groupBy) {
+  var head  = document.getElementById("anTblHead");
+  var body  = document.getElementById("anTblBody");
+  var empty = document.getElementById("anTblEmpty");
+  var count = document.getElementById("anTblCount");
+  if (!head || !body) return;
+
+  var labels = { site:"Site", engineer:"Engineer", date:"Date", status:"Status" };
+  head.innerHTML =
+    "<th>" + labels[groupBy] + "</th>" +
+    "<th style='text-align:right'>Total</th>" +
+    "<th style='text-align:right'>In</th>" +
+    "<th style='text-align:right'>Out</th>" +
+    "<th style='text-align:right'>Late</th>" +
+    "<th style='text-align:right'>Overtime</th>" +
+    "<th style='text-align:right'>Avg Duration</th>";
+
+  if (count) count.textContent = agg.length + " row" + (agg.length !== 1 ? "s" : "");
+
+  if (!agg.length) {
+    body.innerHTML = "";
+    if (empty) empty.style.display = "block";
+    return;
+  }
+  if (empty) empty.style.display = "none";
+
+  body.innerHTML = agg.map(function(g){
+    return "<tr>" +
+      "<td>" + sanitizeHtml(g.key) + "</td>" +
+      "<td style='text-align:right;font-family:var(--mono);font-weight:700'>" + g.count + "</td>" +
+      "<td style='text-align:right;font-family:var(--mono)'>"  + (g.checkedIn  ? '<span class="bdg bdg-in">'   + g.checkedIn  + '</span>' : '<span style="color:var(--ink3)">—</span>') + "</td>" +
+      "<td style='text-align:right;font-family:var(--mono)'>"  + (g.checkedOut ? '<span class="bdg bdg-out">'  + g.checkedOut + '</span>' : '<span style="color:var(--ink3)">—</span>') + "</td>" +
+      "<td style='text-align:right;font-family:var(--mono)'>"  + (g.late      ? '<span class="bdg bdg-late">' + g.late      + '</span>' : '<span style="color:var(--ink3)">—</span>') + "</td>" +
+      "<td style='text-align:right;font-family:var(--mono)'>"  + (g.overtime  ? '<span class="bdg bdg-ot">'   + g.overtime  + '</span>' : '<span style="color:var(--ink3)">—</span>') + "</td>" +
+      "<td style='text-align:right;font-family:var(--mono);font-size:.8rem;color:var(--ink2)'>" + _anFmtDuration(g.avgDur) + "</td>" +
+    "</tr>";
+  }).join("");
+}
+
+// ── Excel (.xlsx) export of the filtered dataset ────
+function exportAnalyticsXLSX() {
+  if (typeof XLSX === "undefined") {
+    toast("📊 Excel library still loading — try again in a moment", "t-err");
+    return;
+  }
+
+  var rows    = _anFiltered();
+  var groupBy = (document.getElementById("anGroupBy") || {}).value || "site";
+  var agg     = _anAggregate(rows, groupBy);
+
+  if (!rows.length) { toast("No data to export for current filters", "t-err"); return; }
+
+  var labels = { site:"Site", engineer:"Engineer", date:"Date", status:"Status" };
+
+  // ── Sheet 1: Summary KPIs ────────────────────────
+  var uniq = {}, late = 0, ot = 0, totalDur = 0, durCount = 0;
+  rows.forEach(function(r){
+    if (r.empId) uniq[r.empId] = true;
+    if (r.isLate)     late++;
+    if (r.isOvertime) ot++;
+    var d = _anParseDuration(r.duration);
+    if (d > 0) { totalDur += d; durCount++; }
+  });
+  var siteFilter = (document.getElementById("anSite")    ||{}).value || "";
+  var df         = (document.getElementById("anDateFrom")||{}).value || "";
+  var dt         = (document.getElementById("anDateTo")  ||{}).value || "";
+  var summary = [
+    { Metric: "Site Filter",       Value: siteFilter || "All Sites" },
+    { Metric: "Date From",         Value: df || "—" },
+    { Metric: "Date To",           Value: dt || "—" },
+    { Metric: "Grouped By",        Value: labels[groupBy] },
+    { Metric: "Total Check-ins",   Value: rows.length },
+    { Metric: "Unique Engineers",  Value: Object.keys(uniq).length },
+    { Metric: "Late Arrivals",     Value: late },
+    { Metric: "Late Rate",         Value: rows.length ? Math.round(late/rows.length*100) + "%" : "0%" },
+    { Metric: "Overtime Sessions", Value: ot },
+    { Metric: "Avg Duration",      Value: durCount ? _anFmtDuration(totalDur/durCount) : "—" },
+    { Metric: "Exported At",       Value: new Date().toLocaleString("en-SG") }
+  ];
+
+  // ── Sheet 2: Aggregated breakdown ────────────────
+  var aggSheet = agg.map(function(g){
+    var row = {};
+    row[labels[groupBy]] = g.key;
+    row["Total Check-ins"]  = g.count;
+    row["Checked In"]       = g.checkedIn;
+    row["Checked Out"]      = g.checkedOut;
+    row["Late Arrivals"]    = g.late;
+    row["Overtime"]         = g.overtime;
+    row["Avg Duration"]     = _anFmtDuration(g.avgDur);
+    row["Avg Duration (m)"] = g.durCount ? Math.round(g.avgDur) : 0;
+    return row;
+  });
+
+  // ── Sheet 3: Raw filtered records ────────────────
+  var rawSheet = rows.map(function(r){
+    return {
+      "Engineer ID":      r.empId   || "",
+      "Name":             r.empName || "",
+      "Email":            r.empEmail|| "",
+      "Site":             r.site    || "",
+      "Date":             _anIsoDate(r) || r.checkinDate || "",
+      "Check-In Time":    r.checkinTime  || "",
+      "Check-Out Time":   r.checkoutTime || "",
+      "Duration":         r.duration     || "",
+      "Status":           r.status === "in" ? "Checked In" : (r.status === "out" ? "Checked Out" : ""),
+      "Late":             r.isLate     ? "Yes" : "No",
+      "Overtime":         r.isOvertime ? "Yes" : "No",
+      "Check-In Lat":     r.checkinLat  != null ? r.checkinLat  : "",
+      "Check-In Lng":     r.checkinLng  != null ? r.checkinLng  : "",
+      "Check-In Dist(m)": r.checkinDist != null ? r.checkinDist : "",
+      "Check-Out Lat":    r.checkoutLat != null ? r.checkoutLat : "",
+      "Check-Out Lng":    r.checkoutLng != null ? r.checkoutLng : "",
+      "Check-Out Dist(m)":r.checkoutDist!= null ? r.checkoutDist: ""
+    };
+  });
+
+  var wb = XLSX.utils.book_new();
+  var ws1 = XLSX.utils.json_to_sheet(summary);
+  var ws2 = XLSX.utils.json_to_sheet(aggSheet);
+  var ws3 = XLSX.utils.json_to_sheet(rawSheet);
+
+  // Try to set sensible column widths
+  function autoWidth(ws, data) {
+    if (!data.length) return;
+    var keys = Object.keys(data[0]);
+    ws["!cols"] = keys.map(function(k){
+      var maxLen = k.length;
+      data.forEach(function(row){
+        var v = row[k] == null ? "" : String(row[k]);
+        if (v.length > maxLen) maxLen = v.length;
+      });
+      return { wch: Math.min(maxLen + 2, 40) };
+    });
+  }
+  autoWidth(ws1, summary);
+  autoWidth(ws2, aggSheet);
+  autoWidth(ws3, rawSheet);
+
+  XLSX.utils.book_append_sheet(wb, ws1, "Summary");
+  // Sheet name must be ≤ 31 chars and not contain certain chars
+  var aggSheetName = ("By " + labels[groupBy]).slice(0,31);
+  XLSX.utils.book_append_sheet(wb, ws2, aggSheetName);
+  XLSX.utils.book_append_sheet(wb, ws3, "Raw Records");
+
+  var stamp = new Date().toISOString().split("T")[0];
+  var fname = "attendance_analytics_" + stamp + ".xlsx";
+  XLSX.writeFile(wb, fname);
+  toast("📊 Excel exported · " + rows.length + " records", "t-ok");
+}
+// ╚══════════════════════════════════════════════════════╝
 
 // ── Toast ──────────────────────────────────────────
 function toast(msg, cls) {
@@ -3711,24 +4423,40 @@ function closeLeaveAttModal() {
 }
 
 // ── Device Audit ────────────────────────────────────
-// Returns true if the given deviceId was used by a DIFFERENT empId on the same date
-function isBuddyPunch(deviceId, empId, date) {
-  if (!deviceId || !date) return false;
+// Returns true if the given device was used by a DIFFERENT empId on the same date.
+// Matching uses hwId (hardware-stable, cross-browser). Falls back to deviceId for
+// records created before the hwId field existed.
+function isBuddyPunch(record, empId, date) {
+  if (!record || !date) return false;
+  // Allow either a record object or a raw deviceId string for legacy callers
+  var hw  = (typeof record === "object") ? (record.hwId || "") : "";
+  var dev = (typeof record === "object") ? (record.deviceId || "") : record;
+  if (!hw && !dev) return false;
   return allRecs.some(function(r){
-    return r.deviceId === deviceId && r.empId !== empId && r.checkinDate === date;
+    if (r.empId === empId) return false;
+    if (r.checkinDate !== date) return false;
+    if (hw && r.hwId && r.hwId === hw) return true;       // cross-browser match
+    if (dev && r.deviceId && r.deviceId === dev) return true; // legacy match
+    return false;
   });
 }
 
 function renderDeviceAudit() {
-  // Build a map: deviceId → { engineers: Set, records: [], lastCheckin, lastDate }
+  // Group by hwId (hardware-stable, cross-browser) instead of deviceId.
+  // The same physical device used in Chrome and Firefox produces the same hwId
+  // but two different deviceIds — grouping by hwId catches that buddy-punch case.
+  // Records missing hwId (created before this field existed) fall back to deviceId.
   var devMap = {};
   allRecs.forEach(function(r){
-    if (!r.deviceId) return;
-    if (!devMap[r.deviceId]) devMap[r.deviceId] = { emps: {}, records: [], lastTs: 0 };
-    var d = devMap[r.deviceId];
+    var key = r.hwId || r.deviceId;
+    if (!key) return;
+    if (!devMap[key]) devMap[key] = { emps: {}, records: [], lastTs: 0, fpVariants: {} };
+    var d = devMap[key];
     if (!d.emps[r.empId]) d.emps[r.empId] = { name: r.empName, dates: [] };
     d.emps[r.empId].dates.push(r.checkinDate);
     d.records.push(r);
+    // Track every fp_xxx variant seen for this hardware (one per browser)
+    if (r.deviceId) d.fpVariants[r.deviceId] = true;
     if ((r.checkinTimestamp||0) > d.lastTs) { d.lastTs = r.checkinTimestamp||0; d.lastDate = r.checkinDate; d.lastEmp = r.empName; }
   });
 
@@ -3738,12 +4466,11 @@ function renderDeviceAudit() {
   var cnt   = document.getElementById("deviceCount");
   if (!body) return;
 
-  // Find suspicious devices: same device, different engineers on the SAME date
+  // Find suspicious devices: same hardware, different engineers on the SAME date
   var suspiciousDevices = devices.filter(function(devId){
     var d = devMap[devId];
     var empIds = Object.keys(d.emps);
     if (empIds.length < 2) return false;
-    // Check if any two engineers used this device on the same calendar date
     var dateToEmps = {};
     d.records.forEach(function(r){
       if (!dateToEmps[r.checkinDate]) dateToEmps[r.checkinDate] = new Set ? new Set() : {};
@@ -3768,8 +4495,6 @@ function renderDeviceAudit() {
         +'<div style="font-weight:800;color:#b91c1c;font-size:1rem;margin-bottom:10px">⚠️ ' + suspiciousDevices.length + ' Suspected Buddy-Punch Device' + (suspiciousDevices.length>1?"s":"") + ' Detected</div>'
         + suspiciousDevices.map(function(devId){
           var d = devMap[devId];
-          var empIds = Object.keys(d.emps);
-          // Find the dates with multiple engineers
           var dateToEmps = {};
           d.records.forEach(function(r){
             if (!dateToEmps[r.checkinDate]) dateToEmps[r.checkinDate] = {};
@@ -3778,8 +4503,12 @@ function renderDeviceAudit() {
           var badDates = Object.keys(dateToEmps).filter(function(date){
             return Object.keys(dateToEmps[date]).length > 1;
           });
+          var variantCount = Object.keys(d.fpVariants).length;
+          var variantNote = variantCount > 1
+            ? ' <span style="font-size:.7rem;color:#7c2d12;background:#fed7aa;padding:1px 6px;border-radius:4px;margin-left:4px">' + variantCount + ' browsers</span>'
+            : '';
           return '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;border:1px solid #fca5a5">'
-            +'<div style="font-family:var(--mono);font-size:.75rem;color:#6b7280;margin-bottom:6px">Device: …' + devId.slice(-12) + '</div>'
+            +'<div style="font-family:var(--mono);font-size:.75rem;color:#6b7280;margin-bottom:6px">Hardware: …' + devId.slice(-12) + variantNote + '</div>'
             + badDates.map(function(date){
               var emps = Object.keys(dateToEmps[date]).map(function(eid){
                 return '<strong>' + eid + '</strong> (' + dateToEmps[date][eid] + ')';
@@ -3829,9 +4558,21 @@ function renderDeviceAudit() {
       ? '<span class="bdg" style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5">⚠️ Buddy Punch Suspected</span>'
       : '<span class="bdg" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac">✅ Clean</span>';
 
+    // Show hardware ID prominently; list browser-variant fingerprints underneath
+    var fpList = Object.keys(d.fpVariants);
+    var variantHtml = fpList.length > 1
+      ? '<div style="font-size:.62rem;color:#9ca3af;margin-top:4px">' + fpList.length + ' browser variant' + (fpList.length>1?"s":"") + ': '
+        + fpList.map(function(fp){ return '<span style="font-family:var(--mono);background:#f9fafb;padding:0 4px;border-radius:3px;margin-right:2px">…'+fp.slice(-6)+'</span>'; }).join("")
+        + '</div>'
+      : (fpList.length === 1
+          ? '<div style="font-size:.62rem;color:#d1d5db;margin-top:4px;font-family:var(--mono);word-break:break-all">'+fpList[0]+'</div>'
+          : '');
+
     return '<tr' + (isSus ? ' style="background:#fff5f5"':'') + '>'
-      +'<td style="font-family:var(--mono);font-size:.75rem;color:var(--ink3);max-width:120px">…'+devId.slice(-16)
-        +'<br><span style="font-size:.65rem;word-break:break-all;color:#d1d5db">'+devId+'</span></td>'
+      +'<td style="font-family:var(--mono);font-size:.75rem;color:var(--ink3);max-width:140px">…'+devId.slice(-16)
+        +'<br><span style="font-size:.65rem;word-break:break-all;color:#d1d5db">'+devId+'</span>'
+        + variantHtml
+        +'</td>'
       +'<td>'+empList+'</td>'
       +'<td style="font-size:.78rem;color:var(--ink3)">'+(d.lastDate||"—")+'<br><span style="font-size:.72rem">'+d.lastEmp+'</span></td>'
       +'<td><span class="days-badge">'+d.records.length+'</span></td>'
@@ -5379,7 +6120,11 @@ function adminAccConfirmResetDev() {
     if (sess && sess.empEmail && sess.empEmail.toLowerCase() === emailKey) {
       localStorage.removeItem("_at_fp");
       sessionStorage.removeItem("_at_fp");
+      localStorage.removeItem("_at_hw");
+      sessionStorage.removeItem("_at_hw");
+      localStorage.removeItem("_at_device");
       _atFpCache = null;
+      _atHwCache = null;
     }
     _accResetKey = null;
     resetBtn();
