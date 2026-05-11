@@ -301,6 +301,36 @@ tr:hover td{background:#fafdf8}
 .chart-empty-icon{font-size:2rem;opacity:.5}
 .an-live-badge{display:inline-flex;align-items:center;gap:5px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;border-radius:20px;padding:3px 10px;font-size:.7rem;font-weight:700;letter-spacing:.4px}
 .an-live-badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.5s ease-in-out infinite}
+
+/* ── MANPOWER GAP ── */
+.gap-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:linear-gradient(135deg,#fafaf8,#f7f6f3);border:1px solid var(--border);border-radius:var(--r2);padding:12px 16px;margin-bottom:16px}
+.gap-toolbar-lbl{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--ink3)}
+.gap-toolbar input[type=date]{padding:7px 11px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;background:#fff;color:var(--ink);font-family:var(--body)}
+.gap-toolbar input[type=date]:focus{border-color:var(--blue);outline:none}
+.gap-badge{display:inline-flex;align-items:center;gap:5px;border-radius:30px;padding:3px 11px;font-size:.78rem;font-weight:700;font-family:var(--mono);letter-spacing:.3px}
+.gap-surplus{background:#f0fdf4;color:#15803d;border:1px solid #86efac}
+.gap-deficit{background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5}
+.gap-ontarget{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
+.gap-noreq{background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db}
+.gap-mini-bar{height:8px;background:#f3f4f6;border-radius:4px;position:relative;overflow:hidden;margin-top:5px}
+.gap-mini-bar-fill{height:100%;border-radius:4px;transition:width .25s}
+.gap-mini-bar-target{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);border-radius:1px}
+
+/* Leave list inside analytics */
+.lv-item{display:grid;grid-template-columns:auto 1fr auto;gap:12px;padding:11px 14px;border-bottom:1px solid var(--border);align-items:center}
+.lv-item:last-child{border-bottom:none}
+.lv-item:hover{background:#fafdf8}
+.lv-name{font-weight:600;font-size:.88rem;color:var(--ink)}
+.lv-meta{font-size:.74rem;color:var(--ink3);margin-top:2px}
+.lv-days{font-family:var(--mono);font-size:.8rem;font-weight:700;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:8px;padding:4px 10px;white-space:nowrap}
+.lv-type-bdg{display:inline-block;padding:1px 8px;border-radius:20px;font-size:.7rem;font-weight:700;margin-right:6px}
+
+/* Manpower config modal — rows */
+.mp-row{display:grid;grid-template-columns:1fr 110px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.mp-row:last-child{border-bottom:none}
+.mp-row-name{font-size:.88rem;font-weight:600;color:var(--ink)}
+.mp-row-input{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.92rem;font-family:var(--mono);text-align:center;background:#fafaf8;font-weight:700;color:var(--ink)}
+.mp-row-input:focus{border-color:var(--blue);background:#fff;outline:none;box-shadow:0 0 0 3px rgba(0,119,255,.1)}
 .empty-icon{font-size:3rem;margin-bottom:12px}
 .empty-t{font-size:1rem;font-weight:700;color:var(--ink2);margin-bottom:6px}
 
@@ -1104,12 +1134,82 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <button class="tb-btn tb-out" onclick="analyticsClearFilters()" title="Reset all filters">✕ Clear</button>
       </div>
 
+      <!-- Manpower snapshot toolbar -->
+      <div class="gap-toolbar">
+        <span class="gap-toolbar-lbl">🗓️ Manpower Snapshot As Of</span>
+        <input type="date" id="anAsOfDate" onchange="renderAnalytics()" title="Pick any past, current, or future date"/>
+        <button class="tb-btn tb-out" onclick="anAsOfToday()" title="Jump back to today">Today</button>
+        <button class="tb-btn tb-out" onclick="anAsOfShift(-1)" title="Previous day">◀</button>
+        <button class="tb-btn tb-out" onclick="anAsOfShift(1)"  title="Next day">▶</button>
+        <span style="flex:1"></span>
+        <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()" title="Set required manpower target per site">⚙️ Configure Manpower</button>
+      </div>
+
       <!-- KPI cards -->
       <div class="stats-grid">
         <div class="stat g"><div class="stat-n" id="ans-checkins">0</div><div class="stat-l">Total Check-ins</div></div>
         <div class="stat b"><div class="stat-n" id="ans-engineers">0</div><div class="stat-l">Unique Engineers</div></div>
         <div class="stat o"><div class="stat-n" id="ans-avgdur">—</div><div class="stat-l">Avg Duration</div></div>
         <div class="stat r"><div class="stat-n" id="ans-late">0%</div><div class="stat-l">Late Rate</div></div>
+        <div class="stat o"><div class="stat-n" id="ans-onleave">0</div><div class="stat-l">👤 On Leave</div></div>
+        <div class="stat g"><div class="stat-n" id="ans-gap">—</div><div class="stat-l">⚖️ Resource Status</div></div>
+      </div>
+
+      <!-- Manpower Gap Analysis -->
+      <div class="chart-card">
+        <div class="chart-card-hdr">
+          <div>
+            <div class="chart-card-title">⚖️ Manpower Gap Analysis</div>
+            <div class="chart-card-sub" id="anGapSub">Available vs Required Manpower — as of today</div>
+          </div>
+          <span class="an-live-badge" title="Updates live as attendance and leave records change">LIVE</span>
+        </div>
+        <div class="chart-canvas-wrap" style="height:280px">
+          <canvas id="anGapChart"></canvas>
+          <div id="anGapEmpty" class="chart-empty" style="display:none;position:absolute;inset:0">
+            <div class="chart-empty-icon">⚖️</div>
+            <div id="anGapEmptyMsg">Set required manpower per site to see the gap analysis</div>
+            <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()" style="margin-top:10px">⚙️ Configure Manpower</button>
+          </div>
+        </div>
+
+        <!-- Per-site gap table -->
+        <div style="overflow-x:auto;margin-top:18px">
+          <table>
+            <thead><tr>
+              <th>Site</th>
+              <th style="text-align:right">Roster</th>
+              <th style="text-align:right">On Leave</th>
+              <th style="text-align:right">Available</th>
+              <th style="text-align:right">Required</th>
+              <th style="text-align:right">Gap</th>
+              <th>Status</th>
+            </tr></thead>
+            <tbody id="anGapTblBody"></tbody>
+          </table>
+        </div>
+        <div id="anGapTblEmpty" class="empty" style="display:none;padding:30px 20px">
+          <div class="empty-icon">⚖️</div>
+          <div class="empty-t">No site data yet</div>
+          <div>Once engineers have checked in at sites, the gap analysis appears here.</div>
+        </div>
+      </div>
+
+      <!-- Engineers on Leave detail -->
+      <div class="chart-card">
+        <div class="chart-card-hdr">
+          <div>
+            <div class="chart-card-title" id="anLeaveListTitle">👤 Engineers on Leave</div>
+            <div class="chart-card-sub" id="anLeaveListSub">As of today</div>
+          </div>
+          <span class="tbl-count" id="anLeaveListCount">0 on leave</span>
+        </div>
+        <div id="anLeaveList" style="margin-top:6px"></div>
+        <div id="anLeaveListEmpty" class="empty" style="display:none;padding:30px 20px">
+          <div class="empty-icon">✨</div>
+          <div class="empty-t">No engineers on leave</div>
+          <div>Everyone is available on the selected date.</div>
+        </div>
       </div>
 
       <!-- Main interactive chart -->
@@ -1567,7 +1667,7 @@ service cloud.firestore {
           <div class="gs-title">Step 7 — Set Firestore Security Rules — ALL Collections (🔒 Critical)</div>
           <div class="gs-body">
             <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:var(--r);padding:12px 14px;margin-bottom:12px;font-size:.83rem;color:#991b1b;line-height:1.7">
-              <strong>⚠️ If admin Edit / Delete / Reset-Devices buttons fail with "permission denied" or "Firebase write failed",</strong> it means the rules below are missing or incomplete. The app uses <strong>4 collections</strong> — <code>attendance</code>, <code>emailBindings</code>, <code>empBindings</code>, <code>leaveApplications</code> — and <strong>all of them need rules</strong>. Paste the entire block below, don't skip any.
+              <strong>⚠️ If admin Edit / Delete / Reset-Devices buttons fail with "permission denied" or "Firebase write failed",</strong> it means the rules below are missing or incomplete. The app uses <strong>5 collections</strong> — <code>attendance</code>, <code>emailBindings</code>, <code>empBindings</code>, <code>leaveApplications</code>, <code>manpowerConfig</code> — and <strong>all of them need rules</strong>. Paste the entire block below, don't skip any.
             </div>
             <p>In Firebase Console → <strong>Firestore Database</strong> → <strong>Rules</strong> tab, replace all existing rules with:</p>
             <pre id="step7Rules">rules_version = '2';
@@ -1627,6 +1727,15 @@ service cloud.firestore {
       // Only signed-in admin can update (approve/reject) or delete
       allow update, delete: if request.auth != null;
     }
+
+    // ── 4. Manpower config (required headcount per site) ──
+    // Used by the Attendance Analytics → Manpower Gap section.
+    match /manpowerConfig/{docId} {
+      // Anyone can read so the analytics tab loads even before admin login
+      allow read: if true;
+      // Only signed-in admin can write the targets
+      allow write: if request.auth != null;
+    }
   }
 }</pre>
             <button onclick="var t=document.getElementById('step7Rules');var r=document.createRange();r.selectNode(t);window.getSelection().removeAllRanges();window.getSelection().addRange(r);try{document.execCommand('copy');toast('✅ Rules copied!','t-ok');}catch(e){toast('Select + copy manually','t-err');}" style="margin-top:8px;padding:8px 16px;border-radius:var(--r);background:#0d1117;color:#e6edf3;border:none;font-size:.82rem;font-weight:600;cursor:pointer;font-family:var(--body)">📋 Copy All Rules</button>
@@ -1677,7 +1786,7 @@ service cloud.firestore {
         <div class="guide-step" style="margin-top:20px;border-left:4px solid var(--green)">
           <div class="gs-title">Step 10 — Verify All Collections (🩺 Troubleshooting)</div>
           <div class="gs-body">
-            <p style="margin-bottom:8px">Since <strong>Step 7</strong> now contains the <strong>complete</strong> rules block for all 4 collections (<code>attendance</code>, <code>emailBindings</code>, <code>empBindings</code>, <code>leaveApplications</code>), there's nothing extra to paste here. Use this checklist if anything misbehaves:</p>
+            <p style="margin-bottom:8px">Since <strong>Step 7</strong> now contains the <strong>complete</strong> rules block for all 5 collections (<code>attendance</code>, <code>emailBindings</code>, <code>empBindings</code>, <code>leaveApplications</code>, <code>manpowerConfig</code>), there's nothing extra to paste here. Use this checklist if anything misbehaves:</p>
             <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:var(--r);padding:12px 14px;font-size:.83rem;color:#15803d;line-height:1.9">
               <strong>✓ Symptom → Likely cause</strong><br>
               <strong>"Engineer Accounts" tab is empty</strong> → <code>emailBindings</code> read rule missing in Step 7. Re-paste the full block.<br>
@@ -1870,6 +1979,21 @@ service cloud.firestore {
 
 <!-- Toast -->
 <div id="toast"></div>
+
+<!-- ══ MANPOWER CONFIG MODAL ════════════════════════ -->
+<div id="manpowerConfigModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:520px">
+    <button class="modal-close" onclick="anCloseManpowerConfig()">✕</button>
+    <div class="modal-title">⚙️ Configure Required Manpower</div>
+    <div class="modal-sub">Set the target headcount for each site. Resource Status compares this against (Roster − On Leave) on the selected date.</div>
+    <div id="manpowerConfigRows" style="max-height:50vh;overflow-y:auto;padding:6px 2px;margin-top:6px"></div>
+    <div id="manpowerConfigStatus" style="font-size:.78rem;color:var(--ink3);margin-top:10px;font-family:var(--mono);min-height:18px"></div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="anCloseManpowerConfig()">Cancel</button>
+      <button class="modal-btn-confirm" onclick="anSaveManpowerConfig()">💾 Save Targets</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══ REJECT REASON MODAL ══════════════════════════ -->
 <div id="rejectModal" class="modal-overlay">
@@ -2726,6 +2850,16 @@ function initDash() {
     WORK_SITES.forEach(function(s){ var o=document.createElement("option"); o.value=s.name; o.textContent=s.name; ans.appendChild(o); });
   }
 
+  // Default the manpower as-of-date picker to today
+  var asOf = document.getElementById("anAsOfDate");
+  if (asOf && !asOf.value) asOf.value = new Date().toISOString().split("T")[0];
+
+  // Subscribe to manpower config so the gap analysis updates live
+  if (typeof _anSubscribeManpower === "function") _anSubscribeManpower();
+
+  // Load leaves automatically (used by the analytics tab even when the Leave Mgmt tab isn't open)
+  if (typeof loadLeaves === "function") loadLeaves();
+
   if (fbOk && db) {
     if (fbUnsub) fbUnsub();
     fbUnsub = db.collection("attendance").orderBy("checkinTimestamp","desc")
@@ -3063,6 +3197,10 @@ function renderAnalytics() {
   var panel = document.getElementById("dTab-analytics");
   if (!panel) return; // tab not in DOM yet
 
+  // Render the manpower & leave layer FIRST so its KPI cards are up to date
+  // even if Chart.js hasn't loaded yet.
+  _anRenderManpowerLayer();
+
   // KPI updates work even if Chart.js hasn't loaded yet
   var rows    = _anFiltered();
   var groupBy = (document.getElementById("anGroupBy") || {}).value || "site";
@@ -3362,10 +3500,12 @@ function exportAnalyticsXLSX() {
   var siteFilter = (document.getElementById("anSite")    ||{}).value || "";
   var df         = (document.getElementById("anDateFrom")||{}).value || "";
   var dt         = (document.getElementById("anDateTo")  ||{}).value || "";
+  var asOf       = (document.getElementById("anAsOfDate")||{}).value || new Date().toISOString().split("T")[0];
   var summary = [
     { Metric: "Site Filter",       Value: siteFilter || "All Sites" },
     { Metric: "Date From",         Value: df || "—" },
     { Metric: "Date To",           Value: dt || "—" },
+    { Metric: "Manpower As-Of",    Value: asOf },
     { Metric: "Grouped By",        Value: labels[groupBy] },
     { Metric: "Total Check-ins",   Value: rows.length },
     { Metric: "Unique Engineers",  Value: Object.keys(uniq).length },
@@ -3375,6 +3515,24 @@ function exportAnalyticsXLSX() {
     { Metric: "Avg Duration",      Value: durCount ? _anFmtDuration(totalDur/durCount) : "—" },
     { Metric: "Exported At",       Value: new Date().toLocaleString("en-SG") }
   ];
+
+  // Pull the manpower gap & leave snapshot for the as-of date
+  var gaps    = (typeof _anGapAnalysis === "function") ? _anGapAnalysis(asOf) : [];
+  var gapDisp = siteFilter ? gaps.filter(function(g){ return g.site === siteFilter; }) : gaps;
+  var leavesOnDate = (typeof _anLeavesOnDate === "function") ? _anLeavesOnDate(asOf, siteFilter || null) : [];
+
+  // Append manpower KPIs to the summary
+  var uniqLeave = {};
+  leavesOnDate.forEach(function(r){ if (r.empId) uniqLeave[r.empId] = true; });
+  var onLeaveCount = Object.keys(uniqLeave).length;
+  var configured   = gapDisp.filter(function(g){ return g.required != null; });
+  var totalGap     = configured.reduce(function(s,g){ return s + g.gap; }, 0);
+  summary.splice(7, 0,
+    { Metric: "Engineers On Leave (As-Of)", Value: onLeaveCount },
+    { Metric: "Net Resource Gap",           Value: configured.length ? ((totalGap > 0 ? "+" : "") + totalGap) : "—" },
+    { Metric: "Sites in Deficit",           Value: gapDisp.filter(function(g){ return g.status === "deficit"; }).length },
+    { Metric: "Sites in Surplus",           Value: gapDisp.filter(function(g){ return g.status === "surplus"; }).length }
+  );
 
   // ── Sheet 2: Aggregated breakdown ────────────────
   var aggSheet = agg.map(function(g){
@@ -3418,6 +3576,47 @@ function exportAnalyticsXLSX() {
   var ws2 = XLSX.utils.json_to_sheet(aggSheet);
   var ws3 = XLSX.utils.json_to_sheet(rawSheet);
 
+  // ── Sheet 4: Manpower Gap (as of selected date) ──
+  var gapSheet = gapDisp.map(function(g){
+    var statusLabel = g.status === "deficit"  ? "Lack of Resources" :
+                      g.status === "surplus"  ? "Extra Resources"   :
+                      g.status === "ontarget" ? "On Target"         : "Not Configured";
+    return {
+      "Site":               g.site,
+      "Roster (Total)":     g.roster,
+      "On Leave":           g.onLeave,
+      "Available":          g.available,
+      "Required":           g.required != null ? g.required : "",
+      "Gap":                g.required != null ? g.gap : "",
+      "Status":             statusLabel,
+      "As-Of Date":         asOf
+    };
+  });
+
+  // ── Sheet 5: Leave Snapshot (engineers on leave on as-of date) ──
+  var leaveSheet = leavesOnDate.map(function(r){
+    var totalDays = r.numDays || 0;
+    if (!totalDays && r.fromDate && r.toDate) {
+      totalDays = Math.round((new Date(r.toDate)-new Date(r.fromDate))/86400000) + 1;
+    }
+    var dayIdx = 0;
+    if (r.fromDate) dayIdx = Math.round((new Date(asOf)-new Date(r.fromDate))/86400000) + 1;
+    return {
+      "Engineer ID":   r.empId    || "",
+      "Name":          r.empName  || "",
+      "Email":         r.empEmail || "",
+      "Site":          r.site     || "",
+      "Leave Type":    r.leaveType|| "",
+      "From":          r.fromDate || "",
+      "To":            r.toDate   || "",
+      "Total Days":    totalDays  || "",
+      "Day of Leave":  totalDays  ? (dayIdx + " of " + totalDays) : "",
+      "Reason":        r.reason   || "",
+      "Applied On":    r.appliedDate || "",
+      "Decided By":    r.decidedBy   || ""
+    };
+  });
+
   // Try to set sensible column widths
   function autoWidth(ws, data) {
     if (!data.length) return;
@@ -3441,10 +3640,488 @@ function exportAnalyticsXLSX() {
   XLSX.utils.book_append_sheet(wb, ws2, aggSheetName);
   XLSX.utils.book_append_sheet(wb, ws3, "Raw Records");
 
+  // Always include the Manpower Gap sheet (even if empty, it acts as a placeholder)
+  var ws4 = XLSX.utils.json_to_sheet(gapSheet.length ? gapSheet : [{ Note: "No site data yet — engineers must check in or have leave records before gap analysis appears." }]);
+  autoWidth(ws4, gapSheet.length ? gapSheet : [{ Note: "x" }]);
+  XLSX.utils.book_append_sheet(wb, ws4, "Manpower Gap");
+
+  var ws5 = XLSX.utils.json_to_sheet(leaveSheet.length ? leaveSheet : [{ Note: "No engineers on approved leave on " + asOf }]);
+  autoWidth(ws5, leaveSheet.length ? leaveSheet : [{ Note: "x" }]);
+  XLSX.utils.book_append_sheet(wb, ws5, "Leave Snapshot");
+
   var stamp = new Date().toISOString().split("T")[0];
   var fname = "attendance_analytics_" + stamp + ".xlsx";
   XLSX.writeFile(wb, fname);
-  toast("📊 Excel exported · " + rows.length + " records", "t-ok");
+  toast("📊 Excel exported · " + rows.length + " records · 5 sheets", "t-ok");
+}
+// ╚══════════════════════════════════════════════════════╝
+
+// ╔══════════════════════════════════════════════════════╗
+// ║  MANPOWER & LEAVE GAP MODULE                         ║
+// ║  • Engineers on Leave (for any date)                 ║
+// ║  • Admin-configured Required Manpower per site       ║
+// ║  • Resource Gap = (Roster − Leave) − Required        ║
+// ║  • Live sync via Firestore + localStorage fallback   ║
+// ║  • Real-time chart, table, KPIs                      ║
+// ╚══════════════════════════════════════════════════════╝
+var _anManpower    = {};   // { siteName: targetCount }
+var _anGapChart    = null;
+var _fbManpowerUnsub = null;
+var _anManpowerLoaded = false;
+
+// ── Storage helpers ──────────────────────────────────
+function _anLoadManpowerLocal() {
+  try { _anManpower = JSON.parse(localStorage.getItem("at_manpower_v1") || "{}") || {}; }
+  catch(_) { _anManpower = {}; }
+}
+function _anSaveManpowerLocal() {
+  localStorage.setItem("at_manpower_v1", JSON.stringify(_anManpower));
+}
+
+// Subscribe to Firestore manpower config — called from initDash
+function _anSubscribeManpower() {
+  _anLoadManpowerLocal(); // immediate UI render with cached values
+
+  if (!fbOk || !db) {
+    _anManpowerLoaded = true;
+    if (typeof renderAnalytics === "function") renderAnalytics();
+    return;
+  }
+  if (_fbManpowerUnsub) _fbManpowerUnsub();
+  _fbManpowerUnsub = db.collection("manpowerConfig").doc("sites")
+    .onSnapshot(function(doc){
+      var data = doc && doc.exists ? doc.data() : null;
+      _anManpower = (data && data.sites && typeof data.sites === "object") ? data.sites : {};
+      _anSaveManpowerLocal();
+      _anManpowerLoaded = true;
+      if (typeof renderAnalytics === "function") renderAnalytics();
+    }, function(e){
+      console.warn("Manpower config snapshot error:", e && e.message);
+      _anManpowerLoaded = true;
+    });
+}
+
+// ── Leave helpers ────────────────────────────────────
+// Convert a leave record's fromDate / toDate (YYYY-MM-DD) to inclusive range check
+function _anLeaveCoversDate(leaveRec, isoDate) {
+  if (!leaveRec || !isoDate) return false;
+  if (leaveRec.status !== "approved") return false;
+  if (!leaveRec.fromDate || !leaveRec.toDate) return false;
+  return isoDate >= leaveRec.fromDate && isoDate <= leaveRec.toDate;
+}
+
+// All approved leaves covering the given date (optionally restricted to a site)
+function _anLeavesOnDate(isoDate, siteFilter) {
+  if (!Array.isArray(leaveRecs)) return [];
+  return leaveRecs.filter(function(r){
+    if (!_anLeaveCoversDate(r, isoDate)) return false;
+    if (siteFilter && r.site !== siteFilter) return false;
+    return true;
+  });
+}
+
+// Set of empIds on approved leave for the given date (optionally filtered to a site)
+function _anOnLeaveEmpIds(isoDate, siteFilter) {
+  var s = {};
+  _anLeavesOnDate(isoDate, siteFilter).forEach(function(r){ if (r.empId) s[r.empId] = true; });
+  return s;
+}
+
+// Build the roster (distinct empIds ever associated with a site).
+// Includes anyone who has checked in there OR has any leave (any status) for that site.
+function _anSiteRosters() {
+  var rosters = {};
+  WORK_SITES.forEach(function(s){ rosters[s.name] = {}; });
+  // From attendance records
+  (allRecs || []).forEach(function(r){
+    if (r.site && r.empId) {
+      if (!rosters[r.site]) rosters[r.site] = {};
+      rosters[r.site][r.empId] = true;
+    }
+  });
+  // From leave records (so engineers planned for a site but not yet checked in still count)
+  (leaveRecs || []).forEach(function(r){
+    if (r.site && r.empId && r.status !== "rejected" && r.status !== "cancelled") {
+      if (!rosters[r.site]) rosters[r.site] = {};
+      rosters[r.site][r.empId] = true;
+    }
+  });
+  return rosters;
+}
+
+// Build per-site gap analysis for a given date
+// Returns array sorted by deficit severity (worst first)
+function _anGapAnalysis(isoDate) {
+  var rosters = _anSiteRosters();
+  var siteNames = Object.keys(rosters);
+  // Also include sites in manpower config that aren't in WORK_SITES (defensive)
+  Object.keys(_anManpower || {}).forEach(function(s){ if (!rosters[s]) rosters[s] = {}; if (siteNames.indexOf(s) === -1) siteNames.push(s); });
+
+  return siteNames.map(function(site){
+    var rosterSet = rosters[site] || {};
+    var roster = Object.keys(rosterSet).length;
+    var onLeaveSet = _anOnLeaveEmpIds(isoDate, site);
+    // Only count "on leave" empIds that are part of this site's roster
+    var onLeave = 0;
+    Object.keys(onLeaveSet).forEach(function(id){ if (rosterSet[id]) onLeave++; });
+    var available = Math.max(0, roster - onLeave);
+    var required  = (_anManpower && _anManpower[site] != null) ? Number(_anManpower[site]) : null;
+    var gap = (required != null) ? (available - required) : null;
+    var status;
+    if (required == null || required === 0)            status = "noreq";       // not configured / zero
+    else if (gap > 0)                                  status = "surplus";
+    else if (gap < 0)                                  status = "deficit";
+    else                                               status = "ontarget";
+    return { site: site, roster: roster, onLeave: onLeave, available: available, required: required, gap: gap, status: status };
+  }).sort(function(a,b){
+    // Sites with required set first; within those, deficit first (most negative gap), then alphabetical
+    if ((a.required == null) !== (b.required == null)) return a.required == null ? 1 : -1;
+    if (a.required != null && b.required != null && a.gap !== b.gap) return a.gap - b.gap;
+    return a.site.localeCompare(b.site);
+  });
+}
+
+// ── As-of-date helpers ───────────────────────────────
+function _anGetAsOfDate() {
+  var el = document.getElementById("anAsOfDate");
+  var v = el ? el.value : "";
+  if (!v) v = new Date().toISOString().split("T")[0];
+  return v;
+}
+function anAsOfToday() {
+  var el = document.getElementById("anAsOfDate");
+  if (el) { el.value = new Date().toISOString().split("T")[0]; renderAnalytics(); }
+}
+function anAsOfShift(days) {
+  var el = document.getElementById("anAsOfDate");
+  if (!el) return;
+  var cur = el.value ? new Date(el.value + "T00:00:00") : new Date();
+  cur.setDate(cur.getDate() + days);
+  el.value = cur.toISOString().split("T")[0];
+  renderAnalytics();
+}
+
+// ── Render the gap chart + table + KPI updates ───────
+function renderManpowerGap() {
+  var isoDate = _anGetAsOfDate();
+  var gaps    = _anGapAnalysis(isoDate);
+
+  // Optionally restrict to current site filter
+  var siteFilter = (document.getElementById("anSite") || {}).value || "";
+  var displayGaps = siteFilter ? gaps.filter(function(g){ return g.site === siteFilter; }) : gaps;
+
+  // KPI: Engineers on leave (respects site filter)
+  var onLeaveAll = _anLeavesOnDate(isoDate, siteFilter || null);
+  var uniqLeave  = {};
+  onLeaveAll.forEach(function(r){ if (r.empId) uniqLeave[r.empId] = true; });
+  var onLeaveCount = Object.keys(uniqLeave).length;
+  var setText = function(id, val){ var el = document.getElementById(id); if (el) el.textContent = val; };
+  setText("ans-onleave", onLeaveCount);
+
+  // KPI: Resource Status — sum of gaps across configured sites (in display set)
+  var configured  = displayGaps.filter(function(g){ return g.required != null; });
+  var totalGap    = configured.reduce(function(s,g){ return s + g.gap; }, 0);
+  var anyDeficit  = configured.some(function(g){ return g.gap < 0; });
+  var gapEl = document.getElementById("ans-gap");
+  if (gapEl) {
+    if (!configured.length) {
+      gapEl.textContent = "—";
+      gapEl.style.color = "";
+    } else {
+      gapEl.textContent = (totalGap > 0 ? "+" : "") + totalGap;
+      gapEl.style.color = totalGap < 0 ? "var(--red)" : (totalGap > 0 ? "var(--green)" : "var(--blue)");
+    }
+  }
+  // Recolor the "Resource Status" KPI card border to reflect overall status
+  var gapCard = gapEl ? gapEl.closest(".stat") : null;
+  if (gapCard) {
+    gapCard.classList.remove("g","r","b","o");
+    if (!configured.length)        gapCard.classList.add("o");
+    else if (anyDeficit)           gapCard.classList.add("r");
+    else if (totalGap > 0)         gapCard.classList.add("g");
+    else                           gapCard.classList.add("b");
+  }
+
+  // Header subtitle
+  var humanDate = isoDate + (isoDate === new Date().toISOString().split("T")[0] ? "  (today)" : "");
+  setText("anGapSub", "Available vs Required Manpower — as of " + humanDate);
+  setText("anLeaveListSub", "As of " + humanDate);
+
+  // Render chart
+  _anRenderGapChart(displayGaps);
+
+  // Render the gap table
+  _anRenderGapTable(displayGaps);
+
+  // Render the leave list
+  _anRenderLeaveList(onLeaveAll, isoDate);
+}
+
+// ── Gap chart (grouped bar: Available vs Required per site) ──
+function _anRenderGapChart(gaps) {
+  var canvas  = document.getElementById("anGapChart");
+  var emptyEl = document.getElementById("anGapEmpty");
+  var emptyMsg= document.getElementById("anGapEmptyMsg");
+  if (!canvas) return;
+
+  if (_anGapChart) { _anGapChart.destroy(); _anGapChart = null; }
+
+  var configured = gaps.filter(function(g){ return g.required != null; });
+
+  if (!configured.length) {
+    if (emptyEl) emptyEl.style.display = "flex";
+    if (emptyMsg) {
+      if (!gaps.length) emptyMsg.textContent = "No site data yet — engineers need to check in first";
+      else              emptyMsg.textContent = "Set required manpower per site to see the gap analysis";
+    }
+    canvas.style.display = "none";
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = "none";
+  canvas.style.display = "block";
+
+  if (typeof Chart === "undefined") return;
+
+  // Trim long site names for chart labels
+  var labels  = configured.map(function(g){ return g.site.length > 22 ? g.site.slice(0,20) + "…" : g.site; });
+  var availArr= configured.map(function(g){ return g.available; });
+  var reqArr  = configured.map(function(g){ return g.required; });
+  // Color each "available" bar by status
+  var availColors = configured.map(function(g){
+    if (g.status === "deficit")   return "rgba(255,59,92,.75)";
+    if (g.status === "surplus")   return "rgba(0,200,150,.75)";
+    if (g.status === "ontarget")  return "rgba(0,119,255,.75)";
+    return "rgba(107,114,128,.55)";
+  });
+
+  _anGapChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [
+        { label: "Available Engineers", data: availArr, backgroundColor: availColors, borderColor: "rgba(13,17,23,.15)", borderWidth: 1, borderRadius: 4, order: 2 },
+        { label: "Required Manpower",   data: reqArr,   backgroundColor: "rgba(13,17,23,.85)", borderColor: "#0d1117", borderWidth: 1, borderRadius: 4, order: 1 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 450 },
+      plugins: {
+        legend: { position: "top", labels: { font: { family: "'DM Sans',sans-serif", size: 11 }, boxWidth: 14, padding: 10 } },
+        tooltip: {
+          backgroundColor: "rgba(13,17,23,.95)", padding: 10,
+          callbacks: {
+            title: function(ctx){ return ctx[0] ? configured[ctx[0].dataIndex].site : ""; },
+            label: function(ctx){
+              var g = configured[ctx.dataIndex];
+              if (ctx.dataset.label === "Available Engineers") {
+                return [
+                  "Roster: "    + g.roster,
+                  "On leave: "  + g.onLeave,
+                  "Available: " + g.available
+                ];
+              }
+              return "Required: " + g.required + "   (Gap: " + (g.gap > 0 ? "+" : "") + g.gap + ")";
+            }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 35, minRotation: 0 } },
+        y: { grid: { color: "#f3f4f6" }, beginAtZero: true, ticks: { font: { size: 10 }, precision: 0 } }
+      }
+    }
+  });
+}
+
+// ── Per-site gap table ──────────────────────────────
+function _anRenderGapTable(gaps) {
+  var body  = document.getElementById("anGapTblBody");
+  var empty = document.getElementById("anGapTblEmpty");
+  if (!body) return;
+
+  if (!gaps.length) {
+    body.innerHTML = "";
+    if (empty) empty.style.display = "block";
+    return;
+  }
+  if (empty) empty.style.display = "none";
+
+  body.innerHTML = gaps.map(function(g){
+    var statusBdg;
+    if (g.status === "deficit") statusBdg = '<span class="gap-badge gap-deficit">⚠ Lack of Resources · ' + g.gap + '</span>';
+    else if (g.status === "surplus") statusBdg = '<span class="gap-badge gap-surplus">✓ Extra Resources · +' + g.gap + '</span>';
+    else if (g.status === "ontarget") statusBdg = '<span class="gap-badge gap-ontarget">● On Target</span>';
+    else statusBdg = '<span class="gap-badge gap-noreq">Not Configured</span>';
+
+    var gapCell;
+    if (g.required == null) gapCell = '<span style="color:var(--ink3)">—</span>';
+    else gapCell = '<span style="font-family:var(--mono);font-weight:700;color:' + (g.gap < 0 ? "var(--red)" : (g.gap > 0 ? "var(--green)" : "var(--blue)")) + '">' + (g.gap > 0 ? "+" : "") + g.gap + '</span>';
+
+    // Visual mini bar showing available vs required
+    var miniBar = "";
+    if (g.required != null && g.required > 0) {
+      var pct = Math.min(100, (g.available / g.required) * 100);
+      var fillColor = g.gap < 0 ? "var(--red)" : (g.gap > 0 ? "var(--green)" : "var(--blue)");
+      miniBar = '<div class="gap-mini-bar" title="' + g.available + ' / ' + g.required + '">' +
+                  '<div class="gap-mini-bar-fill" style="width:' + pct + '%;background:' + fillColor + '"></div>' +
+                '</div>';
+    }
+
+    return '<tr>' +
+      '<td><div style="font-weight:600">' + sanitizeHtml(g.site) + '</div>' + miniBar + '</td>' +
+      '<td style="text-align:right;font-family:var(--mono);font-weight:700">' + g.roster + '</td>' +
+      '<td style="text-align:right;font-family:var(--mono)">' + (g.onLeave > 0 ? '<span class="bdg bdg-late">' + g.onLeave + '</span>' : '<span style="color:var(--ink3)">0</span>') + '</td>' +
+      '<td style="text-align:right;font-family:var(--mono);font-weight:700">' + g.available + '</td>' +
+      '<td style="text-align:right;font-family:var(--mono)">' + (g.required != null ? g.required : '<span style="color:var(--ink3)">—</span>') + '</td>' +
+      '<td style="text-align:right">' + gapCell + '</td>' +
+      '<td>' + statusBdg + '</td>' +
+    '</tr>';
+  }).join("");
+}
+
+// ── Engineers on Leave detail list ──────────────────
+function _anRenderLeaveList(leaves, isoDate) {
+  var list  = document.getElementById("anLeaveList");
+  var empty = document.getElementById("anLeaveListEmpty");
+  var count = document.getElementById("anLeaveListCount");
+  if (!list) return;
+
+  // Deduplicate by empId (one engineer can technically have only one active leave at a time)
+  var seen = {};
+  var deduped = [];
+  leaves.forEach(function(r){
+    var k = r.empId || (r.empName + "|" + r.fromDate);
+    if (!seen[k]) { seen[k] = true; deduped.push(r); }
+  });
+  // Sort by site, then name
+  deduped.sort(function(a,b){
+    var s = (a.site||"").localeCompare(b.site||"");
+    if (s !== 0) return s;
+    return (a.empName||"").localeCompare(b.empName||"");
+  });
+
+  if (count) count.textContent = deduped.length + " on leave";
+
+  if (!deduped.length) {
+    list.innerHTML = "";
+    if (empty) empty.style.display = "block";
+    return;
+  }
+  if (empty) empty.style.display = "none";
+
+  // Compute "day X of N" for each
+  list.innerHTML = deduped.map(function(r){
+    var totalDays = r.numDays || 0;
+    if (!totalDays && r.fromDate && r.toDate) {
+      totalDays = Math.round((new Date(r.toDate)-new Date(r.fromDate))/(86400000)) + 1;
+    }
+    // Day index (1-based) within the leave period
+    var dayIdx = 0;
+    if (r.fromDate) dayIdx = Math.round((new Date(isoDate)-new Date(r.fromDate))/(86400000)) + 1;
+    if (dayIdx < 1) dayIdx = 1;
+    if (totalDays && dayIdx > totalDays) dayIdx = totalDays;
+
+    // Color the leave type badge
+    var ltColors = {
+      "Annual":"#15803d;background:#f0fdf4;border:1px solid #86efac",
+      "Sick":"#b91c1c;background:#fef2f2;border:1px solid #fca5a5",
+      "Medical":"#b91c1c;background:#fef2f2;border:1px solid #fca5a5",
+      "Maternity":"#7e22ce;background:#fdf4ff;border:1px solid #e9d5ff",
+      "Paternity":"#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe",
+      "Compassionate":"#92400e;background:#fffbeb;border:1px solid #fde68a",
+      "Unpaid":"#374151;background:#f9fafb;border:1px solid #d1d5db"
+    };
+    var ltStyle = ltColors[r.leaveType] || "#374151;background:#f9fafb;border:1px solid #d1d5db";
+
+    var ini = (r.empName||"?").split(" ").map(function(w){return w[0]||"";}).slice(0,2).join("").toUpperCase();
+
+    return '<div class="lv-item">' +
+      '<span class="av">' + sanitizeHtml(ini) + '</span>' +
+      '<div>' +
+        '<div class="lv-name">' + sanitizeHtml(r.empName||"—") + ' <span style="font-family:var(--mono);font-size:.72rem;color:var(--ink3);font-weight:400">· ' + sanitizeHtml(r.empId||"—") + '</span></div>' +
+        '<div class="lv-meta">' +
+          '<span class="lv-type-bdg" style="color:' + ltStyle + '">' + sanitizeHtml(r.leaveType||"Leave") + '</span>' +
+          '📍 ' + sanitizeHtml(r.site||"—") + '  ·  ' +
+          '🗓️ ' + sanitizeHtml(r.fromDate||"—") + ' → ' + sanitizeHtml(r.toDate||"—") +
+          (totalDays ? '  ·  day ' + dayIdx + ' of ' + totalDays : '') +
+        '</div>' +
+      '</div>' +
+      '<span class="lv-days">' + (totalDays || "?") + 'd</span>' +
+    '</div>';
+  }).join("");
+}
+
+// ── Manpower Config Modal ───────────────────────────
+function anOpenManpowerConfig() {
+  var container = document.getElementById("manpowerConfigRows");
+  if (!container) return;
+  // Build a row per work site
+  container.innerHTML = WORK_SITES.map(function(s){
+    var cur = _anManpower && _anManpower[s.name] != null ? _anManpower[s.name] : "";
+    return '<div class="mp-row">' +
+      '<div class="mp-row-name">' + sanitizeHtml(s.name) + '</div>' +
+      '<input type="number" min="0" step="1" class="mp-row-input" data-site="' + encodeURIComponent(s.name) + '" value="' + sanitizeHtml(cur) + '" placeholder="—"/>' +
+    '</div>';
+  }).join("");
+  var statusEl = document.getElementById("manpowerConfigStatus");
+  if (statusEl) statusEl.textContent = fbOk && db ? "Saves to Firebase · syncs live across admins" : "⚠ Firebase not connected — saving locally only";
+  document.getElementById("manpowerConfigModal").classList.add("open");
+}
+
+function anCloseManpowerConfig() {
+  var m = document.getElementById("manpowerConfigModal");
+  if (m) m.classList.remove("open");
+}
+
+function anSaveManpowerConfig() {
+  var inputs = document.querySelectorAll("#manpowerConfigRows .mp-row-input");
+  var next = {};
+  inputs.forEach(function(inp){
+    var site = decodeURIComponent(inp.getAttribute("data-site") || "");
+    var v = inp.value === "" ? null : parseInt(inp.value, 10);
+    if (site && v != null && !isNaN(v) && v >= 0) next[site] = v;
+  });
+
+  var btns = document.querySelectorAll("#manpowerConfigModal .modal-btn-confirm");
+  btns.forEach(function(b){ b.disabled = true; b.innerHTML = '<span class="spin" style="border-color:rgba(255,255,255,.3);border-top-color:#fff;width:14px;height:14px"></span> Saving…'; });
+
+  function onDone() {
+    btns.forEach(function(b){ b.disabled = false; b.innerHTML = "💾 Save Targets"; });
+    anCloseManpowerConfig();
+    toast("⚙️ Manpower targets saved", "t-ok");
+    if (typeof renderAnalytics === "function") renderAnalytics();
+  }
+  function onErr(e) {
+    btns.forEach(function(b){ b.disabled = false; b.innerHTML = "💾 Save Targets"; });
+    var statusEl = document.getElementById("manpowerConfigStatus");
+    if (statusEl) statusEl.textContent = "❌ Save failed: " + ((e && e.message) || e || "Unknown error");
+    toast("❌ Manpower save failed — check Firestore rules for 'manpowerConfig'", "t-err");
+  }
+
+  // Update local immediately (optimistic)
+  _anManpower = next;
+  _anSaveManpowerLocal();
+  if (typeof renderAnalytics === "function") renderAnalytics();
+
+  if (fbOk && db) {
+    db.collection("manpowerConfig").doc("sites")
+      .set({ sites: next, updatedAt: new Date().getTime(), updatedAtIso: new Date().toISOString() }, { merge: false })
+      .then(onDone).catch(onErr);
+  } else {
+    onDone();
+  }
+}
+
+// ── Public hook called by renderAnalytics() — keeps analytics in sync ──
+function _anRenderManpowerLayer() {
+  // If the analytics panel isn't in DOM (e.g. before login) skip
+  if (!document.getElementById("dTab-analytics")) return;
+  // Ensure the as-of-date defaults to today on first render
+  var el = document.getElementById("anAsOfDate");
+  if (el && !el.value) el.value = new Date().toISOString().split("T")[0];
+  try { renderManpowerGap(); }
+  catch(e) { console.warn("Manpower render error:", e && e.message); }
 }
 // ╚══════════════════════════════════════════════════════╝
 
@@ -4027,6 +4704,8 @@ function loadLeaves() {
           .map(function(d){ return Object.assign({id:d.id},d.data()); })
           .sort(function(a,b){ return (b.appliedAt||0)-(a.appliedAt||0); });
         renderLeaveTable(); updateLeaveStats();
+        // Keep the Attendance Analytics tab (KPIs, gap chart, leave list) in sync live
+        if (typeof renderAnalytics === "function") renderAnalytics();
       }, function(e){
         console.error("loadLeaves error:", e);
         toast("❌ Could not load leaves: " + fbErrMsg(e).split("\n")[0], "t-err");
@@ -4035,6 +4714,7 @@ function loadLeaves() {
     leaveRecs = JSON.parse(localStorage.getItem("at_leaves")||"[]")
       .sort(function(a,b){ return (b.appliedAt||0)-(a.appliedAt||0); });
     renderLeaveTable(); updateLeaveStats();
+    if (typeof renderAnalytics === "function") renderAnalytics();
   }
 }
 
