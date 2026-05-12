@@ -742,6 +742,18 @@ tr.on-leave-row td{background:#f0f9ff!important}
 .cal-day-num{font-size:.72rem;font-weight:700;color:var(--ink3);margin-bottom:2px;line-height:1}
 .cal-chip{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:.68rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;line-height:1.4}
 .cal-more{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:.68rem;font-weight:700;background:#e5e7eb;color:#374151}
+/* ── OTP Verification ── */
+.otp-verify-btn { margin-top:8px;padding:8px 16px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:.85rem;cursor:pointer;width:100%; }
+.otp-verify-btn:disabled { opacity:.5;cursor:default; }
+.otp-verified-badge { margin-top:8px;font-size:.85rem;color:var(--green);font-weight:600; }
+.otp-row { margin-top:10px;display:flex;gap:8px;align-items:center; }
+.otp-row input { flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:1.1rem;font-family:var(--mono);letter-spacing:.2em;text-align:center; }
+.otp-row button { padding:10px 18px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer;white-space:nowrap; }
+.otp-row button:disabled { opacity:.5;cursor:default; }
+.otp-msg { margin-top:6px;font-size:.82rem; }
+.otp-msg.ok  { color:var(--green); }
+.otp-msg.err { color:var(--red); }
+.otp-resend-timer { margin-top:6px;font-size:.78rem;color:var(--ink3); }
 @media(max-width:768px){.cal-cell{min-height:64px;padding:4px}.cal-chip{font-size:.62rem;padding:1px 5px}}
 @media(max-width:500px){.cal-cell{min-height:48px}.cal-chip{display:none}.cal-day-num{font-size:.65rem}}
 </style>
@@ -841,6 +853,14 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <div class="field"><label>Email Address <span style="color:var(--red);font-size:.75rem">REQUIRED</span></label>
           <input type="email" id="empEmail" placeholder="your.email@company.com" oninput="chkBtn()" autocomplete="email"/>
           <div id="emailBindStatus" style="margin-top:6px"></div>
+          <button class="otp-verify-btn" id="otpVerifyBtn" style="display:none" onclick="sendOtp()">📧 Verify Email</button>
+          <div class="otp-resend-timer" id="otpResendTimer" style="display:none"></div>
+          <div class="otp-row" id="otpRow" style="display:none">
+            <input type="text" id="otpInput" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code"/>
+            <button id="otpConfirmBtn" onclick="confirmOtp()">Confirm</button>
+          </div>
+          <div class="otp-msg" id="otpMsg"></div>
+          <div class="otp-verified-badge" id="otpVerifiedBadge" style="display:none">✅ Email verified</div>
         </div>
         <div class="field"><label>Work Site</label>
           <select id="empSite" onchange="chkBtn();resetGps('in')">
@@ -2458,9 +2478,172 @@ function chkBtn() {
   }
 
   var ci = document.getElementById("ciBtn");
-  if (ci) ci.disabled = !(id && name.trim() && site && emailOk && GPS.in && GPS.in.ok);
+  if (ci) ci.disabled = !(id && name.trim() && site && emailOk && GPS.in && GPS.in.ok && otpVerified);
   var co = document.getElementById("coBtn");
   if (co) co.disabled = !(GPS.out && GPS.out.ok);
+
+  // Show Verify Email button when form has enough info and OTP not yet done
+  var verifyBtn = document.getElementById("otpVerifyBtn");
+  if (verifyBtn) {
+    var formReady = !!(id && name.trim() && emailOk);
+    verifyBtn.style.display = (formReady && !otpVerified) ? "block" : "none";
+  }
+}
+
+// ── OTP Verification ───────────────────────────────
+function _isDeviceOtpVerified(email, deviceId) {
+  if (_otpVerifiedCache) return Promise.resolve(true);
+  if (!fbOk || !db) return Promise.resolve(false);
+  return db.collection("emailBindings").doc(email.toLowerCase()).get()
+    .then(function(snap) {
+      if (!snap.exists) return false;
+      var ids = snap.data().verifiedDeviceIds || [];
+      return ids.indexOf(deviceId) !== -1;
+    })
+    .catch(function() { return false; });
+}
+
+function _checkOtpOnLoad(email, deviceId) {
+  if (!email) return;
+  _isDeviceOtpVerified(email, deviceId).then(function(verified) {
+    if (verified) {
+      otpVerified = true;
+      _otpVerifiedCache = true;
+      var badge = document.getElementById("otpVerifiedBadge");
+      if (badge) badge.style.display = "block";
+      var btn = document.getElementById("otpVerifyBtn");
+      if (btn) btn.style.display = "none";
+      chkBtn();
+    }
+  });
+}
+
+function sendOtp() {
+  var lock = sessionStorage.getItem("_at_otp_lock");
+  if (lock && Date.now() < Number(lock)) {
+    var mins = Math.ceil((Number(lock) - Date.now()) / 60000);
+    document.getElementById("otpMsg").className = "otp-msg err";
+    document.getElementById("otpMsg").textContent = "Too many attempts. Try again in " + mins + " minute(s).";
+    return;
+  }
+
+  var email = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+  var name  = ((document.getElementById("empName") ||{}).value||"").trim().split(" ")[0] || "Engineer";
+  if (!email) return;
+
+  var code = String(Math.floor(100000 + Math.random() * 900000));
+  sessionStorage.setItem("_at_otp", JSON.stringify({
+    code: code,
+    email: email,
+    expiry: Date.now() + 5 * 60 * 1000,
+    attempts: 0
+  }));
+
+  var verifyBtn = document.getElementById("otpVerifyBtn");
+  if (verifyBtn) verifyBtn.disabled = true;
+
+  emailjs.send(EMAILJS_SVC, OTP_EMAILJS_TPL, {
+    to_email: email,
+    to_name:  name,
+    otp_code: code
+  }).then(function() {
+    document.getElementById("otpRow").style.display = "flex";
+    document.getElementById("otpMsg").className = "otp-msg ok";
+    document.getElementById("otpMsg").textContent = "Code sent to " + email + ". Check your inbox.";
+    _startOtpResendTimer(60);
+  }).catch(function(err) {
+    console.error("[OTP] EmailJS error:", err);
+    document.getElementById("otpMsg").className = "otp-msg err";
+    document.getElementById("otpMsg").textContent = "Failed to send code. Check your EmailJS OTP template ID (OTP_EMAILJS_TPL).";
+    if (verifyBtn) verifyBtn.disabled = false;
+  });
+}
+
+function _startOtpResendTimer(seconds) {
+  var timerEl = document.getElementById("otpResendTimer");
+  var verifyBtn = document.getElementById("otpVerifyBtn");
+  if (!timerEl) return;
+  timerEl.style.display = "block";
+  var remaining = seconds;
+  var interval = setInterval(function() {
+    remaining--;
+    timerEl.textContent = "Resend in " + remaining + "s";
+    if (remaining <= 0) {
+      clearInterval(interval);
+      timerEl.style.display = "none";
+      if (verifyBtn) { verifyBtn.disabled = false; verifyBtn.style.display = "block"; }
+    }
+  }, 1000);
+}
+
+function confirmOtp() {
+  var stored = sessionStorage.getItem("_at_otp");
+  var msgEl  = document.getElementById("otpMsg");
+  if (!stored) {
+    msgEl.className = "otp-msg err";
+    msgEl.textContent = "No code found. Click Verify Email to request a new code.";
+    return;
+  }
+  var obj = JSON.parse(stored);
+  var currentEmail = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+
+  if (obj.email !== currentEmail) {
+    msgEl.className = "otp-msg err";
+    msgEl.textContent = "Email changed. Click Verify Email again to get a new code.";
+    sessionStorage.removeItem("_at_otp");
+    document.getElementById("otpRow").style.display = "none";
+    return;
+  }
+  if (Date.now() > obj.expiry) {
+    msgEl.className = "otp-msg err";
+    msgEl.textContent = "Code expired. Click Verify Email to get a new code.";
+    sessionStorage.removeItem("_at_otp");
+    return;
+  }
+
+  var input = ((document.getElementById("otpInput")||{}).value||"").trim();
+  if (input !== obj.code) {
+    obj.attempts = (obj.attempts || 0) + 1;
+    if (obj.attempts >= 3) {
+      sessionStorage.setItem("_at_otp_lock", String(Date.now() + 30 * 60 * 1000));
+      sessionStorage.removeItem("_at_otp");
+      msgEl.className = "otp-msg err";
+      msgEl.textContent = "Too many wrong attempts. Try again in 30 minutes.";
+      document.getElementById("otpConfirmBtn").disabled = true;
+      document.getElementById("otpVerifyBtn").disabled  = true;
+    } else {
+      sessionStorage.setItem("_at_otp", JSON.stringify(obj));
+      msgEl.className = "otp-msg err";
+      msgEl.textContent = "Wrong code. " + (3 - obj.attempts) + " attempt(s) remaining.";
+    }
+    return;
+  }
+
+  // ✅ Code correct
+  sessionStorage.removeItem("_at_otp");
+  otpVerified = true;
+  _otpVerifiedCache = true;
+  msgEl.className = "otp-msg ok";
+  msgEl.textContent = "";
+  document.getElementById("otpRow").style.display = "none";
+  document.getElementById("otpVerifyBtn").style.display = "none";
+  document.getElementById("otpResendTimer").style.display = "none";
+  document.getElementById("otpVerifiedBadge").style.display = "block";
+
+  computeFingerprint().then(function(devId) {
+    _markDeviceVerified(currentEmail, devId);
+  });
+  chkBtn();
+}
+
+function _markDeviceVerified(email, deviceId) {
+  if (!fbOk || !db) return;
+  var ref = db.collection("emailBindings").doc(email.toLowerCase());
+  ref.update({
+    verifiedDeviceIds: firebase.firestore.FieldValue.arrayUnion(deviceId)
+  }).catch(function() {
+    ref.set({ verifiedDeviceIds: [deviceId] }, { merge: true });
+  });
 }
 
 function sanitizeHtml(str) {
@@ -2471,9 +2654,21 @@ function sanitizeHtml(str) {
 
 // ── Init engineer screen ───────────────────────────
 function initEmp() {
-  // Pre-compute hardware fingerprint immediately (async) so it's cached before check-in
+  // Reset OTP state each time the engineer screen opens
+  otpVerified = false;
+  _otpVerifiedCache = false;
+  var badge = document.getElementById("otpVerifiedBadge");
+  if (badge) badge.style.display = "none";
+  var row = document.getElementById("otpRow");
+  if (row) row.style.display = "none";
+  var msg = document.getElementById("otpMsg");
+  if (msg) { msg.textContent = ""; msg.className = "otp-msg"; }
+
+  // Pre-compute hardware fingerprint then silently check if device is already OTP-verified
   computeFingerprint().then(function(fp) {
     console.log("[AT] Device fingerprint ready:", fp.slice(0, 20) + "…");
+    var email = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+    _checkOtpOnLoad(email, fp);
   });
   // Populate site dropdown
   var sel = document.getElementById("empSite");
@@ -4641,6 +4836,7 @@ function toast(msg, cls) {
 var EMAILJS_KEY = "JzcIzX9qDreMEunJ0";     // from emailjs.com → Account → Public Key
 var EMAILJS_SVC = "service_8f50fon";     // EmailJS Service ID
 var EMAILJS_TPL = "template_gds7pf1";    // EmailJS Template ID
+var OTP_EMAILJS_TPL = "template_otp_xxxx"; // OTP verification template — replace with real ID from EmailJS dashboard
 var emailjsReady = false;
 
 var LEAVE_TYPES = [
@@ -4663,6 +4859,8 @@ var LEAVE_TYPE_COLORS = {
 
 // ── Entitlement cache: key = "{empId}_{year}" ────────────
 var entitlementCache = {};
+var otpVerified = false;        // true once OTP confirmed or device already trusted
+var _otpVerifiedCache = false;  // in-memory flag to avoid re-querying Firestore mid-session
 var calYear  = new Date().getFullYear();
 var calMonth = new Date().getMonth(); // 0-indexed
 var anLeaveTrendChart = null;
