@@ -719,6 +719,31 @@ tr.on-leave-row td{background:#f0f9ff!important}
 .hist-entry:last-child{border:none}
 .hist-email{font-family:var(--mono);font-size:.8rem;font-weight:700;color:var(--ink);margin-bottom:2px}
 .hist-meta{font-size:.74rem;color:var(--ink3)}
+/* ── ENTITLEMENTS MODAL ─────────────────────────────── */
+.ent-row{display:grid;grid-template-columns:1fr 80px 80px 70px 80px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.ent-row:last-child{border-bottom:none}
+.ent-hdr{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--ink3)}
+.ent-input{padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:var(--mono);text-align:center;background:#fafaf8;font-weight:700;color:var(--ink);width:100%}
+.ent-input:focus{border-color:var(--blue);background:#fff;outline:none}
+.ent-ro{font-family:var(--mono);font-size:.85rem;font-weight:700;text-align:center}
+.ent-balance-pos{color:var(--green)}.ent-balance-neg{color:var(--red)}.ent-balance-null{color:var(--ink3)}
+/* ── LEAVE CALENDAR ─────────────────────────────────── */
+.cal-toolbar{display:flex;gap:10px;align-items:center;background:var(--card);border-radius:var(--r2);padding:14px 16px;margin-bottom:16px;border:1px solid var(--border);box-shadow:var(--sh);flex-wrap:wrap}
+.cal-nav{display:flex;align-items:center;gap:8px}
+.cal-nav-btn{width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.cal-nav-btn:hover{border-color:var(--ink);background:var(--ink);color:#fff}
+.cal-month-lbl{font-weight:800;font-size:1rem;min-width:140px;text-align:center;font-family:var(--mono)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;background:var(--border);border-radius:var(--r2);overflow:hidden;border:1px solid var(--border)}
+.cal-dow{background:#fafaf8;padding:8px 4px;text-align:center;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--ink3)}
+.cal-cell{background:var(--card);min-height:90px;padding:6px;display:flex;flex-direction:column;gap:3px;position:relative}
+.cal-cell.other-month .cal-day-num{color:#cbd5e1}
+.cal-cell.other-month{background:#fafaf8}
+.cal-cell.today{box-shadow:inset 0 0 0 2px var(--green)}
+.cal-day-num{font-size:.72rem;font-weight:700;color:var(--ink3);margin-bottom:2px;line-height:1}
+.cal-chip{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:.68rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;line-height:1.4}
+.cal-more{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:.68rem;font-weight:700;background:#e5e7eb;color:#374151}
+@media(max-width:768px){.cal-cell{min-height:64px;padding:4px}.cal-chip{font-size:.62rem;padding:1px 5px}}
+@media(max-width:500px){.cal-cell{min-height:48px}.cal-chip{display:none}.cal-day-num{font-size:.65rem}}
 </style>
 </head>
 <body>
@@ -1049,6 +1074,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="dash-tab on" onclick="dTab('live',this)">Live Status</div>
       <div class="dash-tab" onclick="dTab('feed',this)">Activity Feed</div>
       <div class="dash-tab" onclick="dTab('analytics',this)">📊 Analytics</div>
+      <div class="dash-tab" onclick="dTab('calendar',this)">📅 Calendar</div>
       <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">🗓️ Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('device',this)">🔒 Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span></div>
       <div class="dash-tab" onclick="dTab('accounts',this)">👷 Eng Accounts</div>
@@ -1212,6 +1238,23 @@ tr.on-leave-row td{background:#f0f9ff!important}
         </div>
       </div>
 
+<!-- Leave Trends Chart -->
+      <div class="chart-card" id="anLeaveTrendCard">
+        <div class="chart-card-hdr">
+          <div>
+            <div class="chart-card-title">📅 Leave Trends by Type</div>
+            <div class="chart-card-sub">Approved leave days per month — last 12 months</div>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap" style="height:280px">
+          <canvas id="anLeaveTrendCanvas"></canvas>
+          <div id="anLeaveTrendEmpty" class="chart-empty" style="display:none;position:absolute;inset:0">
+            <div class="chart-empty-icon">📅</div>
+            <div>No approved leave data in the last 12 months</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Main interactive chart -->
       <div class="chart-card">
         <div class="chart-card-hdr">
@@ -1291,7 +1334,24 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     </div>
 
-    <!-- LEAVE MANAGEMENT TAB -->
+    <!-- LEAVE CALENDAR TAB -->
+    <div id="dTab-calendar" style="display:none">
+      <div class="cal-toolbar">
+        <div class="cal-nav">
+          <button class="cal-nav-btn" onclick="calPrev()" title="Previous month">◀</button>
+          <span class="cal-month-lbl" id="calMonthLbl">—</span>
+          <button class="cal-nav-btn" onclick="calNext()" title="Next month">▶</button>
+        </div>
+        <span style="flex:1"></span>
+        <select id="calSite" onchange="renderCalendar()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;background:#fafaf8;color:var(--ink);font-family:var(--body)">
+          <option value="">All Sites</option>
+        </select>
+        <button class="tb-btn tb-out" onclick="calGoToday()">Today</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+    </div>
+
+<!-- LEAVE MANAGEMENT TAB -->
     <div id="dTab-leave" style="display:none">
 
       <!-- Leave Stats -->
@@ -1314,8 +1374,12 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <select id="lLeaveType" onchange="renderLeaveTable()">
           <option value="">All Leave Types</option>
         </select>
+        <input type="date" id="lDateFrom" onchange="renderLeaveTable()" title="Leave period from"/>
+        <input type="date" id="lDateTo" onchange="renderLeaveTable()" title="Leave period to"/>
         <button class="tb-btn tb-pri" onclick="exportLeaveCSV()">⬇ Leave CSV</button>
         <button class="tb-btn tb-out" onclick="exportCombinedCSV()">⬇ Full Report</button>
+        <button class="tb-btn tb-out" onclick="leaveClearFilters()" title="Clear all filters">✕ Clear</button>
+        <button class="tb-btn tb-pri" onclick="anOpenEntitlements()" title="Set leave entitlements per engineer">⚙️ Entitlements</button>
       </div>
 
       <!-- Leave Table -->
@@ -1521,6 +1585,12 @@ service cloud.firestore {
     // Leave applications
     match /leaveApplications/{doc} {
       allow read, write: if true;
+    }
+
+    // Leave entitlements (per-engineer quotas)
+    match /leaveEntitlements/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
   }
 }</pre>
@@ -1734,6 +1804,12 @@ service cloud.firestore {
       // Anyone can read so the analytics tab loads even before admin login
       allow read: if true;
       // Only signed-in admin can write the targets
+      allow write: if request.auth != null;
+    }
+
+    // Leave entitlements (per-engineer quotas)
+    match /leaveEntitlements/{doc} {
+      allow read: if true;
       allow write: if request.auth != null;
     }
   }
@@ -1991,6 +2067,38 @@ service cloud.firestore {
     <div class="modal-actions">
       <button class="modal-btn-cancel" onclick="anCloseManpowerConfig()">Cancel</button>
       <button class="modal-btn-confirm" onclick="anSaveManpowerConfig()">💾 Save Targets</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ENTITLEMENTS CONFIG MODAL ════════════════════ -->
+<div id="entitlementsModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:640px;max-height:90vh;overflow-y:auto">
+    <button class="modal-close" onclick="anCloseEntitlements()">✕</button>
+    <div class="modal-title">⚙️ Leave Entitlements</div>
+    <div class="modal-sub">Set annual leave quotas and manual adjustments per engineer.</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+      <div class="field" style="margin-bottom:0">
+        <label>Engineer</label>
+        <select id="entEmpSel" onchange="anLoadEntitlement()">
+          <option value="">— Select engineer —</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Year</label>
+        <select id="entYearSel" onchange="anLoadEntitlement()">
+        </select>
+      </div>
+    </div>
+
+    <div id="entRows" style="margin-bottom:14px"></div>
+
+    <div id="entStatus" style="font-size:.78rem;color:var(--ink3);font-family:var(--mono);min-height:18px;margin-bottom:10px"></div>
+
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="anCloseEntitlements()">Cancel</button>
+      <button class="modal-btn-confirm" style="background:var(--blue)" onclick="anSaveEntitlement()">💾 Save Entitlements</button>
     </div>
   </div>
 </div>
@@ -3021,6 +3129,12 @@ function renderFeed() {
   }).join("");
 }
 
+function leaveClearFilters() {
+  var ids = ["lSearch","lStatus","lLeaveType","lDateFrom","lDateTo"];
+  ids.forEach(function(id){ var el=document.getElementById(id); if(el) el.value=""; });
+  renderLeaveTable();
+}
+
 function feedClearFilters() {
   var ids = ["ffSearch","ffSite","ffType","ffDate"];
   ids.forEach(function(id){ var el=document.getElementById(id); if(el) el.value=""; });
@@ -3044,7 +3158,7 @@ function refreshDash() {
 
 // ── Dashboard tabs ─────────────────────────────────
 function dTab(id, el) {
-  ["live","feed","analytics","leave","device","accounts","setup"].forEach(function(t){
+  ["live","feed","analytics","calendar","leave","device","accounts","setup"].forEach(function(t){
     var p = document.getElementById("dTab-"+t); if(p) p.style.display = t===id?"block":"none";
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
@@ -3053,6 +3167,16 @@ function dTab(id, el) {
   if (id === "device")    renderDeviceAudit();
   if (id === "accounts")  adminAccLoad();
   if (id === "analytics") renderAnalytics();
+  if (id === 'calendar') {
+    var cSite = document.getElementById("calSite");
+    if (cSite && cSite.options.length <= 1) {
+      WORK_SITES.forEach(function(s){
+        var o = document.createElement("option"); o.value = s.name; o.textContent = s.name; cSite.appendChild(o);
+      });
+    }
+    if (!leaveRecs.length && db) { loadLeaves(); }
+    renderCalendar();
+  }
 }
 
 // ── CSV export ─────────────────────────────────────
@@ -3855,6 +3979,7 @@ function renderManpowerGap() {
 
   // Render the leave list
   _anRenderLeaveList(onLeaveAll, isoDate);
+  _anRenderLeaveTrendChart((document.getElementById("anSite")||{}).value||"");
 }
 
 // ── Gap chart (grouped bar: Available vs Required per site) ──
@@ -4074,6 +4199,380 @@ function anCloseManpowerConfig() {
   if (m) m.classList.remove("open");
 }
 
+// ── ENTITLEMENTS MODAL ──────────────────────────────────
+function anOpenEntitlements() {
+  var sel = document.getElementById("entEmpSel");
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select engineer —</option>';
+
+  var seen = {};
+  leaveRecs.forEach(function(r) {
+    if (!seen[r.empId]) { seen[r.empId] = r.empName || r.empId; }
+  });
+  if (typeof adminAccData !== "undefined" && adminAccData) {
+    Object.keys(adminAccData).forEach(function(email) {
+      var a = adminAccData[email];
+      if (a && a.empId && !seen[a.empId]) seen[a.empId] = a.empName || a.empId;
+    });
+  }
+  Object.keys(seen).sort().forEach(function(empId) {
+    var o = document.createElement("option");
+    o.value = empId;
+    o.textContent = "Eng " + empId + " — " + seen[empId];
+    sel.appendChild(o);
+  });
+
+  var ySel = document.getElementById("entYearSel");
+  if (ySel) {
+    ySel.innerHTML = "";
+    var cur = new Date().getFullYear();
+    for (var y = cur - 1; y <= cur + 2; y++) {
+      var o2 = document.createElement("option");
+      o2.value = y;
+      o2.textContent = y;
+      if (y === cur) o2.selected = true;
+      ySel.appendChild(o2);
+    }
+  }
+
+  document.getElementById("entRows").innerHTML = '<div style="text-align:center;padding:20px;color:var(--ink3);font-size:.85rem">Select an engineer and year above.</div>';
+  document.getElementById("entStatus").textContent = "";
+  document.getElementById("entitlementsModal").classList.add("open");
+}
+
+function anLoadEntitlement() {
+  var empId = (document.getElementById("entEmpSel") || {}).value || "";
+  var year  = parseInt((document.getElementById("entYearSel") || {}).value || "0", 10);
+  if (!empId || !year) return;
+
+  var key = empId + "_" + year;
+  delete entitlementCache[key];
+
+  _anFetchEntitlement(empId, year, function(doc) {
+    _anRenderEntitlementRows(empId, year, doc);
+  });
+}
+
+function _anRenderEntitlementRows(empId, year, doc) {
+  var wrap = document.getElementById("entRows");
+  if (!wrap) return;
+
+  var quotas  = (doc && doc.quotas)      || {};
+  var adjs    = (doc && doc.adjustments) || {};
+
+  var html = '<div class="ent-row">'
+    + '<span class="ent-hdr">Leave Type</span>'
+    + '<span class="ent-hdr" style="text-align:center">Quota</span>'
+    + '<span class="ent-hdr" style="text-align:center">Adj±</span>'
+    + '<span class="ent-hdr" style="text-align:center">Used</span>'
+    + '<span class="ent-hdr" style="text-align:center">Balance</span>'
+    + '</div>';
+
+  LEAVE_TYPES.forEach(function(lt) {
+    var q   = quotas[lt] != null ? quotas[lt] : "";
+    var adj = adjs[lt]   != null ? adjs[lt]   : 0;
+    var used = _anComputeUsed(empId, year, lt);
+    var bal  = q !== "" ? (parseInt(q,10)||0) + (parseInt(adj,10)||0) - used : null;
+    var balCls = bal === null ? "ent-balance-null" : bal > 0 ? "ent-balance-pos" : "ent-balance-neg";
+    var balTxt = bal === null ? "—" : bal;
+    var ltSafe = lt.replace(/['"]/g,"");
+    html += '<div class="ent-row" id="entrow-' + empId + '-' + ltSafe.replace(/\s/g,"_") + '">'
+      + '<span style="font-size:.85rem;font-weight:600">' + lt + '</span>'
+      + '<input class="ent-input" type="number" min="0" max="365" value="' + q + '" '
+      +   'data-lt="' + ltSafe + '" data-field="quota" oninput="_anEntRowUpdate(this,\'' + empId + '\',' + year + ')">'
+      + '<input class="ent-input" type="number" min="-365" max="365" value="' + adj + '" '
+      +   'data-lt="' + ltSafe + '" data-field="adj" oninput="_anEntRowUpdate(this,\'' + empId + '\',' + year + ')">'
+      + '<span class="ent-ro">' + used + '</span>'
+      + '<span class="ent-ro ' + balCls + '" id="entbal-' + empId + '-' + ltSafe.replace(/\s/g,"_") + '">' + balTxt + '</span>'
+      + '</div>';
+  });
+
+  wrap.innerHTML = html;
+}
+
+function _anEntRowUpdate(input, empId, year) {
+  var lt     = input.dataset.lt;
+  var ltKey  = lt.replace(/\s/g,"_");
+  var row    = input.closest(".ent-row");
+  if (!row) return;
+  var inputs = row.querySelectorAll(".ent-input");
+  var qVal   = parseFloat(inputs[0].value);
+  var aVal   = parseFloat(inputs[1].value) || 0;
+  var used   = _anComputeUsed(empId, year, lt);
+  var balEl  = document.getElementById("entbal-" + empId + "-" + ltKey);
+  if (!balEl) return;
+  if (isNaN(qVal) || inputs[0].value === "") {
+    balEl.textContent = "—";
+    balEl.className = "ent-ro ent-balance-null";
+  } else {
+    var bal = qVal + aVal - used;
+    balEl.textContent = bal;
+    balEl.className = "ent-ro " + (bal > 0 ? "ent-balance-pos" : "ent-balance-neg");
+  }
+}
+
+function anSaveEntitlement() {
+  var empId = (document.getElementById("entEmpSel") || {}).value || "";
+  var year  = parseInt((document.getElementById("entYearSel") || {}).value || "0", 10);
+  if (!empId || !year) { toast("Select an engineer and year first", "t-err"); return; }
+
+  var quotas = {}, adjs = {};
+  document.querySelectorAll("#entRows .ent-row .ent-input[data-field='quota']").forEach(function(inp) {
+    var lt = inp.dataset.lt;
+    if (inp.value !== "") quotas[lt] = parseFloat(inp.value) || 0;
+  });
+  document.querySelectorAll("#entRows .ent-row .ent-input[data-field='adj']").forEach(function(inp) {
+    var lt = inp.dataset.lt;
+    var v = parseFloat(inp.value) || 0;
+    if (v !== 0) adjs[lt] = v;
+  });
+
+  var empSel = document.getElementById("entEmpSel");
+  var empName = empSel ? (empSel.options[empSel.selectedIndex] || {}).textContent || "" : "";
+  empName = empName.replace(/^Eng \S+ — /, "");
+
+  var doc = {
+    empId: empId,
+    empName: empName,
+    year: year,
+    quotas: quotas,
+    adjustments: adjs,
+    updatedAt: new Date().toISOString(),
+    updatedBy: (firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || "admin"
+  };
+
+  var key = empId + "_" + year;
+  var statusEl = document.getElementById("entStatus");
+  if (statusEl) statusEl.textContent = "Saving…";
+
+  if (db) {
+    db.collection("leaveEntitlements").doc(key).set(doc)
+      .then(function() {
+        entitlementCache[key] = doc;
+        if (statusEl) statusEl.textContent = "✅ Saved!";
+        toast("Entitlements saved", "t-ok");
+      })
+      .catch(function(e) {
+        if (statusEl) statusEl.textContent = "Error: " + (e.message || "write failed");
+        toast("Save failed — check Firestore rules", "t-err");
+      });
+  } else {
+    entitlementCache[key] = doc;
+    if (statusEl) statusEl.textContent = "✅ Saved locally (no Firebase)";
+    toast("Saved locally", "t-ok");
+  }
+}
+
+function anCloseEntitlements() {
+  document.getElementById("entitlementsModal").classList.remove("open");
+}
+
+// ── LEAVE CALENDAR ──────────────────────────────────────
+function calGoToday() {
+  var now = new Date();
+  calYear = now.getFullYear();
+  calMonth = now.getMonth();
+  renderCalendar();
+}
+
+function calPrev() {
+  calMonth--;
+  if (calMonth < 0) { calMonth = 11; calYear--; }
+  renderCalendar();
+}
+
+function calNext() {
+  calMonth++;
+  if (calMonth > 11) { calMonth = 0; calYear++; }
+  renderCalendar();
+}
+
+function _calLeavesOnDay(isoDate, siteFilter) {
+  return leaveRecs.filter(function(r) {
+    if (r.status !== "approved") return false;
+    if (!r.fromDate || !r.toDate) return false;
+    if (r.fromDate > isoDate || r.toDate < isoDate) return false;
+    if (siteFilter && r.site !== siteFilter) return false;
+    return true;
+  });
+}
+
+function _calChip(r) {
+  var color = LEAVE_TYPE_COLORS[r.leaveType] || "#6b7280";
+  var name  = (r.empName || r.empId || "?").split(" ")[0].slice(0, 12);
+  return '<span class="cal-chip" style="background:' + color + '" title="' + (r.empName||r.empId) + ' — ' + r.leaveType + '">' + name + '</span>';
+}
+
+function _anRenderLeaveTrendChart(siteFilter) {
+  var canvas = document.getElementById("anLeaveTrendCanvas");
+  var emptyEl = document.getElementById("anLeaveTrendEmpty");
+  if (!canvas) return;
+
+  var labels = [];
+  var monthKeys = [];
+  var now = new Date();
+  for (var i = 11; i >= 0; i--) {
+    var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    var yy = d.getFullYear();
+    var mm = String(d.getMonth() + 1).padStart(2, "0");
+    monthKeys.push(yy + "-" + mm);
+    labels.push(d.toLocaleDateString("en-SG", { month: "short", year: "numeric" }));
+  }
+
+  var datasets = [];
+  LEAVE_TYPES.forEach(function(lt) {
+    var data = monthKeys.map(function(mk) {
+      var total = 0;
+      leaveRecs.forEach(function(r) {
+        if (r.status !== "approved") return;
+        if (r.leaveType !== lt) return;
+        if (siteFilter && r.site !== siteFilter) return;
+        if (!r.fromDate || !r.toDate) return;
+        var mStart = mk + "-01";
+        var lastDay = new Date(parseInt(mk.slice(0,4),10), parseInt(mk.slice(5,7),10), 0).getDate();
+        var mEnd   = mk + "-" + String(lastDay).padStart(2,"0");
+        if (r.fromDate > mEnd || r.toDate < mStart) return;
+        total += parseInt(r.numDays, 10) || 0;
+      });
+      return total;
+    });
+    if (data.some(function(v){ return v > 0; })) {
+      var color = LEAVE_TYPE_COLORS[lt] || "#6b7280";
+      datasets.push({
+        label: lt,
+        data: data,
+        borderColor: color,
+        backgroundColor: color + "22",
+        tension: 0.3,
+        fill: true,
+        pointRadius: 4,
+        pointHoverRadius: 6
+      });
+    }
+  });
+
+  if (anLeaveTrendChart) { anLeaveTrendChart.destroy(); anLeaveTrendChart = null; }
+
+  if (!datasets.length) {
+    canvas.style.display = "none";
+    if (emptyEl) emptyEl.style.display = "flex";
+    return;
+  }
+  canvas.style.display = "";
+  if (emptyEl) emptyEl.style.display = "none";
+
+  anLeaveTrendChart = new Chart(canvas, {
+    type: "line",
+    data: { labels: labels, datasets: datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom", labels: { font: { size: 11 }, boxWidth: 12 } }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { stepSize: 1, precision: 0 },
+          title: { display: true, text: "Days", font: { size: 11 } }
+        },
+        x: { ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+function renderCalendar() {
+  var lbl = document.getElementById("calMonthLbl");
+  var grid = document.getElementById("calGrid");
+  if (!lbl || !grid) return;
+
+  var months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  lbl.textContent = months[calMonth] + " " + calYear;
+
+  var siteFilter = (document.getElementById("calSite") || {}).value || "";
+  var todayISO   = new Date().toISOString().slice(0,10);
+
+  var dows = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  var html = dows.map(function(d){ return '<div class="cal-dow">' + d + '</div>'; }).join("");
+
+  var firstDay = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+  var startOffset = (firstDay + 6) % 7; // Mon=0
+  var daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  var daysInPrev  = new Date(calYear, calMonth, 0).getDate();
+
+  for (var p = startOffset - 1; p >= 0; p--) {
+    var pd = daysInPrev - p;
+    html += '<div class="cal-cell other-month"><div class="cal-day-num">' + pd + '</div></div>';
+  }
+
+  for (var d = 1; d <= daysInMonth; d++) {
+    var mm = String(calMonth + 1).padStart(2, "0");
+    var dd = String(d).padStart(2, "0");
+    var isoDate = calYear + "-" + mm + "-" + dd;
+    var leaves  = _calLeavesOnDay(isoDate, siteFilter);
+    var isToday = isoDate === todayISO;
+
+    var chips = "";
+    var shown = leaves.slice(0, 4);
+    var extra = leaves.length - shown.length;
+    shown.forEach(function(r){ chips += _calChip(r); });
+    if (extra > 0) chips += '<span class="cal-more">+' + extra + '</span>';
+
+    html += '<div class="cal-cell' + (isToday ? " today" : "") + '">'
+      + '<div class="cal-day-num">' + d + '</div>'
+      + chips
+      + '</div>';
+  }
+
+  var totalCells = startOffset + daysInMonth;
+  var remainder  = totalCells % 7;
+  if (remainder > 0) {
+    for (var n = 1; n <= 7 - remainder; n++) {
+      html += '<div class="cal-cell other-month"><div class="cal-day-num">' + n + '</div></div>';
+    }
+  }
+
+  grid.innerHTML = html;
+}
+
+function _anRenderLeaveBalanceStrip(wrap, empId, year, recs) {
+  _anFetchEntitlement(empId, year, function(doc) {
+    if (!wrap) return;
+    var hasAny = doc && (Object.keys(doc.quotas||{}).length > 0);
+
+    if (!hasAny) {
+      var hasUsage = LEAVE_TYPES.some(function(lt){
+        return _anComputeUsed(empId, year, lt, recs) > 0;
+      });
+      if (!hasUsage) {
+        wrap.innerHTML = '<div style="background:#f3f4f6;border-radius:10px;padding:10px 14px;font-size:.8rem;color:var(--ink3);font-style:italic">Leave entitlements not yet configured by admin.</div>';
+        return;
+      }
+    }
+
+    var cards = '';
+    LEAVE_TYPES.forEach(function(lt) {
+      var b = _anGetBalance(doc, lt, empId, year, recs);
+      if (b.quota === null && b.used === 0) return;
+      var usedOf = b.quota !== null ? b.used + " / " + b.quota : b.used + " / —";
+      var remTxt = b.balance !== null ? (b.balance + " left") : "—";
+      var remColor = b.balance === null ? "#6b7280" : b.balance > 0 ? "#15803d" : "#b91c1c";
+      var dot = LEAVE_TYPE_COLORS[lt] || "#6b7280";
+      cards += '<div style="flex-shrink:0;min-width:140px;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-right:10px">'
+        + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
+        +   '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;display:inline-block"></span>'
+        +   '<span style="font-size:.72rem;font-weight:700;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px">' + lt + '</span>'
+        + '</div>'
+        + '<div style="font-size:.82rem;color:var(--ink3);margin-bottom:2px">' + usedOf + ' days used</div>'
+        + '<div style="font-size:.88rem;font-weight:800;color:' + remColor + '">' + remTxt + '</div>'
+        + '</div>';
+    });
+
+    wrap.innerHTML = '<div style="display:flex;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch">' + cards + '</div>';
+  });
+}
+
 function anSaveManpowerConfig() {
   var inputs = document.querySelectorAll("#manpowerConfigRows .mp-row-input");
   var next = {};
@@ -4149,6 +4648,66 @@ var LEAVE_TYPES = [
   "Medical Leave","Compassionate Leave",
   "Maternity/Paternity Leave","Emergency Leave","Others"
 ];
+
+// ── Leave type colour map (calendar + trends chart) ──────
+var LEAVE_TYPE_COLORS = {
+  "Annual Leave":             "#0077ff",
+  "Sick Leave":               "#ff3b5c",
+  "Medical Leave":            "#f59e0b",
+  "Unpaid Leave":             "#6b7280",
+  "Compassionate Leave":      "#7e22ce",
+  "Maternity/Paternity Leave":"#00c896",
+  "Emergency Leave":          "#e02040",
+  "Others":                   "#64748b"
+};
+
+// ── Entitlement cache: key = "{empId}_{year}" ────────────
+var entitlementCache = {};
+var calYear  = new Date().getFullYear();
+var calMonth = new Date().getMonth(); // 0-indexed
+var anLeaveTrendChart = null;
+
+// Fetch entitlement doc from Firestore (or local cache).
+// cb(doc) where doc = { quotas:{}, adjustments:{} } or null.
+function _anFetchEntitlement(empId, year, cb) {
+  var key = empId + "_" + year;
+  if (entitlementCache[key] !== undefined) { cb(entitlementCache[key]); return; }
+  if (!db) { entitlementCache[key] = null; cb(null); return; }
+  db.collection("leaveEntitlements").doc(key).get()
+    .then(function(snap) {
+      var d = snap.exists ? snap.data() : null;
+      entitlementCache[key] = d;
+      cb(d);
+    })
+    .catch(function() { entitlementCache[key] = null; cb(null); });
+}
+
+// Count approved leave days for empId + leaveType in a given year.
+// Uses leaveRecs (already in memory on admin side) or a passed-in array.
+function _anComputeUsed(empId, year, leaveType, recs) {
+  var src = recs || leaveRecs;
+  var used = 0;
+  src.forEach(function(r) {
+    if (r.empId !== empId) return;
+    if (r.leaveType !== leaveType) return;
+    if (r.status !== "approved") return;
+    if (!r.fromDate) return;
+    var y = parseInt((r.fromDate || "").slice(0, 4), 10);
+    if (y !== year) return;
+    used += (parseInt(r.numDays, 10) || 0);
+  });
+  return used;
+}
+
+// Returns { quota, adjustment, used, balance } for one leave type.
+// doc = entitlement document (may be null).
+function _anGetBalance(doc, leaveType, empId, year, recs) {
+  var quota      = doc && doc.quotas      && doc.quotas[leaveType]      != null ? doc.quotas[leaveType]      : null;
+  var adjustment = doc && doc.adjustments && doc.adjustments[leaveType] != null ? doc.adjustments[leaveType] : 0;
+  var used = _anComputeUsed(empId, year, leaveType, recs);
+  var balance = quota !== null ? (quota + adjustment - used) : null;
+  return { quota: quota, adjustment: adjustment, used: used, balance: balance };
+}
 
 // ── Leave State ─────────────────────────────────────
 var leaveRecs = [];
@@ -4720,13 +5279,19 @@ function loadLeaves() {
 
 // ── Leave Table Filter ──────────────────────────────
 function filteredLeaves() {
-  var q  = ((document.getElementById("lSearch")||{}).value||"").toLowerCase();
-  var s  = (document.getElementById("lStatus")||{}).value||"";
-  var lt = (document.getElementById("lLeaveType")||{}).value||"";
-  return leaveRecs.filter(function(r){
-    if (q && !((r.empId||"").toLowerCase().includes(q)||(r.empName||"").toLowerCase().includes(q))) return false;
-    if (s && r.status !== s) return false;
+  var q  = (document.getElementById("lSearch")    || {}).value || "";
+  var st = (document.getElementById("lStatus")    || {}).value || "";
+  var lt = (document.getElementById("lLeaveType") || {}).value || "";
+  var df = (document.getElementById("lDateFrom")  || {}).value || "";
+  var dt = (document.getElementById("lDateTo")    || {}).value || "";
+  return leaveRecs.filter(function(r) {
+    if (q  && !(r.empName||"").toLowerCase().includes(q.toLowerCase()) &&
+               !(r.empId||"").toLowerCase().includes(q.toLowerCase())) return false;
+    if (st && r.status !== st) return false;
     if (lt && r.leaveType !== lt) return false;
+    // Overlap: leave period overlaps [df, dt]
+    if (df && r.toDate   && r.toDate   < df) return false;
+    if (dt && r.fromDate && r.fromDate > dt) return false;
     return true;
   });
 }
@@ -6054,6 +6619,23 @@ function loadMyLeaves() {
       list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--ink3);font-size:.88rem">No leave applications found for this Engineer ID.</div>';
       return;
     }
+    // ── Balance strip ─────────────────────────────────
+    var year = new Date().getFullYear();
+    var balWrap = document.getElementById("myLeavesBalanceStrip");
+    if (!balWrap) {
+      balWrap = document.createElement("div");
+      balWrap.id = "myLeavesBalanceStrip";
+      balWrap.style.cssText = "margin-bottom:16px;overflow-x:auto;padding-bottom:4px";
+      var modalBox = document.querySelector("#myLeavesModal .modal-box");
+      var titleEl  = document.getElementById("myLeavesEmpInfo");
+      if (modalBox && titleEl && titleEl.nextSibling) {
+        modalBox.insertBefore(balWrap, titleEl.nextSibling.nextSibling || titleEl.nextSibling);
+      } else if (modalBox) {
+        modalBox.insertBefore(balWrap, modalBox.firstChild.nextSibling);
+      }
+    }
+    _anRenderLeaveBalanceStrip(balWrap, empId, year, recs);
+    // ── End balance strip ─────────────────────────────
     list.innerHTML = recs.map(function(r){
       var statusColor = {
         pending:"#92400e", approved:"#15803d", rejected:"#b91c1c",
