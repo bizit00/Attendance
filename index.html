@@ -319,23 +319,22 @@ tr:hover td{background:#fafdf8}
 .an-charts-row{display:grid;grid-template-columns:1fr 340px;gap:16px;margin-bottom:16px}
 .an-chart-main,.an-chart-side{margin-bottom:0}
 
-/* ── SITE PROGRESS CARDS (Manpower Gap) ── */
-.an-site-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-bottom:18px}
-.an-site-card{background:#fafaf8;border:1px solid var(--border);border-radius:12px;padding:14px 16px}
-.an-site-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.an-site-name{font-size:.82rem;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
-.an-site-nums{font-size:.76rem;color:var(--ink3);font-family:var(--mono)}
-.an-site-prog-bg{height:9px;background:#e5e7eb;border-radius:6px;overflow:hidden;margin-bottom:7px;position:relative}
-.an-site-prog-fill{height:100%;border-radius:6px;transition:width .4s cubic-bezier(.4,0,.2,1)}
-.an-site-prog-target{position:absolute;top:0;bottom:0;width:2px;background:rgba(13,17,23,.45)}
-.an-site-card-footer{display:flex;justify-content:space-between;align-items:center}
-.an-site-stats{font-size:.72rem;color:var(--ink3)}
-.an-site-stats span{font-weight:700;color:var(--ink2)}
-.an-gap-pill{display:inline-flex;align-items:center;gap:4px;border-radius:20px;padding:2px 9px;font-size:.72rem;font-weight:800;font-family:var(--mono)}
-.an-gap-pill-surplus{background:#f0fdf4;color:#15803d;border:1px solid #86efac}
-.an-gap-pill-deficit{background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5}
-.an-gap-pill-ontarget{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
-.an-gap-pill-noreq{background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db}
+/* ── COMPACT GAP ROWS (Manpower Gap) ── */
+.an-gap-rows{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+.an-gap-row{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--border);border-left:4px solid #d1d5db;border-radius:8px;padding:9px 14px;transition:border-left-color .2s}
+.an-gap-row.gr-deficit{border-left-color:var(--red)}
+.an-gap-row.gr-surplus{border-left-color:var(--green)}
+.an-gap-row.gr-ontarget{border-left-color:var(--blue)}
+.an-gap-row.gr-noreq{border-left-color:#d1d5db}
+.an-gap-row-name{font-size:.83rem;font-weight:700;color:var(--ink);min-width:80px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.an-gap-row-stats{display:flex;gap:18px;flex:1;font-size:.74rem;color:var(--ink2);flex-wrap:wrap}
+.an-gap-row-stat b{color:var(--ink);font-family:var(--mono);font-weight:700}
+.an-gap-row-badge{font-size:.69rem;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+.gr-badge-surplus{background:#f0fdf4;color:#15803d;border-color:#86efac}
+.gr-badge-deficit{background:#fef2f2;color:#b91c1c;border-color:#fca5a5}
+.gr-badge-ontarget{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+.gr-badge-noreq{background:#f3f4f6;color:#6b7280;border-color:#d1d5db}
+@media(max-width:600px){.an-gap-row-stats{gap:10px}.an-gap-row-name{min-width:60px}}
 
 /* Legacy gap helpers kept for table */
 .gap-badge{display:inline-flex;align-items:center;gap:5px;border-radius:30px;padding:3px 11px;font-size:.78rem;font-weight:700;font-family:var(--mono);letter-spacing:.3px}
@@ -1213,13 +1212,13 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
       <!-- ── Filter bar ─────────────────────────────── -->
       <div class="an-filter-bar">
-        <select id="anSite" onchange="renderAnalytics()">
+        <select id="anSite" onchange="_raDebounced()">
           <option value="">🏢 All Sites</option>
         </select>
-        <input type="date" id="anDateFrom" onchange="renderAnalytics()" title="From date"/>
+        <input type="date" id="anDateFrom" onchange="_raDebounced()" title="From date"/>
         <span class="an-filter-sep">→</span>
-        <input type="date" id="anDateTo" onchange="renderAnalytics()" title="To date"/>
-        <select id="anGroupBy" onchange="renderAnalytics()">
+        <input type="date" id="anDateTo" onchange="_raDebounced()" title="To date"/>
+        <select id="anGroupBy" onchange="_raDebounced()">
           <option value="site">📍 By Site</option>
           <option value="engineer">👷 By Engineer</option>
           <option value="date">📅 By Date</option>
@@ -1234,7 +1233,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="an-snapshot-hdr">
         <div class="an-snapshot-hdr-left">
           <span class="an-section-label">📅 Snapshot as of</span>
-          <input type="date" id="anAsOfDate" onchange="renderAnalytics()" class="an-snapshot-date" title="Pick any date"/>
+          <input type="date" id="anAsOfDate" onchange="_raDebounced()" class="an-snapshot-date" title="Pick any date"/>
           <button class="an-snap-btn" onclick="anAsOfToday()">Today</button>
           <button class="an-snap-btn an-snap-nav" onclick="anAsOfShift(-1)" title="Previous day">◀</button>
           <button class="an-snap-btn an-snap-nav" onclick="anAsOfShift(1)"  title="Next day">▶</button>
@@ -1374,36 +1373,14 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <span class="an-live-badge">LIVE</span>
         </div>
 
-        <!-- Visual site progress cards -->
-        <div class="an-site-cards" id="anGapSiteCards"></div>
+        <!-- Compact site rows -->
+        <div id="anGapSiteCards"></div>
 
-        <!-- Hidden chart canvas (still rendered, used for tooltip data) -->
-        <canvas id="anGapChart" style="display:none"></canvas>
-
-        <!-- Detail table (shown below cards) -->
-        <div style="overflow-x:auto;margin-top:4px">
-          <table id="anGapDetailTable">
-            <thead><tr>
-              <th>Site</th>
-              <th style="text-align:right">Roster</th>
-              <th style="text-align:right">On Leave</th>
-              <th style="text-align:right">Available</th>
-              <th style="text-align:right">Required</th>
-              <th style="text-align:right">Gap</th>
-            </tr></thead>
-            <tbody id="anGapTblBody"></tbody>
-          </table>
-        </div>
-        <div id="anGapTblEmpty" class="empty" style="display:none;padding:30px 20px">
-          <div class="empty-icon">⚖️</div>
-          <div class="empty-t">No site data yet</div>
-          <div>Engineers must check in or have leave records to appear here.</div>
-          <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()" style="margin-top:12px">⚙️ Configure Manpower</button>
-        </div>
-        <div id="anGapEmpty" style="display:none;padding:30px 20px" class="empty">
-          <div class="empty-icon">⚖️</div>
-          <div id="anGapEmptyMsg">Set required manpower per site to see the gap analysis</div>
-          <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()" style="margin-top:12px">⚙️ Configure Manpower</button>
+        <!-- Ghost elements kept for JS compatibility -->
+        <tbody id="anGapTblBody" style="display:none"></tbody>
+        <div id="anGapTblEmpty" style="display:none"></div>
+        <div id="anGapEmpty" style="display:none">
+          <div id="anGapEmptyMsg"></div>
         </div>
       </div>
 
@@ -3822,6 +3799,13 @@ function analyticsClearFilters() {
   renderAnalytics();
 }
 
+// ── Debounced trigger for filter-change events (prevents re-render on every keystroke) ──
+var _anDbTimer = null;
+function _raDebounced() {
+  clearTimeout(_anDbTimer);
+  _anDbTimer = setTimeout(renderAnalytics, 180);
+}
+
 // ── Main render — called by renderAll() (live) + on filter change ──
 function renderAnalytics() {
   var panel = document.getElementById("dTab-analytics");
@@ -3872,6 +3856,7 @@ function renderAnalytics() {
   _anRenderMainChart(agg, groupBy);
   _anRenderStatusChart(rows);
   _anRenderTrendChart(rows);
+  _anRenderLeaveTrendChart((document.getElementById("anSite")||{}).value||"");
 }
 
 // ── Main chart ──────────────────────────────────────
@@ -3880,11 +3865,10 @@ function _anRenderMainChart(agg, groupBy) {
   var emptyEl = document.getElementById("anMainEmpty");
   if (!canvas) return;
 
-  if (_anMainChart) { _anMainChart.destroy(); _anMainChart = null; }
-
   if (!agg.length) {
     if (emptyEl) emptyEl.style.display = "flex";
     canvas.style.display = "none";
+    if (_anMainChart) { _anMainChart.destroy(); _anMainChart = null; }
     return;
   }
   if (emptyEl) emptyEl.style.display = "none";
@@ -3894,11 +3878,22 @@ function _anRenderMainChart(agg, groupBy) {
     return groupBy === "engineer" && g.key.length > 32 ? g.key.slice(0,30) + "…" : g.key;
   });
   var data   = agg.map(function(g){ return g.count; });
-  var colors = _anColors(agg.length);
 
   var actualType  = _anChartType;
   var isHorizontal = actualType === "horizontalBar";
   if (isHorizontal) actualType = "bar";
+
+  // Reuse existing chart if same type — just swap data (much faster, no re-render flicker)
+  if (_anMainChart && _anMainChart.config.type === actualType) {
+    _anMainChart.data.labels = labels;
+    _anMainChart.data.datasets[0].data = data;
+    _anMainChart.data.datasets[0].backgroundColor = (actualType === "pie" || actualType === "doughnut" || actualType === "polarArea") ? _anColors(agg.length, 0.82) : (actualType === "line" ? "rgba(0,119,255,.1)" : _anColors(agg.length, 0.82));
+    _anMainChart.data.datasets[0].borderColor = (actualType === "pie" || actualType === "doughnut" || actualType === "polarArea") ? "#ffffff" : (actualType === "line" ? "#0077ff" : _anColors(agg.length));
+    _anMainChart.options.indexAxis = isHorizontal ? "y" : "x";
+    _anMainChart.update({ duration: 250, easing: "easeOutQuart" });
+    return;
+  }
+  if (_anMainChart) { _anMainChart.destroy(); _anMainChart = null; }
 
   var multiColor = (actualType === "pie" || actualType === "doughnut" || actualType === "polarArea");
 
@@ -3927,7 +3922,7 @@ function _anRenderMainChart(agg, groupBy) {
       responsive: true,
       maintainAspectRatio: false,
       indexAxis: isHorizontal ? "y" : "x",
-      animation: { duration: 500, easing: "easeOutQuart" },
+      animation: { duration: 300, easing: "easeOutQuart" },
       plugins: {
         legend: {
           display: multiColor,
@@ -3975,8 +3970,6 @@ function _anRenderStatusChart(rows) {
   var emptyEl = document.getElementById("anStatusEmpty");
   if (!canvas) return;
 
-  if (_anStatusChart) { _anStatusChart.destroy(); _anStatusChart = null; }
-
   var ci = 0, co = 0, late = 0, ot = 0;
   rows.forEach(function(r){
     if (r.status === "in")  ci++;
@@ -3988,10 +3981,18 @@ function _anRenderStatusChart(rows) {
   if (!rows.length) {
     if (emptyEl) emptyEl.style.display = "flex";
     canvas.style.display = "none";
+    if (_anStatusChart) { _anStatusChart.destroy(); _anStatusChart = null; }
     return;
   }
   if (emptyEl) emptyEl.style.display = "none";
   canvas.style.display = "block";
+
+  // Reuse existing chart — just update data
+  if (_anStatusChart) {
+    _anStatusChart.data.datasets[0].data = [co, ci, late, ot];
+    _anStatusChart.update({ duration: 250 });
+    return;
+  }
 
   _anStatusChart = new Chart(canvas, {
     type: "doughnut",
@@ -4009,7 +4010,7 @@ function _anRenderStatusChart(rows) {
     options: {
       responsive: true, maintainAspectRatio: false,
       cutout: "68%",
-      animation: { duration: 500, easing: "easeOutQuart" },
+      animation: { duration: 300, easing: "easeOutQuart" },
       plugins: {
         legend: {
           position: "bottom",
@@ -4035,8 +4036,6 @@ function _anRenderTrendChart(rows) {
   var canvas = document.getElementById("anTrendChart");
   if (!canvas) return;
 
-  if (_anTrendChart) { _anTrendChart.destroy(); _anTrendChart = null; }
-
   // Build last 14 days (inclusive of today)
   var today = new Date(); today.setHours(0,0,0,0);
   var days = [], counts = {};
@@ -4051,6 +4050,13 @@ function _anRenderTrendChart(rows) {
     var iso = _anIsoDate(r);
     if (iso && counts.hasOwnProperty(iso)) counts[iso]++;
   });
+
+  // Reuse existing chart — just update data
+  if (_anTrendChart) {
+    _anTrendChart.data.datasets[0].data = days.map(function(d){ return counts[d]; });
+    _anTrendChart.update({ duration: 250 });
+    return;
+  }
 
   _anTrendChart = new Chart(canvas, {
     type: "line",
@@ -4078,7 +4084,7 @@ function _anRenderTrendChart(rows) {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      animation: { duration: 500, easing: "easeOutQuart" },
+      animation: { duration: 300, easing: "easeOutQuart" },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -4511,15 +4517,11 @@ function renderManpowerGap() {
   setText("anGapSub", "Available vs Required Manpower — as of " + humanDate);
   setText("anLeaveListSub", "As of " + humanDate);
 
-  // Render chart
-  _anRenderGapChart(displayGaps);
-
-  // Render the gap table
+  // Render the gap rows
   _anRenderGapTable(displayGaps);
 
   // Render the leave list
   _anRenderLeaveList(onLeaveAll, isoDate);
-  _anRenderLeaveTrendChart((document.getElementById("anSite")||{}).value||"");
 }
 
 // ── Gap chart (grouped bar: Available vs Required per site) ──
@@ -4605,37 +4607,34 @@ function _anRenderGapTable(gaps) {
   var empty = document.getElementById("anGapTblEmpty");
   var cards = document.getElementById("anGapSiteCards");
 
-  // ── Visual site progress cards ──────────────────────
+  // ── Compact gap rows ──────────────────────────────
   if (cards) {
     if (!gaps.length) {
-      cards.innerHTML = "";
+      cards.innerHTML = '<div class="empty" style="padding:28px 20px"><div class="empty-icon">⚖️</div><div class="empty-t">No site data yet</div><div>Engineers must check in or have leave records to appear here.</div><button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()" style="margin-top:12px">⚙️ Configure Manpower</button></div>';
     } else {
-      var colorMap = { deficit:"#ff3b5c", surplus:"#00c896", ontarget:"#0077ff", noreq:"#9ca3af" };
-      var bgMap    = { deficit:"#fef2f2", surplus:"#f0fdf4", ontarget:"#eff6ff", noreq:"#f9fafb" };
-      var pillMap  = { deficit:"an-gap-pill-deficit", surplus:"an-gap-pill-surplus", ontarget:"an-gap-pill-ontarget", noreq:"an-gap-pill-noreq" };
-      var labelMap = { deficit:"Deficit", surplus:"Surplus", ontarget:"On Target", noreq:"No Target Set" };
-      var iconMap  = { deficit:"⚠", surplus:"✓", ontarget:"●", noreq:"—" };
+      var rowCls   = { deficit:"gr-deficit",  surplus:"gr-surplus",  ontarget:"gr-ontarget",  noreq:"gr-noreq" };
+      var badgeCls = { deficit:"gr-badge-deficit", surplus:"gr-badge-surplus", ontarget:"gr-badge-ontarget", noreq:"gr-badge-noreq" };
+      var badgeTxt = { deficit:"Deficit", surplus:"Surplus", ontarget:"On Target", noreq:"No Target" };
 
-      cards.innerHTML = '<div class="an-site-cards">' + gaps.map(function(g){
-        var color   = colorMap[g.status] || "#9ca3af";
-        var pct     = (g.required != null && g.required > 0) ? Math.min(100, (g.available / g.required) * 100) : 0;
-        var tgtPct  = 100; // target is always at 100%
-        var pillCls = pillMap[g.status] || "an-gap-pill-noreq";
-        var gapText = g.required != null ? (g.gap > 0 ? "+" + g.gap : String(g.gap)) + " engineers" : "—";
-        var progBar = g.required != null && g.required > 0
-          ? '<div class="an-site-prog-bg"><div class="an-site-prog-fill" style="width:'+pct+'%;background:'+color+'"></div><div class="an-site-prog-target" style="left:'+tgtPct+'%"></div></div>'
-          : '<div class="an-site-prog-bg"><div class="an-site-prog-fill" style="width:0%"></div></div>';
-
-        return '<div class="an-site-card" style="border-color:' + color + '33">' +
-          '<div class="an-site-card-top">' +
-            '<div class="an-site-name" title="'+sanitizeHtml(g.site)+'">' + sanitizeHtml(g.site.replace(/^(Site [A-Z] - |HQ - )/,"")) + '</div>' +
-            '<div class="an-site-nums">' + g.available + (g.required != null ? ' / ' + g.required : '') + '</div>' +
+      cards.innerHTML = '<div class="an-gap-rows">' + gaps.map(function(g){
+        var shortName = sanitizeHtml(g.site.replace(/^(Site [A-Z] - |HQ - )/,""));
+        var rc  = rowCls[g.status]   || "gr-noreq";
+        var bc  = badgeCls[g.status] || "gr-badge-noreq";
+        var bt  = badgeTxt[g.status] || "—";
+        var ratioHtml = g.required != null
+          ? '<span class="an-gap-row-stat">Available <b>' + g.available + ' / ' + g.required + '</b></span>'
+          : '<span class="an-gap-row-stat">Available <b>' + g.available + '</b></span>';
+        var gapHtml = g.required != null
+          ? ' <span class="an-gap-row-stat">Gap <b style="color:' + (g.gap < 0 ? 'var(--red)' : (g.gap > 0 ? 'var(--green)' : 'var(--blue)')) + '">' + (g.gap > 0 ? '+' : '') + g.gap + '</b></span>'
+          : '';
+        return '<div class="an-gap-row ' + rc + '">' +
+          '<div class="an-gap-row-name" title="' + sanitizeHtml(g.site) + '">' + shortName + '</div>' +
+          '<div class="an-gap-row-stats">' +
+            '<span class="an-gap-row-stat">Roster <b>' + g.roster + '</b></span>' +
+            '<span class="an-gap-row-stat">On Leave <b>' + g.onLeave + '</b></span>' +
+            ratioHtml + gapHtml +
           '</div>' +
-          progBar +
-          '<div class="an-site-card-footer">' +
-            '<div class="an-site-stats">Roster <span>' + g.roster + '</span>  ·  Leave <span>' + g.onLeave + '</span></div>' +
-            '<span class="an-gap-pill ' + pillCls + '">' + iconMap[g.status] + ' ' + (g.required != null ? gapText : labelMap[g.status]) + '</span>' +
-          '</div>' +
+          '<span class="an-gap-row-badge ' + bc + '">' + bt + '</span>' +
         '</div>';
       }).join("") + '</div>';
     }
@@ -5012,15 +5011,24 @@ function _anRenderLeaveTrendChart(siteFilter) {
     }
   });
 
-  if (anLeaveTrendChart) { anLeaveTrendChart.destroy(); anLeaveTrendChart = null; }
-
   if (!datasets.length) {
     canvas.style.display = "none";
     if (emptyEl) emptyEl.style.display = "flex";
+    if (anLeaveTrendChart) { anLeaveTrendChart.destroy(); anLeaveTrendChart = null; }
     return;
   }
   canvas.style.display = "";
   if (emptyEl) emptyEl.style.display = "none";
+
+  // Reuse existing chart if same number of datasets (leave types present)
+  if (anLeaveTrendChart && anLeaveTrendChart.data.datasets.length === datasets.length) {
+    datasets.forEach(function(ds, i){
+      anLeaveTrendChart.data.datasets[i].data = ds.data;
+    });
+    anLeaveTrendChart.update({ duration: 250 });
+    return;
+  }
+  if (anLeaveTrendChart) { anLeaveTrendChart.destroy(); anLeaveTrendChart = null; }
 
   anLeaveTrendChart = new Chart(canvas, {
     type: "line",
