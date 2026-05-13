@@ -2690,7 +2690,7 @@ function confirmOtp() {
     if (input !== data.code) {
       var attempts = (data.attempts || 0) + 1;
       if (attempts >= 3) {
-        sessionStorage.setItem("_at_otp_lock", String(Date.now() + 30 * 60 * 1000));
+        sessionStorage.setItem("_at_otp_lock", String(Date.now() + 1 * 60 * 1000));
         db.collection("otpRequests").doc(reqId).update({ status: "expired", attempts: attempts }).catch(function(){});
         msgEl.className = "otp-msg err";
         msgEl.textContent = "Too many wrong attempts. Try again in 30 minutes.";
