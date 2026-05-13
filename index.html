@@ -9,7 +9,7 @@
   script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://cdn.jsdelivr.net https://unpkg.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src https://fonts.gstatic.com;
-  connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.elasticemail.com;
+  connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.brevo.com;
   img-src 'self' data: https://maps.google.com;
   frame-src https://attendtrack-94b96.firebaseapp.com;
 ">
@@ -4834,32 +4834,33 @@ function toast(msg, cls) {
 // ║  LEAVE MODULE                                        ║
 // ╚══════════════════════════════════════════════════════╝
 
-// ── Email Configuration (ElasticEmail REST API) ──────
-// ElasticEmail SMTP password doubles as the API key for their REST API
-var ELASTIC_API_KEY = "01D0CAD4469E7959FB2E230DACFD59729D61027BAAABC6874BB6FAAEF4C635F702816CFB2C41E09AFA197CADB84ACD6D";
-var ELASTIC_FROM    = "bizit1610@gmail.com";
-var ELASTIC_API_URL = "https://api.elasticemail.com/v2/email/send";
+// ── Email Configuration (Brevo / Sendinblue v3 REST API) ──
+var BREVO_API_KEY  = "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";
+var BREVO_FROM     = "bizit1610@gmail.com";
+var BREVO_FROM_NAME = "Attendance System";
+var BREVO_API_URL  = "https://api.brevo.com/v3/smtp/email";
 var emailjsReady = true; // REST API is always "ready" — no script to load
 
-// Send email via ElasticEmail v2 REST API. Returns a Promise that resolves on success, rejects on failure.
+// Send email via Brevo v3 REST API. Returns a Promise that resolves on success, rejects on failure.
 function _elasticSend(toEmail, subject, htmlBody) {
-  var params = new URLSearchParams();
-  params.append("apikey",   ELASTIC_API_KEY);
-  params.append("from",     ELASTIC_FROM);
-  params.append("to",       toEmail);
-  params.append("subject",  subject);
-  params.append("bodyHtml", htmlBody);
-  params.append("isTransactional", "true");
-
-  return fetch(ELASTIC_API_URL, {
+  return fetch(BREVO_API_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString()
+    headers: {
+      "accept":       "application/json",
+      "api-key":      BREVO_API_KEY,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      sender:      { email: BREVO_FROM, name: BREVO_FROM_NAME },
+      to:          [{ email: toEmail }],
+      subject:     subject,
+      htmlContent: htmlBody
+    })
   }).then(function(res) {
-    return res.json();
-  }).then(function(data) {
-    if (data && data.success) return data;
-    throw new Error((data && data.error) || "Unknown ElasticEmail error");
+    if (res.ok) return res.json();
+    return res.json().then(function(errData) {
+      throw new Error((errData && errData.message) || ("HTTP " + res.status));
+    });
   });
 }
 
@@ -4937,10 +4938,10 @@ var fbLeaveUnsub = null;
 var leaveAttachment = null; // { name, type, base64 }
 var rejectTargetId = null;
 
-// ── Init Email (ElasticEmail REST API — always ready) ──
+// ── Init Email (Brevo REST API — always ready) ───────
 function initEmailJS() {
   emailjsReady = true;
-  console.log("✅ ElasticEmail REST API ready. From:", ELASTIC_FROM);
+  console.log("✅ Brevo REST API ready. From:", BREVO_FROM);
 }
 
 // ── Engineer: Show/Hide Leave Section ───────────────
@@ -7157,14 +7158,14 @@ function runEmailJSDiag() {
     return;
   }
 
-  // 2. ElasticEmail config set?
-  if (ELASTIC_API_KEY && ELASTIC_API_KEY !== "") ok("API Key set: " + ELASTIC_API_KEY.slice(0,4) + "…" + ELASTIC_API_KEY.slice(-4));
-  else err("ELASTIC_API_KEY is empty — set your ElasticEmail API key in the file");
+  // 2. Brevo config set?
+  if (BREVO_API_KEY && BREVO_API_KEY !== "") ok("API Key set: " + BREVO_API_KEY.slice(0,8) + "…" + BREVO_API_KEY.slice(-4));
+  else err("BREVO_API_KEY is empty — set your Brevo API key in the file");
 
-  if (ELASTIC_FROM && ELASTIC_FROM !== "") ok("From address set: " + ELASTIC_FROM);
-  else err("ELASTIC_FROM is empty — set your sender email in the file");
+  if (BREVO_FROM && BREVO_FROM !== "") ok("From address set: " + BREVO_FROM);
+  else err("BREVO_FROM is empty — set your sender email in the file");
 
-  ok("API endpoint: " + ELASTIC_API_URL);
+  ok("API endpoint: " + BREVO_API_URL);
 
   // 3. Ready state
   if (emailjsReady) ok("Email service ready (REST API)");
@@ -7199,9 +7200,9 @@ function sendTestEmail() {
   if (resEl) resEl.innerHTML = '<span style="color:#6b7280">⏳ Sending…</span>';
 
   var testHtml = "<p>This is a test email from your Attendance System.</p>" +
-                 "<p>If you can read this, ElasticEmail is working correctly!</p>" +
-                 "<p>Config used:<br>API: " + ELASTIC_API_URL + "<br>From: " + ELASTIC_FROM + "<br>Origin: " + location.origin + "</p>";
-  _elasticSend(toEmail, "✅ ElasticEmail Test — Attendance System", testHtml)
+                 "<p>If you can read this, Brevo email is working correctly!</p>" +
+                 "<p>Config used:<br>API: " + BREVO_API_URL + "<br>From: " + BREVO_FROM + "<br>Origin: " + location.origin + "</p>";
+  _elasticSend(toEmail, "✅ Brevo Test — Attendance System", testHtml)
     .then(function() {
       if (resEl) resEl.innerHTML = '<span style="color:#15803d;font-weight:700">✅ Email sent! Check your inbox (and spam folder).</span>';
     })
