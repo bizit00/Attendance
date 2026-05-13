@@ -6,10 +6,10 @@
 <!-- ✅ SECURITY: Content Security Policy — blocks XSS and unauthorized scripts -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://cdn.jsdelivr.net https://unpkg.com https://smtpjs.com;
+  script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://cdn.jsdelivr.net https://unpkg.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src https://fonts.gstatic.com;
-  connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://smtpjs.com;
+  connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.elasticemail.com;
   img-src 'self' data: https://maps.google.com;
   frame-src https://attendtrack-94b96.firebaseapp.com;
 ">
@@ -22,8 +22,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <!-- ✅ SECURITY: Firebase Authentication SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<!-- SMTP.js for email sending (ElasticEmail SMTP relay) -->
-<script src="https://smtpjs.com/v3/smtp.js" onload="if(typeof initEmailJS==='function')initEmailJS();" onerror="console.error('SMTP.js failed to load from smtpjs.com')"></script>
+<!-- Email sending uses ElasticEmail REST API directly via fetch() — no external script needed -->
 
 <!-- Chart.js for Attendance Analytics tab -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" onerror="loadChartJsFallback()"></script>
@@ -2541,32 +2540,25 @@ function sendOtp() {
   msgEl.textContent = "Sending…";
 
   var expiryTime = new Date(Date.now() + 5 * 60 * 1000).toLocaleTimeString();
-  Email.send({
-    Host:     SMTP_HOST,
-    Username: SMTP_USER,
-    Password: SMTP_PASS,
-    Port:     SMTP_PORT,
-    To:       email,
-    From:     SMTP_FROM,
-    Subject:  "Your Attendance Check-In Code",
-    Body:     "<p>Hi <strong>" + name + "</strong>,</p>" +
-              "<p>Your email verification code is:</p>" +
-              "<h2 style='letter-spacing:.3em;font-family:monospace;background:#f4f4f4;padding:16px;border-radius:8px;text-align:center'>" + code + "</h2>" +
-              "<p>This code expires at <strong>" + expiryTime + "</strong> (5 minutes). Enter it in the attendance tracker to complete your check-in.</p>" +
-              "<p style='color:#999;font-size:.85em'>If you did not request this, please ignore this email.</p>"
-  }).then(function(message) {
-    if (message === "OK") {
+  var htmlBody = "<p>Hi <strong>" + name + "</strong>,</p>" +
+                 "<p>Your email verification code is:</p>" +
+                 "<h2 style='letter-spacing:.3em;font-family:monospace;background:#f4f4f4;padding:16px;border-radius:8px;text-align:center'>" + code + "</h2>" +
+                 "<p>This code expires at <strong>" + expiryTime + "</strong> (5 minutes). Enter it in the attendance tracker to complete your check-in.</p>" +
+                 "<p style='color:#999;font-size:.85em'>If you did not request this, please ignore this email.</p>";
+
+  _elasticSend(email, "Your Attendance Check-In Code", htmlBody)
+    .then(function() {
       document.getElementById("otpRow").style.display = "flex";
       msgEl.className = "otp-msg ok";
       msgEl.textContent = "Code sent to " + email + ". Check your inbox.";
       _startOtpResendTimer(60);
-    } else {
-      console.error("[OTP] SMTP error:", message);
+    })
+    .catch(function(e) {
+      console.error("[OTP] ElasticEmail error:", e);
       msgEl.className = "otp-msg err";
-      msgEl.textContent = "Send failed: " + message;
+      msgEl.textContent = "Send failed: " + (e.message || e);
       if (verifyBtn) verifyBtn.disabled = false;
-    }
-  });
+    });
 }
 
 function _startOtpResendTimer(seconds) {
@@ -4842,13 +4834,34 @@ function toast(msg, cls) {
 // ║  LEAVE MODULE                                        ║
 // ╚══════════════════════════════════════════════════════╝
 
-// ── Email Configuration (ElasticEmail SMTP via SMTP.js) ──
-var SMTP_HOST = "smtp.elasticemail.com";
-var SMTP_PORT = "2525";
-var SMTP_USER = "bizit1610@gmail.com";
-var SMTP_PASS = "B253CCE0CDCFF8B5CA3C9FCA4FA248A3896A";
-var SMTP_FROM = "bizit1610@gmail.com";
-var emailjsReady = false; // true once SMTP.js is confirmed loaded
+// ── Email Configuration (ElasticEmail REST API) ──────
+// ElasticEmail SMTP password doubles as the API key for their REST API
+var ELASTIC_API_KEY = "B253CCE0CDCFF8B5CA3C9FCA4FA248A3896A";
+var ELASTIC_FROM    = "bizit1610@gmail.com";
+var ELASTIC_API_URL = "https://api.elasticemail.com/v2/email/send";
+var emailjsReady = true; // REST API is always "ready" — no script to load
+
+// Send email via ElasticEmail v2 REST API. Returns a Promise that resolves on success, rejects on failure.
+function _elasticSend(toEmail, subject, htmlBody) {
+  var params = new URLSearchParams();
+  params.append("apikey",   ELASTIC_API_KEY);
+  params.append("from",     ELASTIC_FROM);
+  params.append("to",       toEmail);
+  params.append("subject",  subject);
+  params.append("bodyHtml", htmlBody);
+  params.append("isTransactional", "true");
+
+  return fetch(ELASTIC_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString()
+  }).then(function(res) {
+    return res.json();
+  }).then(function(data) {
+    if (data && data.success) return data;
+    throw new Error((data && data.error) || "Unknown ElasticEmail error");
+  });
+}
 
 var LEAVE_TYPES = [
   "Annual Leave","Sick Leave","Unpaid Leave",
@@ -4924,14 +4937,10 @@ var fbLeaveUnsub = null;
 var leaveAttachment = null; // { name, type, base64 }
 var rejectTargetId = null;
 
-// ── Init Email (SMTP.js via ElasticEmail) ────────────
+// ── Init Email (ElasticEmail REST API — always ready) ──
 function initEmailJS() {
-  if (typeof Email === "undefined") {
-    console.warn("SMTP.js not loaded — check internet connection");
-    return;
-  }
   emailjsReady = true;
-  console.log("✅ SMTP.js ready. Host:", SMTP_HOST, "User:", SMTP_USER);
+  console.log("✅ ElasticEmail REST API ready. From:", ELASTIC_FROM);
 }
 
 // ── Engineer: Show/Hide Leave Section ───────────────
@@ -5745,25 +5754,16 @@ function sendLeaveEmail(rec, status, rejectReason) {
 
   if (emailjsReady) {
     var htmlBody = "<pre style='font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;line-height:1.6'>" + body + "</pre>";
-    Email.send({
-      Host:     SMTP_HOST,
-      Username: SMTP_USER,
-      Password: SMTP_PASS,
-      Port:     SMTP_PORT,
-      To:       rec.empEmail,
-      From:     SMTP_FROM,
-      Subject:  subject,
-      Body:     htmlBody
-    }).then(function(message) {
-      if (message === "OK") {
+    _elasticSend(rec.empEmail, subject, htmlBody)
+      .then(function() {
         console.log("✅ Email sent OK");
         toast("📧 Notification email sent to " + rec.empEmail, "t-ok");
-      } else {
-        console.error("SMTP send failed:", message);
-        alert("❌ Email Error: " + message + "\n\nOpening email fallback so you can send manually.");
+      })
+      .catch(function(e) {
+        console.error("ElasticEmail send failed:", e);
+        alert("❌ Email Error: " + (e.message || e) + "\n\nOpening email fallback so you can send manually.");
         showEmailFallback(rec.empEmail, subject, body);
-      }
-    });
+      });
   } else {
     showEmailFallback(rec.empEmail, subject, body);
   }
@@ -7157,35 +7157,21 @@ function runEmailJSDiag() {
     return;
   }
 
-  // 2. SMTP config set?
-  if (SMTP_USER && SMTP_USER !== "") ok("SMTP Username set: " + SMTP_USER);
-  else err("SMTP_USER is empty — set your ElasticEmail username in the file");
+  // 2. ElasticEmail config set?
+  if (ELASTIC_API_KEY && ELASTIC_API_KEY !== "") ok("API Key set: " + ELASTIC_API_KEY.slice(0,4) + "…" + ELASTIC_API_KEY.slice(-4));
+  else err("ELASTIC_API_KEY is empty — set your ElasticEmail API key in the file");
 
-  if (SMTP_PASS && SMTP_PASS !== "") ok("SMTP Password set: " + SMTP_PASS.slice(0,4) + "…");
-  else err("SMTP_PASS is empty — set your ElasticEmail SMTP password in the file");
+  if (ELASTIC_FROM && ELASTIC_FROM !== "") ok("From address set: " + ELASTIC_FROM);
+  else err("ELASTIC_FROM is empty — set your sender email in the file");
 
-  ok("SMTP Host: " + SMTP_HOST + " Port: " + SMTP_PORT);
+  ok("API endpoint: " + ELASTIC_API_URL);
 
-  // 3. SMTP.js ready?
-  if (emailjsReady) ok("SMTP.js ready (emailjsReady = true)");
-  else err("SMTP.js not ready — script may not have loaded. Check internet connection.");
+  // 3. Ready state
+  if (emailjsReady) ok("Email service ready (REST API)");
+  else err("Email service not initialised");
 
   // 4. Origin info
   inf("Current origin: " + location.origin);
-
-  // 5. Network check (try reaching SMTP.js CDN)
-  inf("Checking network access to SMTP.js…");
-  panel.innerHTML = lines.join("<br>") + "<br><span style='color:#6b7280'>Pinging smtpjs.com…</span>";
-
-  fetch("https://smtpjs.com/v3/smtp.js", { method:"HEAD" })
-    .then(function(r){
-      ok("Network can reach smtpjs.com (status " + r.status + ")");
-      panel.innerHTML = lines.join("<br>");
-    })
-    .catch(function(){
-      wrn("Could not reach smtpjs.com — check firewall / internet connection");
-      panel.innerHTML = lines.join("<br>");
-    });
 }
 
 function showEmailTestModal() {
@@ -7212,22 +7198,16 @@ function sendTestEmail() {
 
   if (resEl) resEl.innerHTML = '<span style="color:#6b7280">⏳ Sending…</span>';
 
-  Email.send({
-    Host:     SMTP_HOST,
-    Username: SMTP_USER,
-    Password: SMTP_PASS,
-    Port:     SMTP_PORT,
-    To:       toEmail,
-    From:     SMTP_FROM,
-    Subject:  "✅ SMTP Test — Attendance System",
-    Body:     "<p>This is a test email from your Attendance System.</p><p>If you can read this, SMTP email is working correctly!</p><p>Config used:<br>Host: " + SMTP_HOST + "<br>User: " + SMTP_USER + "<br>Origin: " + location.origin + "</p>"
-  }).then(function(message) {
-    if (message === "OK") {
+  var testHtml = "<p>This is a test email from your Attendance System.</p>" +
+                 "<p>If you can read this, ElasticEmail is working correctly!</p>" +
+                 "<p>Config used:<br>API: " + ELASTIC_API_URL + "<br>From: " + ELASTIC_FROM + "<br>Origin: " + location.origin + "</p>";
+  _elasticSend(toEmail, "✅ ElasticEmail Test — Attendance System", testHtml)
+    .then(function() {
       if (resEl) resEl.innerHTML = '<span style="color:#15803d;font-weight:700">✅ Email sent! Check your inbox (and spam folder).</span>';
-    } else {
-      if (resEl) resEl.innerHTML = '<span style="color:var(--red);font-weight:700">❌ Failed: ' + message + '</span>';
-    }
-  });
+    })
+    .catch(function(e) {
+      if (resEl) resEl.innerHTML = '<span style="color:var(--red);font-weight:700">❌ Failed: ' + (e.message || e) + '</span>';
+    });
 }
 
 // ══════════════════════════════════════════════════════
