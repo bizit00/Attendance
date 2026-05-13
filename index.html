@@ -23,7 +23,7 @@
 <!-- ✅ SECURITY: Firebase Authentication SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <!-- SMTP.js for email sending (ElasticEmail SMTP relay) -->
-<script src="https://smtpjs.com/v3/smtp.js"></script>
+<script src="https://smtpjs.com/v3/smtp.js" onload="if(typeof initEmailJS==='function')initEmailJS();" onerror="console.error('SMTP.js failed to load from smtpjs.com')"></script>
 
 <!-- Chart.js for Attendance Analytics tab -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" onerror="loadChartJsFallback()"></script>
@@ -2505,9 +2505,13 @@ function _checkOtpOnLoad(email, deviceId) {
 function sendOtp() {
   var msgEl = document.getElementById("otpMsg");
 
+  // Lazy init — in case SMTP.js loaded after initEmailJS() ran
+  if (!emailjsReady && typeof Email !== "undefined") {
+    emailjsReady = true;
+  }
   if (!emailjsReady) {
     msgEl.className = "otp-msg err";
-    msgEl.textContent = "Email service not ready yet. Please wait a moment and try again.";
+    msgEl.textContent = "Email service not ready. Check your internet connection and reload the page.";
     return;
   }
 
