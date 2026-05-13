@@ -22,24 +22,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <!-- ✅ SECURITY: Firebase Authentication SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<!-- EmailJS for leave notification emails -->
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js" onerror="loadEmailJSFallback()"></script>
-<script>
-function loadEmailJSFallback() {
-  console.warn("EmailJS: jsdelivr failed, trying unpkg fallback…");
-  var s = document.createElement("script");
-  s.src = "https://unpkg.com/@emailjs/browser@4/dist/email.min.js";
-  s.onerror = function() {
-    console.error("EmailJS: both CDNs failed. Check internet connection.");
-  };
-  s.onload = function() {
-    console.log("EmailJS: loaded via unpkg fallback");
-    // Re-init after fallback load
-    if (typeof initEmailJS === "function") initEmailJS();
-  };
-  document.head.appendChild(s);
-}
-</script>
+<!-- SMTP.js for email sending (ElasticEmail SMTP relay) -->
+<script src="https://smtpjs.com/v3/smtp.js"></script>
 
 <!-- Chart.js for Attendance Analytics tab -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" onerror="loadChartJsFallback()"></script>
@@ -2553,23 +2537,31 @@ function sendOtp() {
   msgEl.textContent = "Sending…";
 
   var expiryTime = new Date(Date.now() + 5 * 60 * 1000).toLocaleTimeString();
-  emailjs.send(EMAILJS_SVC, OTP_EMAILJS_TPL, {
-    to_email:  email,
-    to_name:   name,
-    otp_code:  code,
-    time:      expiryTime,
-    from_name: "Attendance System"
-  }).then(function() {
-    document.getElementById("otpRow").style.display = "flex";
-    msgEl.className = "otp-msg ok";
-    msgEl.textContent = "Code sent to " + email + ". Check your inbox.";
-    _startOtpResendTimer(60);
-  }).catch(function(e) {
-    console.error("[OTP] EmailJS error:", e);
-    var detail = (e && e.text) ? e.text : (e && e.status ? "Status " + e.status : String(e));
-    msgEl.className = "otp-msg err";
-    msgEl.textContent = "Send failed: " + detail;
-    if (verifyBtn) verifyBtn.disabled = false;
+  Email.send({
+    Host:     SMTP_HOST,
+    Username: SMTP_USER,
+    Password: SMTP_PASS,
+    Port:     SMTP_PORT,
+    To:       email,
+    From:     SMTP_FROM,
+    Subject:  "Your Attendance Check-In Code",
+    Body:     "<p>Hi <strong>" + name + "</strong>,</p>" +
+              "<p>Your email verification code is:</p>" +
+              "<h2 style='letter-spacing:.3em;font-family:monospace;background:#f4f4f4;padding:16px;border-radius:8px;text-align:center'>" + code + "</h2>" +
+              "<p>This code expires at <strong>" + expiryTime + "</strong> (5 minutes). Enter it in the attendance tracker to complete your check-in.</p>" +
+              "<p style='color:#999;font-size:.85em'>If you did not request this, please ignore this email.</p>"
+  }).then(function(message) {
+    if (message === "OK") {
+      document.getElementById("otpRow").style.display = "flex";
+      msgEl.className = "otp-msg ok";
+      msgEl.textContent = "Code sent to " + email + ". Check your inbox.";
+      _startOtpResendTimer(60);
+    } else {
+      console.error("[OTP] SMTP error:", message);
+      msgEl.className = "otp-msg err";
+      msgEl.textContent = "Send failed: " + message;
+      if (verifyBtn) verifyBtn.disabled = false;
+    }
   });
 }
 
@@ -4846,12 +4838,13 @@ function toast(msg, cls) {
 // ║  LEAVE MODULE                                        ║
 // ╚══════════════════════════════════════════════════════╝
 
-// ── Leave Configuration (edit these) ───────────────
-var EMAILJS_KEY = "JzcIzX9qDreMEunJ0";     // from emailjs.com → Account → Public Key
-var EMAILJS_SVC = "service_8f50fon";     // EmailJS Service ID
-var EMAILJS_TPL = "template_gds7pf1";    // EmailJS Template ID
-var OTP_EMAILJS_TPL = "template_gtwc1ir"; // OTP verification template — replace with real ID from EmailJS dashboard
-var emailjsReady = false;
+// ── Email Configuration (ElasticEmail SMTP via SMTP.js) ──
+var SMTP_HOST = "smtp.elasticemail.com";
+var SMTP_PORT = "2525";
+var SMTP_USER = "bizit1610@gmail.com";
+var SMTP_PASS = "B253CCE0CDCFF8B5CA3C9FCA4FA248A3896A";
+var SMTP_FROM = "bizit1610@gmail.com";
+var emailjsReady = false; // true once SMTP.js is confirmed loaded
 
 var LEAVE_TYPES = [
   "Annual Leave","Sick Leave","Unpaid Leave",
@@ -4927,23 +4920,14 @@ var fbLeaveUnsub = null;
 var leaveAttachment = null; // { name, type, base64 }
 var rejectTargetId = null;
 
-// ── Init EmailJS ────────────────────────────────────
+// ── Init Email (SMTP.js via ElasticEmail) ────────────
 function initEmailJS() {
-  if (typeof emailjs === "undefined") {
-    console.warn("EmailJS SDK not loaded — check internet connection or CDN block");
+  if (typeof Email === "undefined") {
+    console.warn("SMTP.js not loaded — check internet connection");
     return;
   }
-  if (!EMAILJS_KEY || EMAILJS_KEY === "YOUR_EMAILJS_PUBLIC_KEY") {
-    console.warn("EmailJS: Public key not set");
-    return;
-  }
-  try {
-    emailjs.init({ publicKey: EMAILJS_KEY });
-    emailjsReady = true;
-    console.log("✅ EmailJS initialised. Service:", EMAILJS_SVC, "Template:", EMAILJS_TPL);
-  } catch(e) {
-    console.error("EmailJS init failed:", e);
-  }
+  emailjsReady = true;
+  console.log("✅ SMTP.js ready. Host:", SMTP_HOST, "User:", SMTP_USER);
 }
 
 // ── Engineer: Show/Hide Leave Section ───────────────
@@ -5756,41 +5740,25 @@ function sendLeaveEmail(rec, status, rejectReason) {
   body += "This is an automated notification from the Attendance System.\n\nBest regards,\nAttendance System";
 
   if (emailjsReady) {
-    emailjs.send(EMAILJS_SVC, EMAILJS_TPL, {
-      to_email: rec.empEmail,
-      to_name: rec.empName,
-      subject: subject,
-      message: body,
-      leave_type: rec.leaveType,
-      status: isApproved ? "APPROVED ✅" : "REJECTED ❌",
-      from_date: rec.fromDate,
-      to_date: rec.toDate,
-      num_days: rec.numDays,
-      decided_by: rec.decidedBy,
-      reject_reason: rejectReason||"N/A"
-    }).then(function(res){
-      console.log("✅ EmailJS sent OK:", res.status, res.text);
-      toast("📧 Notification email sent to " + rec.empEmail, "t-ok");
-    }).catch(function(e){
-      // Surface the real error so admin knows what went wrong
-      var errMsg = "Unknown error";
-      if (e && e.text)   errMsg = e.text;
-      else if (e && e.status) errMsg = "HTTP " + e.status;
-      else if (e && e.message) errMsg = e.message;
-      console.error("EmailJS send failed:", e);
-
-      // Show specific guidance for common errors
-      var hint = "";
-      if (errMsg.indexOf("origin") !== -1 || errMsg.indexOf("403") !== -1 || (e && e.status === 403)) {
-        hint = "\n\n👉 FIX: Go to emailjs.com → Account → Security → add '" + location.origin + "' to Allowed Origins.";
-      } else if (errMsg.indexOf("template") !== -1 || (e && e.status === 404)) {
-        hint = "\n\n👉 FIX: Check your Template ID '" + EMAILJS_SVC + "' exists in your EmailJS dashboard.";
-      } else if (errMsg.indexOf("service") !== -1) {
-        hint = "\n\n👉 FIX: Check your Service ID '" + EMAILJS_SVC + "' and make sure Gmail is still connected in EmailJS.";
+    var htmlBody = "<pre style='font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;line-height:1.6'>" + body + "</pre>";
+    Email.send({
+      Host:     SMTP_HOST,
+      Username: SMTP_USER,
+      Password: SMTP_PASS,
+      Port:     SMTP_PORT,
+      To:       rec.empEmail,
+      From:     SMTP_FROM,
+      Subject:  subject,
+      Body:     htmlBody
+    }).then(function(message) {
+      if (message === "OK") {
+        console.log("✅ Email sent OK");
+        toast("📧 Notification email sent to " + rec.empEmail, "t-ok");
+      } else {
+        console.error("SMTP send failed:", message);
+        alert("❌ Email Error: " + message + "\n\nOpening email fallback so you can send manually.");
+        showEmailFallback(rec.empEmail, subject, body);
       }
-
-      alert("❌ EmailJS Error: " + errMsg + hint + "\n\nOpening email fallback so you can send manually.");
-      showEmailFallback(rec.empEmail, subject, body);
     });
   } else {
     showEmailFallback(rec.empEmail, subject, body);
@@ -7185,41 +7153,33 @@ function runEmailJSDiag() {
     return;
   }
 
-  // 2. Keys set?
-  if (EMAILJS_KEY && EMAILJS_KEY !== "YOUR_EMAILJS_PUBLIC_KEY") ok("Public Key set: " + EMAILJS_KEY.slice(0,4) + "…" + EMAILJS_KEY.slice(-4));
-  else err("Public Key is a placeholder — open the file and set EMAILJS_KEY");
+  // 2. SMTP config set?
+  if (SMTP_USER && SMTP_USER !== "") ok("SMTP Username set: " + SMTP_USER);
+  else err("SMTP_USER is empty — set your ElasticEmail username in the file");
 
-  if (EMAILJS_SVC && EMAILJS_SVC !== "YOUR_SERVICE_ID") ok("Service ID set: " + EMAILJS_SVC);
-  else err("Service ID is a placeholder — set EMAILJS_SVC");
+  if (SMTP_PASS && SMTP_PASS !== "") ok("SMTP Password set: " + SMTP_PASS.slice(0,4) + "…");
+  else err("SMTP_PASS is empty — set your ElasticEmail SMTP password in the file");
 
-  if (EMAILJS_TPL && EMAILJS_TPL !== "YOUR_TEMPLATE_ID") ok("Template ID set: " + EMAILJS_TPL);
-  else err("Template ID is a placeholder — set EMAILJS_TPL");
+  ok("SMTP Host: " + SMTP_HOST + " Port: " + SMTP_PORT);
 
-  // 3. emailjsReady flag?
-  if (emailjsReady) ok("EmailJS initialised (emailjsReady = true)");
-  else { err("emailjsReady = false — init failed. Check public key is correct"); }
+  // 3. SMTP.js ready?
+  if (emailjsReady) ok("SMTP.js ready (emailjsReady = true)");
+  else err("SMTP.js not ready — script may not have loaded. Check internet connection.");
 
-  // 4. Domain check
+  // 4. Origin info
   inf("Current origin: " + location.origin);
-  if (location.protocol === "file:") {
-    wrn("You are running from a local file (file://). EmailJS rejects file:// — host it on a server or localhost.");
-  } else if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
-    wrn("Running on localhost — make sure 'http://localhost' is in EmailJS Allowed Origins.");
-  } else {
-    inf("Make sure '" + location.origin + "' is in EmailJS → Account → Security → Allowed Origins.");
-  }
 
-  // 5. Network check (try reaching emailjs CDN)
-  inf("Checking network access to EmailJS API…");
-  panel.innerHTML = lines.join("<br>") + "<br><span style='color:#6b7280'>Pinging EmailJS…</span>";
+  // 5. Network check (try reaching SMTP.js CDN)
+  inf("Checking network access to SMTP.js…");
+  panel.innerHTML = lines.join("<br>") + "<br><span style='color:#6b7280'>Pinging smtpjs.com…</span>";
 
-  fetch("https://api.emailjs.com/api/v1.0/email/send", { method:"OPTIONS" })
+  fetch("https://smtpjs.com/v3/smtp.js", { method:"HEAD" })
     .then(function(r){
-      ok("Network can reach api.emailjs.com (status " + r.status + ")");
+      ok("Network can reach smtpjs.com (status " + r.status + ")");
       panel.innerHTML = lines.join("<br>");
     })
     .catch(function(){
-      wrn("Could not reach api.emailjs.com — check firewall / internet connection");
+      wrn("Could not reach smtpjs.com — check firewall / internet connection");
       panel.innerHTML = lines.join("<br>");
     });
 }
@@ -7248,27 +7208,21 @@ function sendTestEmail() {
 
   if (resEl) resEl.innerHTML = '<span style="color:#6b7280">⏳ Sending…</span>';
 
-  emailjs.send(EMAILJS_SVC, EMAILJS_TPL, {
-    to_email:      toEmail,
-    to_name:       "Test Engineer",
-    subject:       "✅ EmailJS Test — Attendance System",
-    message:       "This is a test email from your Attendance System.\n\nIf you can read this, EmailJS is working correctly!\n\nConfig used:\n  Service ID : " + EMAILJS_SVC + "\n  Template ID: " + EMAILJS_TPL + "\n  Origin     : " + location.origin,
-    leave_type:    "Annual Leave",
-    status:        "APPROVED ✅",
-    from_date:     "01/01/2025",
-    to_date:       "03/01/2025",
-    num_days:      "3",
-    decided_by:    "Admin",
-    reject_reason: "N/A"
-  }).then(function(r){
-    if (resEl) resEl.innerHTML = '<span style="color:#15803d;font-weight:700">✅ Email sent! Check your inbox (and spam folder). Status: ' + r.status + ' ' + r.text + '</span>';
-  }).catch(function(e){
-    var errMsg = (e && e.text) ? e.text : (e && e.status ? "HTTP " + e.status : JSON.stringify(e));
-    var hint = "";
-    if (e && e.status === 403) hint = ' — Your domain <strong>' + location.origin + '</strong> is not in EmailJS Allowed Origins. Go to emailjs.com → Account → Security → add it.';
-    else if (e && e.status === 404) hint = ' — Template ID or Service ID not found. Double-check them in your EmailJS dashboard.';
-    else if (e && e.status === 422) hint = ' — Template variable mismatch. Make sure your template uses <code>{{to_email}}</code> in the "To Email" field.';
-    if (resEl) resEl.innerHTML = '<span style="color:var(--red);font-weight:700">❌ Failed: ' + errMsg + hint + '</span>';
+  Email.send({
+    Host:     SMTP_HOST,
+    Username: SMTP_USER,
+    Password: SMTP_PASS,
+    Port:     SMTP_PORT,
+    To:       toEmail,
+    From:     SMTP_FROM,
+    Subject:  "✅ SMTP Test — Attendance System",
+    Body:     "<p>This is a test email from your Attendance System.</p><p>If you can read this, SMTP email is working correctly!</p><p>Config used:<br>Host: " + SMTP_HOST + "<br>User: " + SMTP_USER + "<br>Origin: " + location.origin + "</p>"
+  }).then(function(message) {
+    if (message === "OK") {
+      if (resEl) resEl.innerHTML = '<span style="color:#15803d;font-weight:700">✅ Email sent! Check your inbox (and spam folder).</span>';
+    } else {
+      if (resEl) resEl.innerHTML = '<span style="color:var(--red);font-weight:700">❌ Failed: ' + message + '</span>';
+    }
   });
 }
 
