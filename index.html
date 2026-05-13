@@ -1384,6 +1384,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <button class="tb-btn tb-out" onclick="exportCombinedCSV()">⬇ Full Report</button>
         <button class="tb-btn tb-out" onclick="leaveClearFilters()" title="Clear all filters">✕ Clear</button>
         <button class="tb-btn tb-pri" onclick="anOpenEntitlements()" title="Set leave entitlements per engineer">⚙️ Entitlements</button>
+        <button class="tb-btn tb-pri" onclick="openTimesheetModal()" title="Download monthly timesheet as Excel" style="background:#059669">📋 Timesheet</button>
       </div>
 
       <!-- Leave Table -->
@@ -1951,6 +1952,49 @@ service cloud.firestore {
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MONTHLY TIMESHEET MODAL ════════════════════════ -->
+<div id="timesheetModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:480px">
+    <button class="modal-close" onclick="closeTimesheetModal()">✕</button>
+    <div class="modal-title">📋 Monthly Timesheet</div>
+    <div class="modal-sub">Generate an Excel timesheet from approved leave records and attendance data.</div>
+    <div style="display:flex;gap:12px;margin-bottom:14px">
+      <div style="flex:1">
+        <label style="font-size:.82rem;font-weight:600;color:var(--ink2);display:block;margin-bottom:5px">Month</label>
+        <select id="tsMonth" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-size:.9rem;background:#fafaf8">
+          <option value="1">January</option><option value="2">February</option>
+          <option value="3">March</option><option value="4">April</option>
+          <option value="5">May</option><option value="6">June</option>
+          <option value="7">July</option><option value="8">August</option>
+          <option value="9">September</option><option value="10">October</option>
+          <option value="11">November</option><option value="12">December</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <label style="font-size:.82rem;font-weight:600;color:var(--ink2);display:block;margin-bottom:5px">Year</label>
+        <select id="tsYear" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-size:.9rem;background:#fafaf8">
+          <option value="2025">2025</option>
+          <option value="2026">2026</option>
+          <option value="2027">2027</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:.82rem;font-weight:600;color:var(--ink2);display:block;margin-bottom:5px">Site Filter <span style="font-weight:400;color:var(--ink3)">(optional — leave blank for all sites)</span></label>
+      <select id="tsSite" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-size:.9rem;background:#fafaf8">
+        <option value="">All Sites</option>
+      </select>
+    </div>
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:var(--r);padding:10px 14px;font-size:.8rem;color:#166534;margin-bottom:16px">
+      <strong>Includes:</strong> All engineers who checked in or had approved leave in the selected month. Public holidays auto-marked as <strong>PH</strong>. Weekdays show <strong>1</strong> (present), leave days show their code (AL / MC / NPL…).
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="closeTimesheetModal()">Cancel</button>
+      <button class="modal-btn-confirm" style="background:#059669" onclick="generateTimesheetXLSX()">⬇ Download Excel</button>
     </div>
   </div>
 </div>
@@ -6876,6 +6920,224 @@ function closeLsnPopup() {
 
 function lsnRow(k, v) {
   return '<div class="lsn-row"><span class="lsn-k">' + k + '</span><span class="lsn-v">' + v + '</span></div>';
+}
+
+// ══════════════════════════════════════════════════════
+// ║  MONTHLY TIMESHEET GENERATOR                       ║
+// ══════════════════════════════════════════════════════
+
+// Singapore Public Holidays 2025–2027
+var SG_PH = {
+  // 2025
+  "2025-01-01": "New Year's Day",
+  "2025-01-29": "Chinese New Year",
+  "2025-01-30": "Chinese New Year",
+  "2025-03-31": "Hari Raya Puasa",
+  "2025-04-18": "Good Friday",
+  "2025-05-01": "Labour Day",
+  "2025-05-12": "Vesak Day",
+  "2025-06-06": "Hari Raya Haji",
+  "2025-08-09": "National Day",
+  "2025-10-20": "Deepavali",
+  "2025-12-25": "Christmas Day",
+  // 2026
+  "2026-01-01": "New Year's Day",
+  "2026-02-17": "Chinese New Year",
+  "2026-02-18": "Chinese New Year",
+  "2026-03-20": "Hari Raya Puasa",
+  "2026-04-03": "Good Friday",
+  "2026-05-01": "Labour Day",
+  "2026-05-22": "Vesak Day",
+  "2026-06-09": "Hari Raya Haji",
+  "2026-08-09": "National Day",
+  "2026-11-07": "Deepavali",
+  "2026-12-25": "Christmas Day",
+  // 2027 (tentative)
+  "2027-01-01": "New Year's Day",
+  "2027-02-06": "Chinese New Year",
+  "2027-02-07": "Chinese New Year",
+  "2027-04-23": "Good Friday",
+  "2027-05-01": "Labour Day",
+  "2027-08-09": "National Day",
+  "2027-10-29": "Deepavali",
+  "2027-12-25": "Christmas Day"
+};
+
+// Map app leave types → timesheet short codes
+var TIMESHEET_CODE = {
+  "Annual Leave":              "AL",
+  "Sick Leave":                "MC",
+  "Medical Leave":             "MC",
+  "Unpaid Leave":              "NPL",
+  "Compassionate Leave":       "CL",
+  "Maternity/Paternity Leave": "ML",
+  "Emergency Leave":           "EL",
+  "Others":                    "OTH"
+};
+
+function openTimesheetModal() {
+  var now = new Date();
+  document.getElementById("tsMonth").value = now.getMonth() + 1;
+  document.getElementById("tsYear").value  = now.getFullYear();
+  var sel = document.getElementById("tsSite");
+  sel.innerHTML = '<option value="">All Sites</option>';
+  (WORK_SITES || []).forEach(function(s) {
+    var o = document.createElement("option");
+    o.value = s.name; o.textContent = s.name;
+    sel.appendChild(o);
+  });
+  document.getElementById("timesheetModal").classList.add("open");
+}
+
+function closeTimesheetModal() {
+  document.getElementById("timesheetModal").classList.remove("open");
+}
+
+function generateTimesheetXLSX() {
+  if (typeof XLSX === "undefined") {
+    toast("❌ SheetJS not loaded — refresh and try again", "t-err");
+    return;
+  }
+
+  var month = parseInt(document.getElementById("tsMonth").value, 10);
+  var year  = parseInt(document.getElementById("tsYear").value,  10);
+  var site  = (document.getElementById("tsSite").value || "").trim();
+
+  var MONTH_NAMES = ["January","February","March","April","May","June",
+                     "July","August","September","October","November","December"];
+  var DAY_NAMES   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+  var daysInMonth = new Date(year, month, 0).getDate();
+  var mPad  = String(month).padStart(2, "0");
+  var mStart = year + "-" + mPad + "-01";
+  var mEnd   = year + "-" + mPad + "-" + String(daysInMonth).padStart(2, "0");
+
+  // ── Collect engineer roster ─────────────────────────
+  var engMap = {}; // empId → {empId, empName, site}
+
+  (allRecs || []).forEach(function(r) {
+    if (!r.empId || !r.checkinDate) return;
+    if (r.checkinDate < mStart || r.checkinDate > mEnd) return;
+    if (site && r.site !== site) return;
+    if (!engMap[r.empId]) engMap[r.empId] = { empId: r.empId, empName: r.empName || r.empId, site: r.site || "" };
+  });
+
+  (leaveRecs || []).forEach(function(r) {
+    if (!r.empId || r.status !== "approved" || !r.fromDate || !r.toDate) return;
+    if (r.fromDate > mEnd || r.toDate < mStart) return; // no overlap with month
+    if (site && r.site && r.site !== site) return;
+    if (!engMap[r.empId]) engMap[r.empId] = { empId: r.empId, empName: r.empName || r.empId, site: r.site || "" };
+  });
+
+  var engineers = Object.values(engMap).sort(function(a, b) {
+    return (a.empName || "").localeCompare(b.empName || "");
+  });
+
+  if (!engineers.length) {
+    toast("No engineers found for " + MONTH_NAMES[month-1] + " " + year + (site ? " · " + site : "") +
+          ". Engineers must have checked in or have approved leave this month.", "t-err");
+    return;
+  }
+
+  // ── Build leave map: empId → { "YYYY-MM-DD": code } ─
+  var leaveMap = {};
+  (leaveRecs || []).forEach(function(r) {
+    if (!r.empId || r.status !== "approved" || !r.fromDate || !r.toDate) return;
+    var code = TIMESHEET_CODE[r.leaveType] || (r.leaveType ? r.leaveType.substring(0, 3).toUpperCase() : "OTH");
+    if (!leaveMap[r.empId]) leaveMap[r.empId] = {};
+    var cur = new Date(r.fromDate + "T00:00:00");
+    var end = new Date(r.toDate   + "T00:00:00");
+    while (cur <= end) {
+      var iso = cur.toISOString().slice(0, 10);
+      if (iso >= mStart && iso <= mEnd) leaveMap[r.empId][iso] = code;
+      cur.setDate(cur.getDate() + 1);
+    }
+  });
+
+  // ── Build AOA (array of arrays) ─────────────────────
+  var FIXED = 6; // S/N | Name | Site | HP.NO | AL | MC
+  var totalCols = FIXED + daysInMonth;
+  function emptyRow() { var r = []; for (var i = 0; i < totalCols; i++) r.push(""); return r; }
+
+  var titleStr = "NGEMR RFS Timesheet (" + MONTH_NAMES[month-1] + " " + year + ")" + (site ? " — " + site : "");
+  var rows = [emptyRow(), emptyRow(), emptyRow(), emptyRow()]; // 4 blank rows (rows 1-4)
+
+  // Row 5 — title + day-of-week headers
+  var row5 = emptyRow();
+  row5[0] = titleStr;
+  row5[3] = "HP.NO";
+  row5[4] = "Balance";
+  for (var d = 1; d <= daysInMonth; d++) {
+    row5[FIXED + d - 1] = DAY_NAMES[new Date(year, month - 1, d).getDay()];
+  }
+  rows.push(row5);
+
+  // Row 6 — column sub-headers + date numbers
+  var row6 = emptyRow();
+  row6[0] = "S/N"; row6[1] = "Name"; row6[2] = "Site"; row6[4] = "AL"; row6[5] = "MC";
+  for (var d = 1; d <= daysInMonth; d++) row6[FIXED + d - 1] = d;
+  rows.push(row6);
+
+  // Engineer data rows (row 7+)
+  engineers.forEach(function(eng, idx) {
+    var row = emptyRow();
+    row[0] = idx + 1;
+    row[1] = eng.empName;
+    row[2] = eng.site;
+    row[3] = "#";
+    var engLeaves = leaveMap[eng.empId] || {};
+    for (var d = 1; d <= daysInMonth; d++) {
+      var iso    = year + "-" + mPad + "-" + String(d).padStart(2, "0");
+      var dow    = new Date(year, month - 1, d).getDay();
+      var isWknd = (dow === 0 || dow === 6);
+      var isPH   = !!SG_PH[iso];
+      var lvCode = engLeaves[iso];
+      var colIdx = FIXED + d - 1;
+      if (lvCode)       { row[colIdx] = lvCode; }
+      else if (isPH)    { row[colIdx] = "PH"; }
+      else if (isWknd)  { row[colIdx] = ""; }    // blank for weekend
+      else              { row[colIdx] = 1; }      // present
+    }
+    rows.push(row);
+  });
+
+  // Blank separator
+  rows.push(emptyRow());
+
+  // Legend
+  var lgA = emptyRow(); lgA[0] = "MC"; lgA[1] = "= Sick Leave";       lgA[6] = "NPL"; lgA[7] = "= No Pay Leave";
+  var lgB = emptyRow(); lgB[0] = "AL"; lgB[1] = "= Annual Leave";      lgB[6] = "CL";  lgB[7] = "= Compassionate Leave";
+  var lgC = emptyRow(); lgC[0] = "PH"; lgC[1] = "= Public Holiday";    lgC[6] = "EL";  lgC[7] = "= Emergency Leave";
+  var lgD = emptyRow(); lgD[0] = "UL"; lgD[1] = "= Urgent Leave";      lgD[6] = "ML";  lgD[7] = "= Maternity/Paternity Leave";
+  var lgE = emptyRow(); lgE[0] = "1";  lgE[1] = "= Present (worked)";  lgE[6] = "";    lgE[7] = "Blank = Weekend / not tracked";
+  rows.push(lgA, lgB, lgC, lgD, lgE);
+
+  // Signature row
+  rows.push(emptyRow());
+  var sigRow = emptyRow();
+  sigRow[0] = "Date:"; sigRow[3] = "Signature:";
+  rows.push(sigRow);
+
+  // ── Assemble workbook ───────────────────────────────
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // Column widths
+  var wscols = [{wch:5},{wch:28},{wch:6},{wch:8},{wch:5},{wch:5}];
+  for (var i = 0; i < daysInMonth; i++) wscols.push({wch:4});
+  ws["!cols"] = wscols;
+
+  // Freeze panes: lock name/site columns + header rows for easier scrolling
+  ws["!views"] = [{ state: "frozen", xSplit: 3, ySplit: 6 }];
+
+  var wb = XLSX.utils.book_new();
+  var sheetName = MONTH_NAMES[month-1].substring(0,3) + " " + year;
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+  var fname = "Timesheet_" + MONTH_NAMES[month-1] + "_" + year + (site ? "_" + site.replace(/\s+/g,"_") : "") + ".xlsx";
+  XLSX.writeFile(wb, fname);
+
+  closeTimesheetModal();
+  toast("📋 Timesheet downloaded · " + engineers.length + " engineers · " + MONTH_NAMES[month-1] + " " + year, "t-ok");
 }
 
 // ── Export Leave CSV ────────────────────────────────
