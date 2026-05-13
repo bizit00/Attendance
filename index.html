@@ -2519,11 +2519,19 @@ function _checkOtpOnLoad(email, deviceId) {
 }
 
 function sendOtp() {
+  var msgEl = document.getElementById("otpMsg");
+
+  if (!emailjsReady) {
+    msgEl.className = "otp-msg err";
+    msgEl.textContent = "Email service not ready yet. Please wait a moment and try again.";
+    return;
+  }
+
   var lock = sessionStorage.getItem("_at_otp_lock");
   if (lock && Date.now() < Number(lock)) {
     var mins = Math.ceil((Number(lock) - Date.now()) / 60000);
-    document.getElementById("otpMsg").className = "otp-msg err";
-    document.getElementById("otpMsg").textContent = "Too many attempts. Try again in " + mins + " minute(s).";
+    msgEl.className = "otp-msg err";
+    msgEl.textContent = "Too many attempts. Try again in " + mins + " minute(s).";
     return;
   }
 
@@ -2541,22 +2549,26 @@ function sendOtp() {
 
   var verifyBtn = document.getElementById("otpVerifyBtn");
   if (verifyBtn) verifyBtn.disabled = true;
+  msgEl.className = "otp-msg";
+  msgEl.textContent = "Sending…";
 
   var expiryTime = new Date(Date.now() + 5 * 60 * 1000).toLocaleTimeString();
   emailjs.send(EMAILJS_SVC, OTP_EMAILJS_TPL, {
-    to_email: email,
-    to_name:  name,
-    otp_code: code,
-    time:     expiryTime
+    to_email:  email,
+    to_name:   name,
+    otp_code:  code,
+    time:      expiryTime,
+    from_name: "Attendance System"
   }).then(function() {
     document.getElementById("otpRow").style.display = "flex";
-    document.getElementById("otpMsg").className = "otp-msg ok";
-    document.getElementById("otpMsg").textContent = "Code sent to " + email + ". Check your inbox.";
+    msgEl.className = "otp-msg ok";
+    msgEl.textContent = "Code sent to " + email + ". Check your inbox.";
     _startOtpResendTimer(60);
-  }).catch(function(err) {
-    console.error("[OTP] EmailJS error:", err);
-    document.getElementById("otpMsg").className = "otp-msg err";
-    document.getElementById("otpMsg").textContent = "Failed to send code. Check your EmailJS OTP template ID (OTP_EMAILJS_TPL).";
+  }).catch(function(e) {
+    console.error("[OTP] EmailJS error:", e);
+    var detail = (e && e.text) ? e.text : (e && e.status ? "Status " + e.status : String(e));
+    msgEl.className = "otp-msg err";
+    msgEl.textContent = "Send failed: " + detail;
     if (verifyBtn) verifyBtn.disabled = false;
   });
 }
