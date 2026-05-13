@@ -1079,6 +1079,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="dash-tab" onclick="dTab('analytics',this)">📊 Analytics</div>
       <div class="dash-tab" onclick="dTab('calendar',this)">📅 Calendar</div>
       <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">🗓️ Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
+      <div class="dash-tab" onclick="dTab('otp',this)" id="otpTabBtn">🔐 OTP Requests <span id="otpPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('device',this)">🔒 Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span></div>
       <div class="dash-tab" onclick="dTab('accounts',this)">👷 Eng Accounts</div>
       <div class="dash-tab" onclick="dTab('setup',this)">⚙️ Setup Guide</div>
@@ -1419,6 +1420,18 @@ tr.on-leave-row td{background:#f0f9ff!important}
       </div>
     </div>
 
+    <!-- OTP REQUESTS TAB -->
+    <div id="dTab-otp" style="display:none">
+      <div style="background:linear-gradient(135deg,#0d1117,#1a2233);border-radius:var(--r2);padding:18px 20px;margin-bottom:18px;display:flex;align-items:flex-start;gap:14px">
+        <div style="font-size:2rem;flex-shrink:0">🔐</div>
+        <div>
+          <div style="font-size:1.1rem;font-weight:700;color:#fff;margin-bottom:4px">OTP Verification Requests</div>
+          <div style="font-size:.85rem;color:#94a3b8;line-height:1.5">Engineers request email verification before their first check-in from a new device. Click <strong>Generate &amp; Send</strong> to create a 6-digit code and open your email client with the message pre-filled — then manually send the email to the engineer.</div>
+        </div>
+      </div>
+      <div id="otpReqList"></div>
+    </div>
+
     <!-- DEVICE AUDIT TAB -->
     <div id="dTab-device" style="display:none">
 
@@ -1594,6 +1607,11 @@ service cloud.firestore {
     match /leaveEntitlements/{doc} {
       allow read: if true;
       allow write: if request.auth != null;
+    }
+
+    // OTP verification requests (engineer ↔ admin handshake)
+    match /otpRequests/{doc} {
+      allow read, write: if true;
     }
   }
 }</pre>
@@ -1814,6 +1832,11 @@ service cloud.firestore {
     match /leaveEntitlements/{doc} {
       allow read: if true;
       allow write: if request.auth != null;
+    }
+
+    // OTP verification requests (engineer ↔ admin handshake)
+    match /otpRequests/{doc} {
+      allow read, write: if true;
     }
   }
 }</pre>
@@ -2523,74 +2546,85 @@ function sendOtp() {
   }
 
   var email = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
-  var name  = ((document.getElementById("empName") ||{}).value||"").trim().split(" ")[0] || "Engineer";
-  if (!email) return;
+  var name  = ((document.getElementById("empName") ||{}).value||"").trim();
+  var empId = getEngId("empId");
+  if (!email || !empId || !name) {
+    msgEl.className = "otp-msg err";
+    msgEl.textContent = "Please fill in Engineer ID, Name, and Email first.";
+    return;
+  }
 
-  var code = String(Math.floor(100000 + Math.random() * 900000));
-  sessionStorage.setItem("_at_otp", JSON.stringify({
-    code: code,
-    email: email,
-    expiry: Date.now() + 5 * 60 * 1000,
-    attempts: 0
-  }));
+  if (!fbOk || !db) {
+    msgEl.className = "otp-msg err";
+    msgEl.textContent = "Firestore not connected — cannot send request to admin.";
+    return;
+  }
 
   var verifyBtn = document.getElementById("otpVerifyBtn");
   if (verifyBtn) verifyBtn.disabled = true;
   msgEl.className = "otp-msg";
-  msgEl.textContent = "Sending…";
+  msgEl.textContent = "Sending request to admin…";
 
-  var expiryTime = new Date(Date.now() + 5 * 60 * 1000).toLocaleTimeString();
+  computeFingerprint().then(function(devId) {
+    // Cancel any prior open request from this session
+    var oldReqId = sessionStorage.getItem("_at_otp_req_id");
+    var cleanup = oldReqId
+      ? db.collection("otpRequests").doc(oldReqId).update({ status: "cancelled" }).catch(function(){})
+      : Promise.resolve();
 
-  // ── MANUAL MODE (TESTING) ──────────────────────────
-  // Display the code on-screen and provide a mailto link so admin/engineer
-  // can manually send the code via their own email client.
-  if (EMAIL_MODE === "manual") {
-    var subjMan = "Your Attendance Check-In Code";
-    var bodyMan = "Hi " + name + ",\n\n" +
-                  "Your email verification code is:\n\n" +
-                  "    " + code + "\n\n" +
-                  "This code expires at " + expiryTime + " (5 minutes).\n" +
-                  "Enter it in the attendance tracker to complete your check-in.\n\n" +
-                  "— Attendance System";
-    var mailtoUrl = "mailto:" + encodeURIComponent(email) +
-                    "?subject=" + encodeURIComponent(subjMan) +
-                    "&body=" + encodeURIComponent(bodyMan);
+    return cleanup.then(function() {
+      return db.collection("otpRequests").add({
+        empId:     empId,
+        empName:   name,
+        empEmail:  email,
+        deviceId:  devId,
+        status:    "pending",
+        attempts:  0,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+  }).then(function(docRef) {
+    sessionStorage.setItem("_at_otp_req_id", docRef.id);
 
-    document.getElementById("otpRow").style.display = "flex";
     msgEl.className = "otp-msg";
     msgEl.innerHTML =
-      '<div style="background:#fff8e1;border:1px solid #fbbf24;padding:10px 12px;border-radius:8px;margin-top:6px">' +
-        '<div style="font-size:.78rem;color:#92400e;font-weight:700;letter-spacing:.04em">⚠️ MANUAL MODE — TESTING ONLY</div>' +
-        '<div style="margin-top:8px;font-size:.9rem">OTP code:</div>' +
-        '<div style="font-size:1.6rem;letter-spacing:.25em;font-family:var(--mono);color:#000;font-weight:700;margin:4px 0">' + code + '</div>' +
-        '<div style="margin-top:8px;font-size:.82rem">' +
-          '<a href="' + mailtoUrl + '" style="color:var(--blue);text-decoration:underline">📧 Open mail to send manually</a>' +
-        '</div>' +
+      '<div style="background:#e0f2fe;border:1px solid #38bdf8;padding:10px 12px;border-radius:8px;margin-top:6px">' +
+        '<div style="font-size:.85rem;color:#0369a1;font-weight:600">⏳ Request sent to admin</div>' +
+        '<div style="margin-top:4px;font-size:.82rem">Please wait — admin will send the OTP code to your email shortly.</div>' +
       '</div>';
+
+    _listenForOtpStatus(docRef.id);
     _startOtpResendTimer(60);
-    return;
-  }
+  }).catch(function(err) {
+    console.error("Failed to create OTP request:", err);
+    msgEl.className = "otp-msg err";
+    msgEl.textContent = "Failed to send request: " + (err.message || err);
+    if (verifyBtn) verifyBtn.disabled = false;
+  });
+}
 
-  // ── AUTO MODE: send via Brevo REST API ──────────────
-  var htmlBody = "<p>Hi <strong>" + name + "</strong>,</p>" +
-                 "<p>Your email verification code is:</p>" +
-                 "<h2 style='letter-spacing:.3em;font-family:monospace;background:#f4f4f4;padding:16px;border-radius:8px;text-align:center'>" + code + "</h2>" +
-                 "<p>This code expires at <strong>" + expiryTime + "</strong> (5 minutes). Enter it in the attendance tracker to complete your check-in.</p>" +
-                 "<p style='color:#999;font-size:.85em'>If you did not request this, please ignore this email.</p>";
+// Listen for status changes on the engineer's own OTP request
+function _listenForOtpStatus(reqId) {
+  if (window._otpReqUnsub) { try { window._otpReqUnsub(); } catch(e){} }
+  window._otpReqUnsub = db.collection("otpRequests").doc(reqId).onSnapshot(function(snap) {
+    if (!snap.exists) return;
+    var data  = snap.data();
+    var msgEl = document.getElementById("otpMsg");
+    if (!msgEl) return;
 
-  _elasticSend(email, "Your Attendance Check-In Code", htmlBody)
-    .then(function() {
+    if (data.status === "sent" && data.code) {
       document.getElementById("otpRow").style.display = "flex";
       msgEl.className = "otp-msg ok";
-      msgEl.textContent = "Code sent to " + email + ". Check your inbox.";
-      _startOtpResendTimer(60);
-    })
-    .catch(function(e) {
-      console.error("[OTP] Brevo error:", e);
+      msgEl.innerHTML =
+        '<div style="background:#dcfce7;border:1px solid #4ade80;padding:10px 12px;border-radius:8px;margin-top:6px">' +
+          '<div style="font-size:.85rem;color:#15803d;font-weight:600">✅ OTP sent to your email</div>' +
+          '<div style="margin-top:4px;font-size:.82rem">Check <strong>' + data.empEmail + '</strong> and enter the 6-digit code below.</div>' +
+        '</div>';
+    } else if (data.status === "cancelled" || data.status === "expired") {
       msgEl.className = "otp-msg err";
-      msgEl.textContent = "Send failed: " + (e.message || e);
-      if (verifyBtn) verifyBtn.disabled = false;
-    });
+      msgEl.textContent = "Request " + data.status + ". Please click Verify Email again.";
+    }
+  });
 }
 
 function _startOtpResendTimer(seconds) {
@@ -2611,63 +2645,89 @@ function _startOtpResendTimer(seconds) {
 }
 
 function confirmOtp() {
-  var stored = sessionStorage.getItem("_at_otp");
-  var msgEl  = document.getElementById("otpMsg");
-  if (!stored) {
+  var reqId = sessionStorage.getItem("_at_otp_req_id");
+  var msgEl = document.getElementById("otpMsg");
+  if (!reqId) {
     msgEl.className = "otp-msg err";
-    msgEl.textContent = "No code found. Click Verify Email to request a new code.";
-    return;
-  }
-  var obj = JSON.parse(stored);
-  var currentEmail = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
-
-  if (obj.email !== currentEmail) {
-    msgEl.className = "otp-msg err";
-    msgEl.textContent = "Email changed. Click Verify Email again to get a new code.";
-    sessionStorage.removeItem("_at_otp");
-    document.getElementById("otpRow").style.display = "none";
-    return;
-  }
-  if (Date.now() > obj.expiry) {
-    msgEl.className = "otp-msg err";
-    msgEl.textContent = "Code expired. Click Verify Email to get a new code.";
-    sessionStorage.removeItem("_at_otp");
+    msgEl.textContent = "No active request. Click Verify Email to request a new code.";
     return;
   }
 
   var input = ((document.getElementById("otpInput")||{}).value||"").trim();
-  if (input !== obj.code) {
-    obj.attempts = (obj.attempts || 0) + 1;
-    if (obj.attempts >= 3) {
-      sessionStorage.setItem("_at_otp_lock", String(Date.now() + 30 * 60 * 1000));
-      sessionStorage.removeItem("_at_otp");
-      msgEl.className = "otp-msg err";
-      msgEl.textContent = "Too many wrong attempts. Try again in 30 minutes.";
-      document.getElementById("otpConfirmBtn").disabled = true;
-      document.getElementById("otpVerifyBtn").disabled  = true;
-    } else {
-      sessionStorage.setItem("_at_otp", JSON.stringify(obj));
-      msgEl.className = "otp-msg err";
-      msgEl.textContent = "Wrong code. " + (3 - obj.attempts) + " attempt(s) remaining.";
-    }
+  if (!input) {
+    msgEl.className = "otp-msg err";
+    msgEl.textContent = "Please enter the 6-digit code.";
     return;
   }
 
-  // ✅ Code correct
-  sessionStorage.removeItem("_at_otp");
-  otpVerified = true;
-  _otpVerifiedCache = true;
-  msgEl.className = "otp-msg ok";
-  msgEl.textContent = "";
-  document.getElementById("otpRow").style.display = "none";
-  document.getElementById("otpVerifyBtn").style.display = "none";
-  document.getElementById("otpResendTimer").style.display = "none";
-  document.getElementById("otpVerifiedBadge").style.display = "block";
+  var currentEmail = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
 
-  computeFingerprint().then(function(devId) {
-    _markDeviceVerified(currentEmail, devId);
+  db.collection("otpRequests").doc(reqId).get().then(function(snap) {
+    if (!snap.exists) {
+      msgEl.className = "otp-msg err";
+      msgEl.textContent = "Request not found. Please request a new code.";
+      return;
+    }
+    var data = snap.data();
+
+    if (data.empEmail !== currentEmail) {
+      msgEl.className = "otp-msg err";
+      msgEl.textContent = "Email changed. Please request a new code.";
+      return;
+    }
+    if (!data.code) {
+      msgEl.className = "otp-msg err";
+      msgEl.textContent = "Code not yet generated by admin. Please wait.";
+      return;
+    }
+    if (data.codeExpiry && Date.now() > data.codeExpiry) {
+      msgEl.className = "otp-msg err";
+      msgEl.textContent = "Code expired. Please request a new code.";
+      db.collection("otpRequests").doc(reqId).update({ status: "expired" }).catch(function(){});
+      return;
+    }
+
+    if (input !== data.code) {
+      var attempts = (data.attempts || 0) + 1;
+      if (attempts >= 3) {
+        sessionStorage.setItem("_at_otp_lock", String(Date.now() + 30 * 60 * 1000));
+        db.collection("otpRequests").doc(reqId).update({ status: "expired", attempts: attempts }).catch(function(){});
+        msgEl.className = "otp-msg err";
+        msgEl.textContent = "Too many wrong attempts. Try again in 30 minutes.";
+        document.getElementById("otpConfirmBtn").disabled = true;
+        document.getElementById("otpVerifyBtn").disabled  = true;
+      } else {
+        db.collection("otpRequests").doc(reqId).update({ attempts: attempts }).catch(function(){});
+        msgEl.className = "otp-msg err";
+        msgEl.textContent = "Wrong code. " + (3 - attempts) + " attempt(s) remaining.";
+      }
+      return;
+    }
+
+    // ✅ Code correct
+    otpVerified = true;
+    _otpVerifiedCache = true;
+    msgEl.className = "otp-msg ok";
+    msgEl.textContent = "";
+    document.getElementById("otpRow").style.display = "none";
+    document.getElementById("otpVerifyBtn").style.display = "none";
+    document.getElementById("otpResendTimer").style.display = "none";
+    document.getElementById("otpVerifiedBadge").style.display = "block";
+
+    db.collection("otpRequests").doc(reqId).update({
+      status: "verified",
+      verifiedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(function(){});
+
+    computeFingerprint().then(function(devId) {
+      _markDeviceVerified(currentEmail, devId);
+    });
+
+    if (window._otpReqUnsub) { try { window._otpReqUnsub(); } catch(e){} window._otpReqUnsub = null; }
+    sessionStorage.removeItem("_at_otp_req_id");
+
+    chkBtn();
   });
-  chkBtn();
 }
 
 function _markDeviceVerified(email, deviceId) {
@@ -3197,6 +3257,9 @@ function initDash() {
   // Load leaves automatically (used by the analytics tab even when the Leave Mgmt tab isn't open)
   if (typeof loadLeaves === "function") loadLeaves();
 
+  // Load OTP requests so the badge updates without needing to click the tab
+  if (typeof loadOtpRequests === "function") loadOtpRequests();
+
   if (fbOk && db) {
     if (fbUnsub) fbUnsub();
     fbUnsub = db.collection("attendance").orderBy("checkinTimestamp","desc")
@@ -3387,12 +3450,13 @@ function refreshDash() {
 
 // ── Dashboard tabs ─────────────────────────────────
 function dTab(id, el) {
-  ["live","feed","analytics","calendar","leave","device","accounts","setup"].forEach(function(t){
+  ["live","feed","analytics","calendar","leave","otp","device","accounts","setup"].forEach(function(t){
     var p = document.getElementById("dTab-"+t); if(p) p.style.display = t===id?"block":"none";
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
   if (el) el.classList.add("on");
   if (id === "leave")     loadLeaves();
+  if (id === "otp")       loadOtpRequests();
   if (id === "device")    renderDeviceAudit();
   if (id === "accounts")  adminAccLoad();
   if (id === "analytics") renderAnalytics();
@@ -4974,6 +5038,131 @@ var leaveRecs = [];
 var fbLeaveUnsub = null;
 var leaveAttachment = null; // { name, type, base64 }
 var rejectTargetId = null;
+
+// ── OTP Requests State ──────────────────────────────
+var otpRequests = [];
+var fbOtpUnsub = null;
+
+function loadOtpRequests() {
+  if (!fbOk || !db) {
+    var listEl0 = document.getElementById("otpReqList");
+    if (listEl0) listEl0.innerHTML = '<div style="text-align:center;padding:30px;color:#999">Firestore not connected.</div>';
+    return;
+  }
+  if (fbOtpUnsub) fbOtpUnsub();
+  fbOtpUnsub = db.collection("otpRequests")
+    .onSnapshot(function(snap) {
+      otpRequests = snap.docs
+        .map(function(d){ return Object.assign({id:d.id}, d.data()); })
+        .filter(function(r){ return r.status === "pending" || r.status === "sent"; })
+        .sort(function(a,b){
+          var ta = (a.createdAt && a.createdAt.toMillis) ? a.createdAt.toMillis() : 0;
+          var tb = (b.createdAt && b.createdAt.toMillis) ? b.createdAt.toMillis() : 0;
+          return tb - ta;
+        });
+
+      // Update pending badge
+      var pending = otpRequests.filter(function(r){ return r.status === "pending"; }).length;
+      var badge = document.getElementById("otpPendingBadge");
+      if (badge) {
+        if (pending > 0) { badge.textContent = pending; badge.style.display = "inline-block"; }
+        else             { badge.style.display = "none"; }
+      }
+
+      _renderOtpRequests();
+    }, function(err){
+      console.error("OTP requests listener error:", err);
+    });
+}
+
+function _renderOtpRequests() {
+  var listEl = document.getElementById("otpReqList");
+  if (!listEl) return;
+
+  if (otpRequests.length === 0) {
+    listEl.innerHTML = '<div style="text-align:center;padding:40px;color:#999;background:#fff;border-radius:var(--r);border:1px dashed #ddd">No pending OTP requests.</div>';
+    return;
+  }
+
+  listEl.innerHTML = otpRequests.map(function(r){
+    var when = r.createdAt && r.createdAt.toDate
+      ? r.createdAt.toDate().toLocaleString("en-SG")
+      : "—";
+    var statusBadge = r.status === "pending"
+      ? '<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:30px;font-size:.72rem;font-weight:600">⏳ Pending</span>'
+      : '<span style="background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:30px;font-size:.72rem;font-weight:600">📤 Sent</span>';
+
+    var actionBtn = r.status === "pending"
+      ? '<button onclick="genAndSendOtp(\''+r.id+'\')" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:.85rem;cursor:pointer;font-weight:600">📧 Generate &amp; Send</button>'
+      : '<div style="display:flex;align-items:center;gap:10px">' +
+          '<span style="font-family:var(--mono);font-size:1rem;letter-spacing:.15em;background:#f4f4f4;padding:6px 12px;border-radius:6px">'+ sanitizeHtml(r.code||"") +'</span>' +
+          '<button onclick="resendOtpMailto(\''+r.id+'\')" style="background:#fff;color:var(--blue);border:1px solid var(--blue);border-radius:8px;padding:6px 12px;font-size:.8rem;cursor:pointer">↻ Open mail again</button>' +
+          '<button onclick="cancelOtpReq(\''+r.id+'\')" style="background:#fff;color:var(--red);border:1px solid var(--red);border-radius:8px;padding:6px 12px;font-size:.8rem;cursor:pointer">✕ Cancel</button>' +
+        '</div>';
+
+    return '<div style="background:#fff;border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:10px">' +
+             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">' +
+               '<div>' +
+                 '<div style="font-weight:700;font-size:.95rem">'+ sanitizeHtml(r.empName||"—") +' <span style="font-family:var(--mono);color:#666;font-weight:400">('+ sanitizeHtml(r.empId||"") +')</span></div>' +
+                 '<div style="font-size:.82rem;color:#666;margin-top:2px">📧 '+ sanitizeHtml(r.empEmail||"") +'</div>' +
+                 '<div style="font-size:.75rem;color:#999;margin-top:4px">Requested: '+ when +'</div>' +
+               '</div>' +
+               '<div>'+ statusBadge +'</div>' +
+             '</div>' +
+             '<div style="margin-top:12px;display:flex;justify-content:flex-end">'+ actionBtn +'</div>' +
+           '</div>';
+  }).join("");
+}
+
+function genAndSendOtp(reqId) {
+  if (!fbOk || !db) return;
+  var code = String(Math.floor(100000 + Math.random() * 900000));
+  var expiry = Date.now() + 5 * 60 * 1000;
+
+  db.collection("otpRequests").doc(reqId).get().then(function(snap) {
+    if (!snap.exists) { alert("Request not found."); return; }
+    var data = snap.data();
+
+    return db.collection("otpRequests").doc(reqId).update({
+      code: code,
+      codeExpiry: expiry,
+      status: "sent",
+      sentAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(function() {
+      _openOtpMailto(data.empName, data.empEmail, code);
+      toast("OTP code generated. Mail client opened — send the email manually.", "t-ok");
+    });
+  }).catch(function(err){
+    alert("Failed to generate OTP: " + (err.message || err));
+  });
+}
+
+function resendOtpMailto(reqId) {
+  var r = otpRequests.find(function(x){ return x.id === reqId; });
+  if (!r || !r.code) { alert("No code available."); return; }
+  _openOtpMailto(r.empName, r.empEmail, r.code);
+}
+
+function cancelOtpReq(reqId) {
+  if (!confirm("Cancel this OTP request?")) return;
+  db.collection("otpRequests").doc(reqId).update({ status: "cancelled" })
+    .then(function(){ toast("Request cancelled.", "t-ok"); })
+    .catch(function(err){ alert("Failed: " + (err.message || err)); });
+}
+
+function _openOtpMailto(name, email, code) {
+  var subject = "Your Attendance Check-In Code";
+  var body = "Hi " + (name || "Engineer") + ",\n\n" +
+             "Your email verification code is:\n\n" +
+             "    " + code + "\n\n" +
+             "This code expires in 5 minutes.\n" +
+             "Enter it in the attendance tracker to complete your check-in.\n\n" +
+             "— Attendance System";
+  var url = "mailto:" + encodeURIComponent(email) +
+            "?subject=" + encodeURIComponent(subject) +
+            "&body=" + encodeURIComponent(body);
+  window.location.href = url;
+}
 
 // ── Init Email (Brevo REST API — always ready) ───────
 function initEmailJS() {
