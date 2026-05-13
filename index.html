@@ -2720,7 +2720,7 @@ function confirmOtp() {
     }).catch(function(){});
 
     computeFingerprint().then(function(devId) {
-      _markDeviceVerified(currentEmail, devId);
+      _markDeviceVerified(currentEmail, devId, data.empId, data.empName);
     });
 
     if (window._otpReqUnsub) { try { window._otpReqUnsub(); } catch(e){} window._otpReqUnsub = null; }
@@ -2730,14 +2730,23 @@ function confirmOtp() {
   });
 }
 
-function _markDeviceVerified(email, deviceId) {
+function _markDeviceVerified(email, deviceId, empId, empName) {
   if (!fbOk || !db) return;
-  var ref = db.collection("emailBindings").doc(email.toLowerCase());
-  ref.update({
+  var emailKey = email.toLowerCase();
+  var ref = db.collection("emailBindings").doc(emailKey);
+
+  // Always write a complete payload so we never leave a partial doc
+  // (a doc with only verifiedDeviceIds would confuse verifyIdentityBinding,
+  //  which would read empId === undefined and block legitimate check-ins.)
+  var payload = {
+    email: emailKey,
     verifiedDeviceIds: firebase.firestore.FieldValue.arrayUnion(deviceId)
-  }).catch(function() {
-    ref.set({ verifiedDeviceIds: [deviceId] }, { merge: true });
-  });
+  };
+  if (empId)   payload.empId   = empId;
+  if (empName) payload.empName = empName;
+
+  ref.set(payload, { merge: true })
+    .catch(function(e){ console.warn("[OTP] markDeviceVerified failed:", e); });
 }
 
 function sanitizeHtml(str) {
