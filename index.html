@@ -2494,11 +2494,59 @@ function chkBtn() {
     var formReady = !!(id && name.trim() && emailOk);
     verifyBtn.style.display = (formReady && !otpVerified) ? "block" : "none";
   }
+
+  // Auto-check if this device is already OTP-verified for the entered email.
+  // Debounced so we don't hit Firestore on every keystroke.
+  _maybeCheckOtpForEmail(email, emailOk);
+}
+
+// Track the last email we checked so we don't spam Firestore on every keystroke
+var _otpCheckedEmail = "";
+var _otpCheckTimer  = null;
+
+function _maybeCheckOtpForEmail(email, emailOk) {
+  var current = (email || "").trim().toLowerCase();
+
+  if (!emailOk) {
+    // Email is incomplete or invalid — reset any verified state
+    _otpCheckedEmail = "";
+    if (otpVerified) {
+      otpVerified = false;
+      _otpVerifiedCache = false;
+      var badge = document.getElementById("otpVerifiedBadge");
+      if (badge) badge.style.display = "none";
+    }
+    return;
+  }
+
+  if (current === _otpCheckedEmail) return; // already checked this exact email
+  _otpCheckedEmail = current;
+
+  // Email changed — clear stale verified state from previous email
+  if (otpVerified) {
+    otpVerified = false;
+    _otpVerifiedCache = false;
+    var oldBadge = document.getElementById("otpVerifiedBadge");
+    if (oldBadge) oldBadge.style.display = "none";
+  }
+
+  // Debounce so we don't hit Firestore on every keystroke
+  if (_otpCheckTimer) clearTimeout(_otpCheckTimer);
+  _otpCheckTimer = setTimeout(function() {
+    if (typeof computeFingerprint !== "function") return;
+    computeFingerprint().then(function(fp) {
+      // Make sure email hasn't changed again in the meantime
+      var emailNow = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+      if (emailNow !== current) return;
+      _checkOtpOnLoad(current, fp);
+    });
+  }, 500);
 }
 
 // ── OTP Verification ───────────────────────────────
 function _isDeviceOtpVerified(email, deviceId) {
-  if (_otpVerifiedCache) return Promise.resolve(true);
+  // Don't short-circuit on _otpVerifiedCache — that cache is set per-session
+  // but the engineer may have changed email, in which case we must re-check.
   if (!fbOk || !db) return Promise.resolve(false);
   return db.collection("emailBindings").doc(email.toLowerCase()).get()
     .then(function(snap) {
