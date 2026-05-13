@@ -2540,6 +2540,38 @@ function sendOtp() {
   msgEl.textContent = "Sending…";
 
   var expiryTime = new Date(Date.now() + 5 * 60 * 1000).toLocaleTimeString();
+
+  // ── MANUAL MODE (TESTING) ──────────────────────────
+  // Display the code on-screen and provide a mailto link so admin/engineer
+  // can manually send the code via their own email client.
+  if (EMAIL_MODE === "manual") {
+    var subjMan = "Your Attendance Check-In Code";
+    var bodyMan = "Hi " + name + ",\n\n" +
+                  "Your email verification code is:\n\n" +
+                  "    " + code + "\n\n" +
+                  "This code expires at " + expiryTime + " (5 minutes).\n" +
+                  "Enter it in the attendance tracker to complete your check-in.\n\n" +
+                  "— Attendance System";
+    var mailtoUrl = "mailto:" + encodeURIComponent(email) +
+                    "?subject=" + encodeURIComponent(subjMan) +
+                    "&body=" + encodeURIComponent(bodyMan);
+
+    document.getElementById("otpRow").style.display = "flex";
+    msgEl.className = "otp-msg";
+    msgEl.innerHTML =
+      '<div style="background:#fff8e1;border:1px solid #fbbf24;padding:10px 12px;border-radius:8px;margin-top:6px">' +
+        '<div style="font-size:.78rem;color:#92400e;font-weight:700;letter-spacing:.04em">⚠️ MANUAL MODE — TESTING ONLY</div>' +
+        '<div style="margin-top:8px;font-size:.9rem">OTP code:</div>' +
+        '<div style="font-size:1.6rem;letter-spacing:.25em;font-family:var(--mono);color:#000;font-weight:700;margin:4px 0">' + code + '</div>' +
+        '<div style="margin-top:8px;font-size:.82rem">' +
+          '<a href="' + mailtoUrl + '" style="color:var(--blue);text-decoration:underline">📧 Open mail to send manually</a>' +
+        '</div>' +
+      '</div>';
+    _startOtpResendTimer(60);
+    return;
+  }
+
+  // ── AUTO MODE: send via Brevo REST API ──────────────
   var htmlBody = "<p>Hi <strong>" + name + "</strong>,</p>" +
                  "<p>Your email verification code is:</p>" +
                  "<h2 style='letter-spacing:.3em;font-family:monospace;background:#f4f4f4;padding:16px;border-radius:8px;text-align:center'>" + code + "</h2>" +
@@ -2554,7 +2586,7 @@ function sendOtp() {
       _startOtpResendTimer(60);
     })
     .catch(function(e) {
-      console.error("[OTP] ElasticEmail error:", e);
+      console.error("[OTP] Brevo error:", e);
       msgEl.className = "otp-msg err";
       msgEl.textContent = "Send failed: " + (e.message || e);
       if (verifyBtn) verifyBtn.disabled = false;
@@ -4834,7 +4866,12 @@ function toast(msg, cls) {
 // ║  LEAVE MODULE                                        ║
 // ╚══════════════════════════════════════════════════════╝
 
-// ── Email Configuration (Brevo / Sendinblue v3 REST API) ──
+// ── Email Mode Configuration ─────────────────────────
+// "manual" = OTP shown on-screen + mailto links (TESTING — no real email sent)
+// "auto"   = real email sent via Brevo API (once subscribed/verified)
+var EMAIL_MODE = "manual";
+
+// ── Email Configuration (Brevo / Sendinblue v3 REST API — used when EMAIL_MODE = "auto") ──
 var BREVO_API_KEY  = "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";
 var BREVO_FROM     = "bizit1610@gmail.com";
 var BREVO_FROM_NAME = "Attendance System";
@@ -5753,7 +5790,10 @@ function sendLeaveEmail(rec, status, rejectReason) {
   }
   body += "This is an automated notification from the Attendance System.\n\nBest regards,\nAttendance System";
 
-  if (emailjsReady) {
+  // MANUAL MODE (TESTING): always open the email fallback modal so admin can send manually.
+  if (EMAIL_MODE === "manual") {
+    showEmailFallback(rec.empEmail, subject, body);
+  } else if (emailjsReady) {
     var htmlBody = "<pre style='font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;line-height:1.6'>" + body + "</pre>";
     _elasticSend(rec.empEmail, subject, htmlBody)
       .then(function() {
@@ -5761,7 +5801,7 @@ function sendLeaveEmail(rec, status, rejectReason) {
         toast("📧 Notification email sent to " + rec.empEmail, "t-ok");
       })
       .catch(function(e) {
-        console.error("ElasticEmail send failed:", e);
+        console.error("Brevo send failed:", e);
         alert("❌ Email Error: " + (e.message || e) + "\n\nOpening email fallback so you can send manually.");
         showEmailFallback(rec.empEmail, subject, body);
       });
