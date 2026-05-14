@@ -2521,24 +2521,72 @@ function verifyGps(dir) {
     if (!site) { setGpsUI(dir,"error","Session site not found.",null); return; }
   }
 
-  navigator.geolocation.getCurrentPosition(
-    function(pos) {
-      var lat=pos.coords.latitude, lng=pos.coords.longitude, acc=Math.round(pos.coords.accuracy);
-      var dist = haversine(lat,lng,site.lat,site.lng);
-      var ok = dist <= GEOFENCE_M;
-      GPS[dir] = { lat:lat, lng:lng, accuracy:acc, dist:dist, ok:ok };
-      setGpsUI(dir, ok?"ok":"fail", site.name, dist);
+  // Use watchPosition — the first fix is often a low-accuracy cached/WiFi reading;
+  // subsequent fixes typically improve as the GPS chip warms up. We keep the best
+  // (lowest accuracy number) seen, and finish early if we get a good fix.
+  var bestFix    = null;
+  var watcherId  = null;
+  var maxWaitMs  = 12000;   // give the GPS chip time to converge
+  var goodEnough = 60;      // accuracy ≤ 60m → finish immediately, use this fix
+  var startTs    = Date.now();
+  var finished   = false;
+
+  function finish(pos) {
+    if (finished) return; finished = true;
+    if (watcherId != null) { try { navigator.geolocation.clearWatch(watcherId); } catch(_){} }
+    clearTimeout(timeoutTimer);
+
+    if (!pos) {
+      setGpsUI(dir,"error", "Could not get a GPS fix — try moving outdoors or near a window.", null);
+      return;
+    }
+    var lat=pos.coords.latitude, lng=pos.coords.longitude, acc=Math.round(pos.coords.accuracy);
+    var dist = haversine(lat,lng,site.lat,site.lng);
+
+    // Reject readings worse than the geofence — they're mathematically useless.
+    // Example: accuracy=10000m means your real position could be anywhere in a 10km
+    // radius, so the distance reading from the site centre is meaningless.
+    if (acc > GEOFENCE_M) {
+      GPS[dir] = null;
+      setGpsUI(dir, "lowacc", site.name, dist, acc);
       chkBtn();
-    },
-    function(err) {
-      var msgs = {1:"Permission denied. Enable location in your browser.",2:"Location unavailable.",3:"Request timed out."};
-      setGpsUI(dir,"error", msgs[err.code]||"Location error.", null);
-    },
-    { enableHighAccuracy:true, timeout:20000, maximumAge:0 }
-  );
+      return;
+    }
+
+    var ok = dist <= GEOFENCE_M;
+    GPS[dir] = { lat:lat, lng:lng, accuracy:acc, dist:dist, ok:ok };
+    setGpsUI(dir, ok?"ok":"fail", site.name, dist, acc);
+    chkBtn();
+  }
+
+  var timeoutTimer = setTimeout(function(){ finish(bestFix); }, maxWaitMs);
+
+  try {
+    watcherId = navigator.geolocation.watchPosition(
+      function(pos) {
+        var acc = pos.coords.accuracy;
+        if (!bestFix || acc < bestFix.coords.accuracy) bestFix = pos;
+        if (acc <= goodEnough || (Date.now() - startTs) > maxWaitMs - 1000) {
+          finish(bestFix);
+        } else {
+          // Show progress text so user knows we're still trying
+          var tx = document.getElementById(txtId);
+          if (tx) tx.textContent = "Improving accuracy… ±" + Math.round(acc) + "m";
+        }
+      },
+      function(err) {
+        var msgs = {1:"Permission denied. Enable location in your browser.",2:"Location unavailable.",3:"Request timed out."};
+        if (bestFix) finish(bestFix);
+        else { finished = true; clearTimeout(timeoutTimer); setGpsUI(dir,"error", msgs[err.code]||"Location error.", null); }
+      },
+      { enableHighAccuracy:true, timeout:maxWaitMs, maximumAge:0 }
+    );
+  } catch(e) {
+    finish(null);
+  }
 }
 
-function setGpsUI(dir, state, name, dist) {
+function setGpsUI(dir, state, name, dist, acc) {
   var btnId  = dir==="in" ? "gpsCiBtn"    : "gpsCoBtnEl";
   var iconId = dir==="in" ? "gpsCiIcon"   : "gpsCoIcon";
   var txtId  = dir==="in" ? "gpsCiTxt"    : "gpsCoTxt";
@@ -2549,14 +2597,35 @@ function setGpsUI(dir, state, name, dist) {
   var tx  = document.getElementById(txtId);
   var st  = document.getElementById(statId);
 
+  // Accuracy badge — shown in OK/FAIL states so user sees how reliable the reading is
+  var accBadge = "";
+  if (acc != null) {
+    var accCls = acc <= 50 ? "pill-ok" : (acc <= 200 ? "pill-warn" : "pill-bad");
+    accBadge = '<div class="pill ' + accCls + '" style="margin-top:6px;font-size:.72rem">📡 GPS accuracy: ±' + acc + 'm</div>';
+  }
+
   if (state==="ok") {
     btn.className="gps-btn ok";
     ic.textContent="✅"; tx.textContent="Verified — "+dist+"m from "+name;
-    st.innerHTML='<div class="pill pill-ok">✅ Within range · '+dist+'m from site</div>';
+    st.innerHTML='<div class="pill pill-ok">✅ Within range · '+dist+'m from site</div>'+accBadge;
   } else if (state==="fail") {
     btn.className="gps-btn fail";
     ic.textContent="🚫"; tx.textContent="Out of range — "+dist+"m (max "+GEOFENCE_M+"m)";
-    st.innerHTML='<div class="pill pill-bad">🚫 Too far from '+name+' · You are '+dist+'m away. Must be within '+GEOFENCE_M+'m.</div>';
+    st.innerHTML='<div class="pill pill-bad">🚫 Too far from '+name+' · You are '+dist+'m away. Must be within '+GEOFENCE_M+'m.</div>'+accBadge;
+  } else if (state==="lowacc") {
+    // GPS reading is too inaccurate to trust — refuse to verify
+    btn.className="gps-btn fail";
+    ic.textContent="📡"; tx.textContent="GPS too inaccurate (±"+acc+"m) — try again";
+    st.innerHTML =
+      '<div class="pill pill-bad">📡 GPS accuracy ±'+acc+'m is worse than the '+GEOFENCE_M+'m geofence — reading can\'t be trusted.</div>'+
+      '<div style="margin-top:8px;padding:10px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:.78rem;color:#9a3412;line-height:1.5">'+
+        '<b>Likely cause:</b> Your browser is using WiFi / IP-based location instead of GPS.<br><br>'+
+        '<b>How to fix:</b><br>'+
+        '• <b>Disconnect from WiFi</b> and use mobile data / hotspot<br>'+
+        '• Move outdoors or near a window for clear sky<br>'+
+        '• Make sure <b>Location Services</b> are on for your browser<br>'+
+        '• Wait a few seconds and tap "Verify" again — the GPS chip warms up over time'+
+      '</div>';
   } else {
     btn.className="gps-btn fail";
     ic.textContent="❌"; tx.textContent="Try again";
