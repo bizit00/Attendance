@@ -3777,6 +3777,10 @@ var _anChartType  = "bar";   // current main-chart type
 var _anMainChart  = null;
 var _anStatusChart= null;
 var _anTrendChart = null;
+// Module-level snapshot of last-rendered aggregate so tooltip callbacks read fresh
+// data after chart.update() (closures captured at chart-creation time go stale).
+var _anMainAgg     = [];
+var _anMainGroupBy = "site";
 
 // Convert a record into a YYYY-MM-DD string (independent of locale formatting)
 function _anIsoDate(r) {
@@ -4137,6 +4141,11 @@ function _anRenderMainChart(agg, groupBy) {
   var emptyEl = document.getElementById("anMainEmpty");
   if (!canvas) return;
 
+  // Refresh module-level snapshot so tooltip callbacks (which read from these
+  // vars instead of capturing `agg` via closure) always see the latest data.
+  _anMainAgg     = agg;
+  _anMainGroupBy = groupBy;
+
   if (!agg.length) {
     if (emptyEl) emptyEl.style.display = "flex";
     canvas.style.display = "none";
@@ -4207,15 +4216,21 @@ function _anRenderMainChart(agg, groupBy) {
           bodyFont:  { family: "'DM Sans',sans-serif", size: 11 },
           padding: 12, cornerRadius: 8, displayColors: false,
           callbacks: {
-            title: function(ctx){ return ctx[0] ? agg[ctx[0].dataIndex].key : ""; },
+            // Read from module-level _anMainAgg / _anMainGroupBy so values stay fresh
+            // after chart.update() — closure-captured `agg` would go stale on re-render.
+            title: function(ctx){
+              var g = ctx[0] && _anMainAgg[ctx[0].dataIndex];
+              return g ? g.key : "";
+            },
             label: function(ctx){
-              var g = agg[ctx.dataIndex];
+              var g = _anMainAgg[ctx.dataIndex];
+              if (!g) return "";
               var lines = [
                 "✅ Total: " + g.count + " check-ins",
                 "📥 In: " + g.checkedIn + "  |  📤 Out: " + g.checkedOut,
                 "⏰ Late: " + g.late + "  |  ⏱ Avg: " + _anFmtDuration(g.avgDur)
               ];
-              if (groupBy === "site") {
+              if (_anMainGroupBy === "site") {
                 var roster = _anSiteRoster(g.key);
                 lines.splice(1, 0, "👷 Engineers: " + g.uniqueEngineers + (roster ? " / " + roster : ""));
               }
