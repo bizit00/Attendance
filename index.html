@@ -3318,13 +3318,37 @@ function doCheckin() {
         return;
       }
 
-      // ── Identity verified — proceed with check-in ──────────
-      btn.innerHTML = '<span class="spin"></span> Saving…';
+      // ── Identity verified — now check for approved leave today ──
+      // This MUST run AFTER identity binding so a wrong-empId attempt can't
+      // leak another engineer's leave status.
+      btn.innerHTML = '<span class="spin"></span> Checking leave status…';
 
-      var site   = WORK_SITES[parseInt(siteIdx)];
-      var gps    = GPS.in;
-      var now    = new Date();
-      var isLate = now.getHours() >= WORK_HOUR_LATE + 1;
+      _isOnApprovedLeaveToday(empId, function(leaveRec) {
+        if (leaveRec) {
+          // Engineer is on approved leave today — hard block, show banner
+          showLeaveBanner(leaveRec);
+          toast("⛔ You are on approved " + leaveRec.leaveType + " today — check-in not allowed", "t-err");
+          btn.disabled = false;
+          btn.innerHTML = "✅ Check In";
+          var banner = document.getElementById("leaveActiveBanner");
+          if (banner && banner.scrollIntoView) banner.scrollIntoView({ behavior: "smooth", block: "start" });
+          return;
+        }
+        // Not on leave — continue saving the check-in
+        _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn);
+      });
+    });
+  });
+}
+
+// ── Save the attendance record (called after identity + leave checks pass) ──
+function _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn) {
+  btn.innerHTML = '<span class="spin"></span> Saving…';
+
+  var site   = WORK_SITES[parseInt(siteIdx)];
+  var gps    = GPS.in;
+  var now    = new Date();
+  var isLate = now.getHours() >= WORK_HOUR_LATE + 1;
 
       var rec = {
         empId:empId, empName:empName, empEmail:empEmail, site:site.name,
@@ -3366,8 +3390,6 @@ function doCheckin() {
       } else {
         saveLocal(rec); onSaved(null);
       }
-    });
-  });
 }
 
 // ── Check-out ──────────────────────────────────────
@@ -7266,6 +7288,45 @@ function adminShowEmailHistory(devId) {
     }).join("");
   }
   document.getElementById("emailBindHistModal").classList.add("open");
+}
+
+// ── Hard check: is this engineer on APPROVED leave covering today? ─
+// Used by doCheckin() to block check-in attempts during approved leave.
+// Returns the matching leave record via callback (null = not on leave).
+function _isOnApprovedLeaveToday(empId, callback) {
+  if (!empId) { callback(null); return; }
+  var today = new Date().toISOString().split("T")[0];
+
+  function scan(recs) {
+    var hit = recs.find(function(r){
+      return r.status === "approved"
+          && r.fromDate && r.toDate
+          && today >= r.fromDate
+          && today <= r.toDate;
+    });
+    callback(hit || null);
+  }
+
+  if (fbOk && db) {
+    db.collection("leaveApplications")
+      .where("empId","==",empId)
+      .where("status","==","approved")
+      .get()
+      .then(function(snap){
+        var recs = snap.docs.map(function(d){ return Object.assign({id:d.id},d.data()); });
+        scan(recs);
+      })
+      .catch(function(e){
+        // On Firestore error fall through to localStorage so a transient network
+        // issue can't accidentally unblock check-in.
+        console.warn("Leave block check (firestore):", e && e.message);
+        var ll = JSON.parse(localStorage.getItem("at_leaves")||"[]");
+        scan(ll.filter(function(r){ return r.empId === empId; }));
+      });
+  } else {
+    var ll = JSON.parse(localStorage.getItem("at_leaves")||"[]");
+    scan(ll.filter(function(r){ return r.empId === empId; }));
+  }
 }
 
 // ── Check ALL Leave Status for Engineer ─────────────
