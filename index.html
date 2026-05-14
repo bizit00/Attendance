@@ -1143,7 +1143,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="dash-tab" onclick="dTab('calendar',this)">📅 Calendar</div>
       <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">🗓️ Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('otp',this)" id="otpTabBtn">🔐 OTP Requests <span id="otpPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
-      <div class="dash-tab" onclick="dTab('device',this)">🔒 Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span></div>
+      <div class="dash-tab" onclick="dTab('device',this)">🔒 Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
       <div class="dash-tab" onclick="dTab('accounts',this)">👷 Eng Accounts</div>
       <div class="dash-tab" onclick="dTab('setup',this)">⚙️ Setup Guide</div>
     </div>
@@ -1368,7 +1368,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
             <div id="anBreakdownDetailTitle" style="font-size:.8rem;font-weight:700;color:var(--ink)"></div>
             <button onclick="document.getElementById('anBreakdownDetail').style.display='none'" style="background:none;border:none;cursor:pointer;color:var(--ink3);font-size:1rem">✕</button>
           </div>
-          <div id="anBreakdownDetailBody" style="font-size:.77rem;color:var(--ink2);line-height:1.75;column-count:2;column-gap:20px"></div>
+          <div id="anBreakdownDetailBody" style="font-size:.77rem;color:var(--ink2);line-height:1.6;overflow-x:auto"></div>
         </div>
       </div>
 
@@ -1554,7 +1554,10 @@ tr.on-leave-row td{background:#f0f9ff!important}
         </div>
       </div>
 
-      <!-- Suspicious flags summary -->
+      <!-- Real-time buddy punch alerts (cross-device, same engineer) -->
+      <div id="buddyPunchAlertsWrap" style="margin-bottom:18px"></div>
+
+      <!-- Historical suspicious flags (same device, different engineers) -->
       <div id="deviceFlagsWrap" style="margin-bottom:18px"></div>
 
       <!-- All device bindings table -->
@@ -1723,6 +1726,12 @@ service cloud.firestore {
     // OTP verification requests (engineer ↔ admin handshake)
     match /otpRequests/{doc} {
       allow read, write: if true;
+    }
+
+    // Buddy-punch alerts — engineers write on detection, admin reads
+    match /buddyPunchAlerts/{doc} {
+      allow create: if true;
+      allow read, update: if request.auth != null;
     }
   }
 }</pre>
@@ -1948,6 +1957,12 @@ service cloud.firestore {
     // OTP verification requests (engineer ↔ admin handshake)
     match /otpRequests/{doc} {
       allow read, write: if true;
+    }
+
+    // Buddy-punch alerts — engineers write on detection, admin reads
+    match /buddyPunchAlerts/{doc} {
+      allow create: if true;
+      allow read, update: if request.auth != null;
     }
   }
 }</pre>
@@ -3276,6 +3291,67 @@ function recordDeviceCheckin(empId) {
   localStorage.setItem(key, empId);
 }
 
+// ── Cross-Device Buddy Punch Detection ─────────────
+// Queries Firestore for today's check-ins by this empId from a different hardware.
+// If found, it means someone else (or another device) already checked in as this engineer.
+function _checkCrossDeviceDuplicate(empId, myDevId, callback) {
+  var today = new Date().toLocaleDateString("en-SG");
+  var myHw  = getHwId();
+
+  function findConflict(recs) {
+    var conflict = null;
+    recs.forEach(function(r) {
+      if (conflict) return;
+      if (r.empId !== empId) return;
+      // Compare by hardware-stable ID (cross-browser proof)
+      if (myHw && !myHw.startsWith("tmp_") && r.hwId && r.hwId !== myHw) { conflict = r; return; }
+      // Legacy fallback — compare by deviceId when no hwId available
+      if ((!myHw || myHw.startsWith("tmp_")) && r.deviceId && r.deviceId !== myDevId) { conflict = r; return; }
+    });
+    callback(conflict || null);
+  }
+
+  if (fbOk && db) {
+    db.collection("attendance")
+      .where("empId", "==", empId)
+      .where("checkinDate", "==", today)
+      .get()
+      .then(function(snap) {
+        findConflict(snap.docs.map(function(d) { return d.data(); }));
+      })
+      .catch(function() { callback(null); }); // non-blocking on network error
+  } else {
+    // localStorage fallback
+    var localToday = (JSON.parse(localStorage.getItem("at_recs") || "[]"))
+      .filter(function(r) { return r.empId === empId && r.checkinDate === today; });
+    findConflict(localToday);
+  }
+}
+
+// Writes a buddy punch alert to Firestore so admin sees it immediately.
+function _reportBuddyPunchAlert(empId, empName, myDevId, conflictRec) {
+  var now = new Date();
+  var alertDoc = {
+    empId:               empId,
+    empName:             empName,
+    newDeviceId:         myDevId,
+    newHwId:             getHwId(),
+    existingDeviceId:    conflictRec.deviceId || "",
+    existingHwId:        conflictRec.hwId     || "",
+    existingCheckinTime: conflictRec.checkinTime || "—",
+    existingSite:        conflictRec.site || "—",
+    date:                now.toLocaleDateString("en-SG"),
+    detectedAt:          now.getTime(),
+    detectedIso:         now.toISOString(),
+    status:              "new",
+    _userAgent:          navigator.userAgent.slice(0, 120)
+  };
+  if (fbOk && db) {
+    db.collection("buddyPunchAlerts").add(alertDoc)
+      .catch(function(e) { console.warn("[AT] buddyPunchAlert save failed:", e); });
+  }
+}
+
 // ── Check-in ───────────────────────────────────────
 function doCheckin() {
   // Build full Engineer ID with "Eng" prefix
@@ -3334,8 +3410,23 @@ function doCheckin() {
           if (banner && banner.scrollIntoView) banner.scrollIntoView({ behavior: "smooth", block: "start" });
           return;
         }
-        // Not on leave — continue saving the check-in
-        _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn);
+        // Not on leave — cross-device buddy punch check (Firestore-backed, catches different devices)
+        btn.innerHTML = '<span class="spin"></span> Checking device…';
+        _checkCrossDeviceDuplicate(empId, devId, function(conflict) {
+          if (conflict) {
+            // Same engineer already checked in today from a different physical device — flag it
+            _reportBuddyPunchAlert(empId, empName, devId, conflict);
+            btn.disabled = false;
+            btn.innerHTML = "✅ Check In";
+            toast("⛔ Buddy punch detected! This account already checked in from a different device today.", "t-err");
+            setTimeout(function(){
+              alert("⛔ Buddy Punch Detected!\n\n" + empId + " (" + empName + ") already checked in from a different device at " + (conflict.checkinTime || "unknown time") + " at " + (conflict.site || "unknown site") + ".\n\nEach engineer must use only one phone to check in. This incident has been reported to admin.");
+            }, 300);
+            return;
+          }
+          // All checks passed — save the check-in
+          _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn);
+        });
       });
     });
   });
@@ -3562,6 +3653,9 @@ function initDash() {
   // Load OTP requests so the badge updates without needing to click the tab
   if (typeof loadOtpRequests === "function") loadOtpRequests();
 
+  // Load buddy punch alerts so the Device Audit badge updates in real-time
+  if (typeof loadBuddyPunchAlerts === "function") loadBuddyPunchAlerts();
+
   if (fbOk && db) {
     if (fbUnsub) fbUnsub();
     fbUnsub = db.collection("attendance").orderBy("checkinTimestamp","desc")
@@ -3759,7 +3853,7 @@ function dTab(id, el) {
   if (el) el.classList.add("on");
   if (id === "leave")     loadLeaves();
   if (id === "otp")       loadOtpRequests();
-  if (id === "device")    renderDeviceAudit();
+  if (id === "device")    { renderDeviceAudit(); _renderBuddyPunchAlerts(); }
   if (id === "accounts")  adminAccLoad();
   if (id === "analytics") renderAnalytics();
   if (id === 'calendar') {
@@ -3915,29 +4009,43 @@ function _anSiteRoster(site) {
 }
 
 // ── Breakdown chart state ────────────────────────────
-var _anBreakdownCache = {};  // { site: { onTime:[names], late:[names], absent:[names] } }
+var _anBreakdownCache = {};  // { site: { onTime:[recs], late:[recs], absent:[recs], stillIn:[recs] } }
 var _anBreakdownSites = [];  // full site names parallel to chart Y-axis labels
+var _anBreakdownShortLabels = []; // short labels — module-level so onClick/afterDraw always read current values
 var _anBreakdownChart = null;
 
-// Build per-site attendance breakdown — called from _anRenderBreakdownChart
+// Build per-site attendance breakdown.
+// onTime/late entries: { empId, name, checkinTime, checkoutTime, checkinDate, duration, isLate }
+// absent entries:      { empId, name }
+// stillIn entries:     records where checkoutTime is null (engineer not yet checked out)
 function _anBuildBreakdown(rows) {
   var siteFilter = (document.getElementById("anSite") || {}).value || "";
-  var siteMap = {}; // { site: { onTimeIds, lateIds, onTime, late } }
+  var siteMap = {};
 
   rows.forEach(function(r) {
     var site = r.site || "Unknown";
-    if (!siteMap[site]) siteMap[site] = { onTimeIds:{}, lateIds:{}, onTime:[], late:[] };
+    if (!siteMap[site]) siteMap[site] = { onTimeIds:{}, lateIds:{}, onTime:[], late:[], stillIn:[] };
     var id   = r.empId   || r.empName || "?";
     var name = r.empName || r.empId   || "Unknown";
+    var rec  = {
+      empId:       r.empId        || "—",
+      name:        name,
+      checkinTime: r.checkinTime  || "—",
+      checkoutTime:r.checkoutTime || null,
+      checkinDate: r.checkinDate  || "—",
+      duration:    r.duration     || null,
+      isLate:      !!r.isLate
+    };
     if (r.isLate) {
-      if (!siteMap[site].lateIds[id]) { siteMap[site].lateIds[id] = true; siteMap[site].late.push(name); }
+      if (!siteMap[site].lateIds[id]) { siteMap[site].lateIds[id] = true; siteMap[site].late.push(rec); }
     } else {
-      if (!siteMap[site].onTimeIds[id]) { siteMap[site].onTimeIds[id] = true; siteMap[site].onTime.push(name); }
+      if (!siteMap[site].onTimeIds[id]) { siteMap[site].onTimeIds[id] = true; siteMap[site].onTime.push(rec); }
     }
+    if (!r.checkoutTime) siteMap[site].stillIn.push(rec);
   });
 
-  // Absent: engineers known at each site (all-time) but missing from filtered rows
-  var allSiteEng = {}; // { site: { empId: empName } }
+  // Absent: engineers known at each site (all-time) but missing from the current filter period
+  var allSiteEng = {};
   allRecs.forEach(function(r) {
     var site = r.site || "Unknown";
     if (siteFilter && site !== siteFilter) return;
@@ -3945,18 +4053,20 @@ function _anBuildBreakdown(rows) {
     if (r.empId) allSiteEng[site][r.empId] = r.empName || r.empId;
   });
 
+  var sorter = function(a, b) { return (a.name || "").localeCompare(b.name || ""); };
   var result = {};
   Object.keys(siteMap).forEach(function(site) {
     var sm = siteMap[site];
     var known = allSiteEng[site] || {};
     var absent = [];
     Object.keys(known).forEach(function(id) {
-      if (!sm.onTimeIds[id] && !sm.lateIds[id]) absent.push(known[id] || id);
+      if (!sm.onTimeIds[id] && !sm.lateIds[id]) absent.push({ empId: id, name: known[id] || id });
     });
     result[site] = {
-      onTime: sm.onTime.slice().sort(),
-      late:   sm.late.slice().sort(),
-      absent: absent.sort()
+      onTime:  sm.onTime.slice().sort(sorter),
+      late:    sm.late.slice().sort(sorter),
+      absent:  absent.sort(sorter),
+      stillIn: sm.stillIn.slice().sort(sorter)
     };
   });
   return result;
@@ -3980,24 +4090,32 @@ function _anRenderBreakdownChart(rows) {
 
   _anBreakdownCache = _anBuildBreakdown(rows);
   _anBreakdownSites = Object.keys(_anBreakdownCache).sort();
-  var shortLabels  = _anBreakdownSites.map(function(s){ return s.replace(/^(Site [A-Z] - |HQ - )/, ""); });
+  // Module-level — always current; read by onClick and afterDraw plugin (no stale closure)
+  _anBreakdownShortLabels = _anBreakdownSites.map(function(s){ return s.replace(/^(Site [A-Z] - |HQ - )/, ""); });
 
   var onTimeCounts = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].onTime.length; });
   var lateCounts   = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].late.length; });
   var absentCounts = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].absent.length; });
 
-  var totalLate   = lateCounts.reduce(function(a,b){return a+b;},0);
-  var totalAbsent = absentCounts.reduce(function(a,b){return a+b;},0);
-  if (subEl) subEl.textContent = totalLate + " late  ·  " + totalAbsent + " absent — click a bar for full names list";
+  var totalCheckedIn = onTimeCounts.reduce(function(a,b){return a+b;},0) + lateCounts.reduce(function(a,b){return a+b;},0);
+  var totalEngineers = totalCheckedIn + absentCounts.reduce(function(a,b){return a+b;},0);
+  var totalLate      = lateCounts.reduce(function(a,b){return a+b;},0);
+  var totalAbsent    = absentCounts.reduce(function(a,b){return a+b;},0);
+  var totalStillIn   = _anBreakdownSites.reduce(function(acc,s){ return acc + _anBreakdownCache[s].stillIn.length; }, 0);
 
-  // Adjust canvas height to fit all sites (min 200px, ~38px per site)
-  var h = Math.max(200, _anBreakdownSites.length * 38);
+  if (subEl) subEl.textContent =
+    totalCheckedIn + "/" + totalEngineers + " checked in  ·  " + totalLate + " late  ·  " + totalAbsent + " absent"
+    + (totalStillIn ? "  ·  " + totalStillIn + " not yet checked out" : "")
+    + "  —  click a bar for full details";
+
+  // Adjust canvas height to fit all sites (min 200px, ~44px per site)
+  var h = Math.max(200, _anBreakdownSites.length * 44);
   var wrap = canvas.parentElement;
   if (wrap) wrap.style.height = h + "px";
 
-  // Reuse chart if it already exists (faster filter updates)
+  // Reuse chart if it already exists (faster filter updates; plugins stay registered)
   if (_anBreakdownChart) {
-    _anBreakdownChart.data.labels = shortLabels;
+    _anBreakdownChart.data.labels = _anBreakdownShortLabels;
     _anBreakdownChart.data.datasets[0].data = onTimeCounts;
     _anBreakdownChart.data.datasets[1].data = lateCounts;
     _anBreakdownChart.data.datasets[2].data = absentCounts;
@@ -4005,21 +4123,48 @@ function _anRenderBreakdownChart(rows) {
     return;
   }
 
+  // Chart-level plugin: draw "checkedIn/total" label after each bar row
+  var bdTotalsPlugin = {
+    id: "bdTotals",
+    afterDraw: function(chart) {
+      var ctx = chart.ctx;
+      var xScale = chart.scales.x;
+      var meta0  = chart.getDatasetMeta(0);
+      _anBreakdownSites.forEach(function(site, i) {
+        var d = _anBreakdownCache[site];
+        if (!d || !meta0.data[i]) return;
+        var ci    = d.onTime.length + d.late.length;
+        var total = ci + d.absent.length;
+        var y     = meta0.data[i].y;
+        var x     = xScale.getPixelForValue(total) + 8;
+        ctx.save();
+        ctx.font         = "600 10px 'DM Sans',sans-serif";
+        ctx.fillStyle    = total > 0 && ci < total ? "#dc2626" : "#374151";
+        ctx.textAlign    = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(ci + "/" + total, x, y);
+        ctx.restore();
+      });
+    }
+  };
+
   _anBreakdownChart = new Chart(canvas, {
     type: "bar",
     data: {
-      labels: shortLabels,
+      labels: _anBreakdownShortLabels,
       datasets: [
         { label: "On Time", data: onTimeCounts, backgroundColor: "#00c89699", borderRadius: 4, borderSkipped: false },
         { label: "Late",    data: lateCounts,   backgroundColor: "#f59e0b99", borderRadius: 4, borderSkipped: false },
         { label: "Absent",  data: absentCounts, backgroundColor: "#ff3b5c99", borderRadius: 4, borderSkipped: false }
       ]
     },
+    plugins: [bdTotalsPlugin],
     options: {
       indexAxis: "y",
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 300, easing: "easeOutQuart" },
+      layout: { padding: { right: 52 } }, // reserve space for "X/Y" total label
       plugins: {
         legend: { position: "top", labels: { font: { family: "'DM Sans',sans-serif", size: 11 }, boxWidth: 11, padding: 14, usePointStyle: true, pointStyle: "circle" } },
         tooltip: {
@@ -4029,19 +4174,20 @@ function _anRenderBreakdownChart(rows) {
           padding: 12, cornerRadius: 8,
           callbacks: {
             title: function(ctx) {
-              return shortLabels[ctx[0].dataIndex] + "  —  " + ctx[0].dataset.label;
+              // Use module-level _anBreakdownShortLabels — never stale after chart.update()
+              return (_anBreakdownShortLabels[ctx[0].dataIndex] || "—") + "  —  " + ctx[0].dataset.label;
             },
             label: function(ctx) {
               return "  Count: " + ctx.parsed.x;
             },
             afterLabel: function(ctx) {
               var catKey = ctx.dataset.label === "On Time" ? "onTime" : (ctx.dataset.label === "Late" ? "late" : "absent");
-              var site  = _anBreakdownSites[ctx.dataIndex];
-              var names = ((_anBreakdownCache[site] || {})[catKey]) || [];
-              if (!names.length) return ["  (none)"];
-              var MAX = 7;
-              var lines = names.slice(0, MAX).map(function(n){ return "  • " + n; });
-              if (names.length > MAX) lines.push("  … +" + (names.length - MAX) + " more — click bar for full list");
+              var site   = _anBreakdownSites[ctx.dataIndex];
+              var recs   = ((_anBreakdownCache[site] || {})[catKey]) || [];
+              if (!recs.length) return ["  (none)"];
+              var MAX   = 7;
+              var lines = recs.slice(0, MAX).map(function(r){ return "  • " + r.name; });
+              if (recs.length > MAX) lines.push("  … +" + (recs.length - MAX) + " more — click bar for full list");
               return lines;
             }
           }
@@ -4053,27 +4199,70 @@ function _anRenderBreakdownChart(rows) {
       },
       onClick: function(evt, elements) {
         if (!elements.length) return;
-        var el  = elements[0];
-        var si  = el.dataIndex;
-        var di  = el.datasetIndex;
-        var cats = ["onTime", "late", "absent"];
+        var el        = elements[0];
+        var si        = el.dataIndex;
+        var di        = el.datasetIndex;
+        var cats      = ["onTime", "late", "absent"];
         var catLabels = ["On Time", "Late", "Absent"];
         var catColors = ["#059669", "#d97706", "#dc2626"];
-        var site  = _anBreakdownSites[si];
-        var names = ((_anBreakdownCache[site] || {})[cats[di]]) || [];
-        var panel  = document.getElementById("anBreakdownDetail");
-        var title  = document.getElementById("anBreakdownDetailTitle");
-        var body   = document.getElementById("anBreakdownDetailBody");
+        // Use module-level vars — always current regardless of chart reuse
+        var site      = _anBreakdownSites[si];
+        var shortLbl  = _anBreakdownShortLabels[si] || site || "—";
+        var d         = _anBreakdownCache[site] || {};
+        var recs      = (d[cats[di]]) || [];
+        var checkedIn = (d.onTime || []).length + (d.late || []).length;
+        var total     = checkedIn + (d.absent || []).length;
+        var stillIn   = (d.stillIn || []).length;
+
+        var panel = document.getElementById("anBreakdownDetail");
+        var title = document.getElementById("anBreakdownDetailTitle");
+        var body  = document.getElementById("anBreakdownDetailBody");
         if (!panel || !title || !body) return;
-        title.innerHTML = '<span style="color:' + catColors[di] + '">●</span>  ' + shortLabels[si] + '  —  ' + catLabels[di] + ' <span style="color:var(--ink3);font-weight:400">(' + names.length + ' engineers)</span>';
-        if (!names.length) {
+
+        title.innerHTML =
+          '<span style="color:' + catColors[di] + '">●</span>  ' + sanitizeHtml(shortLbl) + '  —  ' + catLabels[di] +
+          ' <span style="color:var(--ink3);font-weight:400">(' + recs.length + ' engineers)</span>' +
+          '<span style="float:right;font-size:.75rem;color:var(--ink3);font-weight:400">' + checkedIn + '/' + total + ' checked in' + (stillIn ? ' · ' + stillIn + ' still in' : '') + '</span>';
+
+        if (!recs.length) {
+          body.style.columnCount = "";
           body.textContent = "No engineers in this category.";
-        } else {
-          body.innerHTML = names.map(function(n){
-            return '<span style="display:block">• ' + n + '</span>';
+        } else if (cats[di] === "absent") {
+          // Absent: just names in 2-column list (no time data)
+          body.style.columnCount = "2";
+          body.innerHTML = recs.map(function(r){
+            return '<span style="display:block;padding:2px 0">• ' + sanitizeHtml(r.name) +
+              ' <span style="color:var(--ink3);font-size:.72rem">(' + sanitizeHtml(r.empId) + ')</span></span>';
           }).join("");
+        } else {
+          // On Time / Late: full detail — name, ID, date, check-in time, check-out time, duration
+          body.style.columnCount = "";
+          body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:.77rem">'
+            + '<thead><tr style="border-bottom:1.5px solid var(--border);color:var(--ink3)">'
+            + '<th style="text-align:left;padding:4px 6px;font-weight:600">Engineer</th>'
+            + '<th style="text-align:left;padding:4px 6px;font-weight:600">ID</th>'
+            + '<th style="text-align:left;padding:4px 6px;font-weight:600">Date</th>'
+            + '<th style="text-align:left;padding:4px 6px;font-weight:600">Check-in</th>'
+            + '<th style="text-align:left;padding:4px 6px;font-weight:600">Check-out</th>'
+            + '<th style="text-align:left;padding:4px 6px;font-weight:600">Duration</th>'
+            + '</tr></thead><tbody>'
+            + recs.map(function(r){
+                var outCell = r.checkoutTime
+                  ? sanitizeHtml(r.checkoutTime)
+                  : '<span style="color:#f59e0b;font-weight:600">Still In</span>';
+                return '<tr style="border-bottom:1px solid #f3f4f6">'
+                  + '<td style="padding:5px 6px;font-weight:600">' + sanitizeHtml(r.name) + '</td>'
+                  + '<td style="padding:5px 6px;font-family:var(--mono);font-size:.7rem;color:var(--ink3)">' + sanitizeHtml(r.empId) + '</td>'
+                  + '<td style="padding:5px 6px">' + sanitizeHtml(r.checkinDate) + '</td>'
+                  + '<td style="padding:5px 6px">' + sanitizeHtml(r.checkinTime) + '</td>'
+                  + '<td style="padding:5px 6px">' + outCell + '</td>'
+                  + '<td style="padding:5px 6px;color:var(--ink3)">' + sanitizeHtml(r.duration || '—') + '</td>'
+                  + '</tr>';
+              }).join("")
+            + '</tbody></table>';
         }
         panel.style.display = "block";
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     }
   });
@@ -4639,7 +4828,7 @@ function exportAnalyticsXLSX() {
   toast("📊 Excel exported · " + rows.length + " records · 5 sheets", "t-ok");
 }
 
-// ── Export Attendance Breakdown (Late & Absent) as Excel ──
+// ── Export Attendance Breakdown — full detail, 4 sheets ──
 function exportBreakdownXLSX() {
   if (typeof XLSX === "undefined") { toast("📊 Excel library still loading — try again in a moment", "t-err"); return; }
   var rows = _anFiltered();
@@ -4647,71 +4836,109 @@ function exportBreakdownXLSX() {
 
   var cache = _anBuildBreakdown(rows);
   var sites = Object.keys(cache).sort();
-
   if (!sites.length) { toast("No site data available", "t-err"); return; }
 
-  // Sheet 1: Summary per site
-  var summaryRows = [];
+  var df = (document.getElementById("anDateFrom")||{}).value || "All";
+  var dt = (document.getElementById("anDateTo")  ||{}).value || "All";
+
+  // ── Sheet 1: Site Summary ─────────────────────────────
+  var summaryRows = sites.map(function(site) {
+    var d = cache[site];
+    var checkedIn = d.onTime.length + d.late.length;
+    var total     = checkedIn + d.absent.length;
+    return {
+      "Site":                       site,
+      "Total Engineers (Known)":    total,
+      "Checked In":                 checkedIn,
+      "On Time":                    d.onTime.length,
+      "Late":                       d.late.length,
+      "Absent (Not Checked In)":    d.absent.length,
+      "Still In (No Checkout Yet)": d.stillIn.length,
+      "Late Rate":                  checkedIn > 0 ? Math.round(d.late.length / checkedIn * 100) + "%" : "—",
+      "Date From":                  df,
+      "Date To":                    dt
+    };
+  });
+
+  // ── Sheet 2: All Check-ins — full detail ─────────────
+  var checkInRows = [];
   sites.forEach(function(site) {
     var d = cache[site];
-    var roster = _anSiteRoster(site);
-    summaryRows.push({
-      "Site":           site,
-      "Roster":         roster != null ? roster : "—",
-      "On Time":        d.onTime.length,
-      "Late":           d.late.length,
-      "Absent":         d.absent.length,
-      "Late Rate":      (d.onTime.length + d.late.length) > 0 ? Math.round(d.late.length / (d.onTime.length + d.late.length) * 100) + "%" : "—"
+    ["onTime", "late"].forEach(function(cat) {
+      d[cat].forEach(function(r) {
+        checkInRows.push({
+          "Site":              site,
+          "Engineer ID":       r.empId,
+          "Engineer Name":     r.name,
+          "Status":            r.isLate ? "Late" : "On Time",
+          "Check-in Date":     r.checkinDate,
+          "Check-in Time":     r.checkinTime,
+          "Check-out Time":    r.checkoutTime || "Not Checked Out",
+          "Duration":          r.duration || "—",
+          "Still In":          r.checkoutTime ? "No" : "Yes"
+        });
+      });
     });
   });
 
-  // Sheet 2: Individual engineer breakdown (one row per engineer per site)
-  var detailRows = [];
+  // ── Sheet 3: Absent Engineers ─────────────────────────
+  var absentRows = [];
   sites.forEach(function(site) {
-    var d = cache[site];
-    d.onTime.forEach(function(name) { detailRows.push({ "Site": site, "Engineer": name, "Status": "On Time" }); });
-    d.late.forEach(function(name)   { detailRows.push({ "Site": site, "Engineer": name, "Status": "Late" }); });
-    d.absent.forEach(function(name) { detailRows.push({ "Site": site, "Engineer": name, "Status": "Absent" }); });
+    cache[site].absent.forEach(function(r) {
+      absentRows.push({
+        "Site":          site,
+        "Engineer ID":   r.empId,
+        "Engineer Name": r.name,
+        "Status":        "Absent",
+        "Note":          "No check-in for selected period"
+      });
+    });
   });
 
-  // Sheet 3: Late engineers only
-  var lateRows = detailRows.filter(function(r){ return r.Status === "Late"; });
-  // Sheet 4: Absent engineers only
-  var absentRows = detailRows.filter(function(r){ return r.Status === "Absent"; });
+  // ── Sheet 4: Still In — no checkout yet ──────────────
+  var stillInRows = [];
+  sites.forEach(function(site) {
+    cache[site].stillIn.forEach(function(r) {
+      stillInRows.push({
+        "Site":          site,
+        "Engineer ID":   r.empId,
+        "Engineer Name": r.name,
+        "Check-in Date": r.checkinDate,
+        "Check-in Time": r.checkinTime,
+        "Status":        r.isLate ? "Late — Still In" : "On Time — Still In"
+      });
+    });
+  });
 
-  var siteFilter = (document.getElementById("anSite")    ||{}).value || "All Sites";
-  var df         = (document.getElementById("anDateFrom")||{}).value || "—";
-  var dt         = (document.getElementById("anDateTo")  ||{}).value || "—";
-
-  var wb = XLSX.utils.book_new();
   function autoW(ws, data) {
     if (!data.length) return;
     var keys = Object.keys(data[0]);
     ws["!cols"] = keys.map(function(k){
       var m = k.length;
       data.forEach(function(row){ var v = String(row[k] == null ? "" : row[k]); if (v.length > m) m = v.length; });
-      return { wch: Math.min(m + 2, 40) };
+      return { wch: Math.min(m + 2, 42) };
     });
   }
 
+  var wb = XLSX.utils.book_new();
   var ws1 = XLSX.utils.json_to_sheet(summaryRows);
-  var ws2 = XLSX.utils.json_to_sheet(detailRows.length ? detailRows : [{ Note: "No data" }]);
-  var ws3 = XLSX.utils.json_to_sheet(lateRows.length ? lateRows : [{ Note: "No late engineers for this filter" }]);
-  var ws4 = XLSX.utils.json_to_sheet(absentRows.length ? absentRows : [{ Note: "No absent engineers for this filter" }]);
+  var ws2 = XLSX.utils.json_to_sheet(checkInRows.length  ? checkInRows  : [{ Note: "No check-in records for selected filters" }]);
+  var ws3 = XLSX.utils.json_to_sheet(absentRows.length   ? absentRows   : [{ Note: "No absent engineers for selected filters" }]);
+  var ws4 = XLSX.utils.json_to_sheet(stillInRows.length  ? stillInRows  : [{ Note: "All engineers have checked out" }]);
 
   autoW(ws1, summaryRows);
-  autoW(ws2, detailRows.length ? detailRows : [{ Note: "x" }]);
-  autoW(ws3, lateRows.length ? lateRows : [{ Note: "x" }]);
-  autoW(ws4, absentRows.length ? absentRows : [{ Note: "x" }]);
+  autoW(ws2, checkInRows.length  ? checkInRows  : [{ Note: "x" }]);
+  autoW(ws3, absentRows.length   ? absentRows   : [{ Note: "x" }]);
+  autoW(ws4, stillInRows.length  ? stillInRows  : [{ Note: "x" }]);
 
   XLSX.utils.book_append_sheet(wb, ws1, "Site Summary");
-  XLSX.utils.book_append_sheet(wb, ws2, "All Engineers");
-  XLSX.utils.book_append_sheet(wb, ws3, "Late Engineers");
-  XLSX.utils.book_append_sheet(wb, ws4, "Absent Engineers");
+  XLSX.utils.book_append_sheet(wb, ws2, "All Check-ins");
+  XLSX.utils.book_append_sheet(wb, ws3, "Absent Engineers");
+  XLSX.utils.book_append_sheet(wb, ws4, "Still In");
 
   var stamp = new Date().toISOString().split("T")[0];
   XLSX.writeFile(wb, "attendance_breakdown_" + stamp + ".xlsx");
-  toast("📊 Breakdown exported · " + detailRows.length + " engineers · 4 sheets", "t-ok");
+  toast("📊 Exported · " + sites.length + " sites · " + checkInRows.length + " check-ins · " + absentRows.length + " absent · 4 sheets", "t-ok");
 }
 // ╚══════════════════════════════════════════════════════╝
 
@@ -5707,6 +5934,69 @@ var rejectTargetId = null;
 // ── OTP Requests State ──────────────────────────────
 var otpRequests = [];
 var fbOtpUnsub = null;
+
+// ── Buddy Punch Alerts State ─────────────────────────
+var buddyPunchAlertsList = [];
+var fbBuddyPunchUnsub = null;
+
+function loadBuddyPunchAlerts() {
+  if (!fbOk || !db) return;
+  if (fbBuddyPunchUnsub) fbBuddyPunchUnsub();
+  fbBuddyPunchUnsub = db.collection("buddyPunchAlerts")
+    .orderBy("detectedAt", "desc")
+    .limit(50)
+    .onSnapshot(function(snap) {
+      buddyPunchAlertsList = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
+
+      // Update badge on Device Audit tab
+      var newCount = buddyPunchAlertsList.filter(function(a) { return a.status === "new"; }).length;
+      var badge = document.getElementById("buddyPunchBadge");
+      if (badge) {
+        if (newCount > 0) { badge.textContent = newCount; badge.style.display = "inline-block"; }
+        else              { badge.style.display = "none"; }
+      }
+
+      // Re-render if Device Audit tab is currently open
+      var devTab = document.getElementById("dTab-device");
+      if (devTab && devTab.style.display !== "none") _renderBuddyPunchAlerts();
+    }, function(err) { console.warn("[AT] buddyPunchAlerts listener:", err); });
+}
+
+function _renderBuddyPunchAlerts() {
+  var wrap = document.getElementById("buddyPunchAlertsWrap");
+  if (!wrap) return;
+
+  if (!buddyPunchAlertsList.length) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  var newAlerts = buddyPunchAlertsList.filter(function(a) { return a.status === "new"; });
+  if (!newAlerts.length) { wrap.innerHTML = ''; return; }
+
+  wrap.innerHTML = '<div style="background:linear-gradient(135deg,#fef2f2,#ffe4e6);border:2px solid #fca5a5;border-radius:var(--r2);padding:18px 20px;margin-bottom:4px">'
+    + '<div style="font-weight:800;color:#b91c1c;font-size:1rem;margin-bottom:12px">🚨 ' + newAlerts.length + ' Cross-Device Check-In Alert' + (newAlerts.length > 1 ? "s" : "") + ' — Buddy Punch Suspected</div>'
+    + newAlerts.map(function(a) {
+        var when = a.detectedIso ? new Date(a.detectedAt).toLocaleString("en-SG") : "—";
+        return '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;border:1px solid #fca5a5;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'
+          + '<div>'
+          + '<div style="font-weight:700;font-size:.9rem;margin-bottom:4px">👷 ' + sanitizeHtml(a.empName || "—") + ' <span style="font-family:var(--mono);font-weight:400;color:#666">(' + sanitizeHtml(a.empId || "") + ')</span></div>'
+          + '<div style="font-size:.8rem;color:#b91c1c;margin-bottom:2px">⚠️ Already checked in at <strong>' + sanitizeHtml(a.existingCheckinTime) + '</strong> at <strong>' + sanitizeHtml(a.existingSite) + '</strong></div>'
+          + '<div style="font-size:.78rem;color:#666;margin-bottom:2px">New attempt from different device: <span style="font-family:var(--mono);background:#fee2e2;padding:1px 5px;border-radius:4px">…' + sanitizeHtml((a.newHwId || a.newDeviceId || "").slice(-10)) + '</span></div>'
+          + '<div style="font-size:.75rem;color:#999">Detected: ' + when + '</div>'
+          + '</div>'
+          + '<button onclick="_dismissBuddyAlert(\'' + a.id + '\')" style="flex-shrink:0;padding:6px 12px;border-radius:8px;background:#fff;color:#b91c1c;border:1.5px solid #fca5a5;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap">✓ Dismiss</button>'
+          + '</div>';
+      }).join("")
+    + '</div>';
+}
+
+function _dismissBuddyAlert(alertId) {
+  if (!fbOk || !db) return;
+  db.collection("buddyPunchAlerts").doc(alertId).update({ status: "dismissed" })
+    .then(function() { toast("Alert dismissed", "t-ok"); })
+    .catch(function(e) { console.warn("[AT] dismiss buddy alert:", e); });
+}
 
 function loadOtpRequests() {
   if (!fbOk || !db) {
@@ -6747,20 +7037,32 @@ function closeLeaveAttModal() {
 }
 
 // ── Device Audit ────────────────────────────────────
-// Returns true if the given device was used by a DIFFERENT empId on the same date.
+// Returns true if the given record is suspicious:
+//   (a) same device used by a DIFFERENT engineer on the same date, OR
+//   (b) same engineer checked in from a DIFFERENT device on the same date.
 // Matching uses hwId (hardware-stable, cross-browser). Falls back to deviceId for
 // records created before the hwId field existed.
 function isBuddyPunch(record, empId, date) {
   if (!record || !date) return false;
-  // Allow either a record object or a raw deviceId string for legacy callers
   var hw  = (typeof record === "object") ? (record.hwId || "") : "";
   var dev = (typeof record === "object") ? (record.deviceId || "") : record;
   if (!hw && !dev) return false;
+
   return allRecs.some(function(r){
-    if (r.empId === empId) return false;
     if (r.checkinDate !== date) return false;
-    if (hw && r.hwId && r.hwId === hw) return true;       // cross-browser match
-    if (dev && r.deviceId && r.deviceId === dev) return true; // legacy match
+
+    // Case A: same device, different engineer (classic buddy punch)
+    if (r.empId !== empId) {
+      if (hw && r.hwId && r.hwId === hw) return true;
+      if (dev && r.deviceId && r.deviceId === dev) return true;
+    }
+
+    // Case B: same engineer, different device (cross-device check-in fraud)
+    if (r.empId === empId) {
+      if (hw && r.hwId && r.hwId !== hw) return true;
+      if (!hw && dev && r.deviceId && r.deviceId !== dev) return true;
+    }
+
     return false;
   });
 }
