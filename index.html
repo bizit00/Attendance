@@ -1346,6 +1346,32 @@ tr.on-leave-row td{background:#f0f9ff!important}
         </div>
       </div>
 
+      <!-- ── Attendance Breakdown by Site ─────────── -->
+      <div class="chart-card" id="anBreakdownCard">
+        <div class="chart-card-hdr">
+          <div>
+            <div class="chart-card-title">👥 Attendance Status by Site</div>
+            <div class="chart-card-sub" id="anBreakdownSub">Who is on time, late or absent — hover bars for names</div>
+          </div>
+          <button class="tb-btn tb-out" onclick="exportBreakdownXLSX()" title="Export late &amp; absent details to Excel" style="font-size:.75rem;padding:5px 10px">⬇ Export</button>
+        </div>
+        <div class="chart-canvas-wrap" style="height:240px;position:relative">
+          <canvas id="anBreakdownChart"></canvas>
+          <div id="anBreakdownEmpty" class="chart-empty" style="display:none;position:absolute;inset:0">
+            <div class="chart-empty-icon">👥</div>
+            <div>No attendance data for the selected filters</div>
+          </div>
+        </div>
+        <!-- Detail panel: populated when user clicks a bar segment -->
+        <div id="anBreakdownDetail" style="display:none;margin-top:10px;padding:12px 16px;background:var(--paper);border-radius:8px;border:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div id="anBreakdownDetailTitle" style="font-size:.8rem;font-weight:700;color:var(--ink)"></div>
+            <button onclick="document.getElementById('anBreakdownDetail').style.display='none'" style="background:none;border:none;cursor:pointer;color:var(--ink3);font-size:1rem">✕</button>
+          </div>
+          <div id="anBreakdownDetailBody" style="font-size:.77rem;color:var(--ink2);line-height:1.75;column-count:2;column-gap:20px"></div>
+        </div>
+      </div>
+
       <!-- ── Leave Trends ───────────────────────────── -->
       <div class="chart-card" id="anLeaveTrendCard">
         <div class="chart-card-hdr">
@@ -3749,9 +3775,10 @@ function _anAggregate(rows, groupBy) {
     else if (groupBy === "status")   key = r.status === "in" ? "Checked In" : (r.status === "out" ? "Checked Out" : "Unknown");
     else                             key = "—";
 
-    if (!groups[key]) groups[key] = { key:key, count:0, checkedIn:0, checkedOut:0, late:0, overtime:0, totalDur:0, durCount:0 };
+    if (!groups[key]) groups[key] = { key:key, count:0, checkedIn:0, checkedOut:0, late:0, overtime:0, totalDur:0, durCount:0, empIds:{} };
     var g = groups[key];
     g.count++;
+    if (r.empId) g.empIds[r.empId] = true;
     if (r.status === "in")  g.checkedIn++;
     if (r.status === "out") g.checkedOut++;
     if (r.isLate)           g.late++;
@@ -3761,6 +3788,7 @@ function _anAggregate(rows, groupBy) {
   });
   var arr = Object.keys(groups).map(function(k){
     groups[k].avgDur = groups[k].durCount > 0 ? groups[k].totalDur / groups[k].durCount : 0;
+    groups[k].uniqueEngineers = Object.keys(groups[k].empIds).length;
     return groups[k];
   });
   // Sort: date ascending (chronological), everything else by count desc
@@ -3780,6 +3808,180 @@ function _anColors(n, alpha) {
   }
   for (var i = 0; i < n; i++) out.push(a < 1 ? hexToRgba(palette[i % palette.length], a) : palette[i % palette.length]);
   return out;
+}
+
+// ── Site roster helper (configured headcount or historical unique engineers) ──
+function _anSiteRoster(site) {
+  if (_anManpower && _anManpower[site] != null) return _anManpower[site];
+  var ids = {};
+  allRecs.forEach(function(r){ if ((r.site || "") === site && r.empId) ids[r.empId] = true; });
+  var n = Object.keys(ids).length;
+  return n > 0 ? n : null;
+}
+
+// ── Breakdown chart state ────────────────────────────
+var _anBreakdownCache = {};  // { site: { onTime:[names], late:[names], absent:[names] } }
+var _anBreakdownSites = [];  // full site names parallel to chart Y-axis labels
+var _anBreakdownChart = null;
+
+// Build per-site attendance breakdown — called from _anRenderBreakdownChart
+function _anBuildBreakdown(rows) {
+  var siteFilter = (document.getElementById("anSite") || {}).value || "";
+  var siteMap = {}; // { site: { onTimeIds, lateIds, onTime, late } }
+
+  rows.forEach(function(r) {
+    var site = r.site || "Unknown";
+    if (!siteMap[site]) siteMap[site] = { onTimeIds:{}, lateIds:{}, onTime:[], late:[] };
+    var id   = r.empId   || r.empName || "?";
+    var name = r.empName || r.empId   || "Unknown";
+    if (r.isLate) {
+      if (!siteMap[site].lateIds[id]) { siteMap[site].lateIds[id] = true; siteMap[site].late.push(name); }
+    } else {
+      if (!siteMap[site].onTimeIds[id]) { siteMap[site].onTimeIds[id] = true; siteMap[site].onTime.push(name); }
+    }
+  });
+
+  // Absent: engineers known at each site (all-time) but missing from filtered rows
+  var allSiteEng = {}; // { site: { empId: empName } }
+  allRecs.forEach(function(r) {
+    var site = r.site || "Unknown";
+    if (siteFilter && site !== siteFilter) return;
+    if (!allSiteEng[site]) allSiteEng[site] = {};
+    if (r.empId) allSiteEng[site][r.empId] = r.empName || r.empId;
+  });
+
+  var result = {};
+  Object.keys(siteMap).forEach(function(site) {
+    var sm = siteMap[site];
+    var known = allSiteEng[site] || {};
+    var absent = [];
+    Object.keys(known).forEach(function(id) {
+      if (!sm.onTimeIds[id] && !sm.lateIds[id]) absent.push(known[id] || id);
+    });
+    result[site] = {
+      onTime: sm.onTime.slice().sort(),
+      late:   sm.late.slice().sort(),
+      absent: absent.sort()
+    };
+  });
+  return result;
+}
+
+// Render horizontal stacked bar — On Time / Late / Absent per site
+function _anRenderBreakdownChart(rows) {
+  var canvas  = document.getElementById("anBreakdownChart");
+  var emptyEl = document.getElementById("anBreakdownEmpty");
+  var subEl   = document.getElementById("anBreakdownSub");
+  if (!canvas) return;
+
+  if (!rows.length) {
+    if (emptyEl) emptyEl.style.display = "flex";
+    canvas.style.display = "none";
+    if (_anBreakdownChart) { _anBreakdownChart.destroy(); _anBreakdownChart = null; }
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = "none";
+  canvas.style.display = "block";
+
+  _anBreakdownCache = _anBuildBreakdown(rows);
+  _anBreakdownSites = Object.keys(_anBreakdownCache).sort();
+  var shortLabels  = _anBreakdownSites.map(function(s){ return s.replace(/^(Site [A-Z] - |HQ - )/, ""); });
+
+  var onTimeCounts = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].onTime.length; });
+  var lateCounts   = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].late.length; });
+  var absentCounts = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].absent.length; });
+
+  var totalLate   = lateCounts.reduce(function(a,b){return a+b;},0);
+  var totalAbsent = absentCounts.reduce(function(a,b){return a+b;},0);
+  if (subEl) subEl.textContent = totalLate + " late  ·  " + totalAbsent + " absent — click a bar for full names list";
+
+  // Adjust canvas height to fit all sites (min 200px, ~38px per site)
+  var h = Math.max(200, _anBreakdownSites.length * 38);
+  var wrap = canvas.parentElement;
+  if (wrap) wrap.style.height = h + "px";
+
+  // Reuse chart if it already exists (faster filter updates)
+  if (_anBreakdownChart) {
+    _anBreakdownChart.data.labels = shortLabels;
+    _anBreakdownChart.data.datasets[0].data = onTimeCounts;
+    _anBreakdownChart.data.datasets[1].data = lateCounts;
+    _anBreakdownChart.data.datasets[2].data = absentCounts;
+    _anBreakdownChart.update({ duration: 250 });
+    return;
+  }
+
+  _anBreakdownChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: shortLabels,
+      datasets: [
+        { label: "On Time", data: onTimeCounts, backgroundColor: "#00c89699", borderRadius: 4, borderSkipped: false },
+        { label: "Late",    data: lateCounts,   backgroundColor: "#f59e0b99", borderRadius: 4, borderSkipped: false },
+        { label: "Absent",  data: absentCounts, backgroundColor: "#ff3b5c99", borderRadius: 4, borderSkipped: false }
+      ]
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300, easing: "easeOutQuart" },
+      plugins: {
+        legend: { position: "top", labels: { font: { family: "'DM Sans',sans-serif", size: 11 }, boxWidth: 11, padding: 14, usePointStyle: true, pointStyle: "circle" } },
+        tooltip: {
+          backgroundColor: "#0d1117",
+          titleFont: { family: "'DM Sans',sans-serif", size: 12, weight: "700" },
+          bodyFont:  { family: "'DM Sans',sans-serif", size: 11 },
+          padding: 12, cornerRadius: 8,
+          callbacks: {
+            title: function(ctx) {
+              return shortLabels[ctx[0].dataIndex] + "  —  " + ctx[0].dataset.label;
+            },
+            label: function(ctx) {
+              return "  Count: " + ctx.parsed.x;
+            },
+            afterLabel: function(ctx) {
+              var catKey = ctx.dataset.label === "On Time" ? "onTime" : (ctx.dataset.label === "Late" ? "late" : "absent");
+              var site  = _anBreakdownSites[ctx.dataIndex];
+              var names = ((_anBreakdownCache[site] || {})[catKey]) || [];
+              if (!names.length) return ["  (none)"];
+              var MAX = 7;
+              var lines = names.slice(0, MAX).map(function(n){ return "  • " + n; });
+              if (names.length > MAX) lines.push("  … +" + (names.length - MAX) + " more — click bar for full list");
+              return lines;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true, grid: { color: "#f0f1f3", drawBorder: false }, border: { display: false }, ticks: { precision: 0, font: { family: "'DM Sans',sans-serif", size: 11 }, color: "#6b7280" } },
+        y: { stacked: true, grid: { display: false }, border: { display: false }, ticks: { font: { family: "'DM Sans',sans-serif", size: 11 }, color: "#3d4451" } }
+      },
+      onClick: function(evt, elements) {
+        if (!elements.length) return;
+        var el  = elements[0];
+        var si  = el.dataIndex;
+        var di  = el.datasetIndex;
+        var cats = ["onTime", "late", "absent"];
+        var catLabels = ["On Time", "Late", "Absent"];
+        var catColors = ["#059669", "#d97706", "#dc2626"];
+        var site  = _anBreakdownSites[si];
+        var names = ((_anBreakdownCache[site] || {})[cats[di]]) || [];
+        var panel  = document.getElementById("anBreakdownDetail");
+        var title  = document.getElementById("anBreakdownDetailTitle");
+        var body   = document.getElementById("anBreakdownDetailBody");
+        if (!panel || !title || !body) return;
+        title.innerHTML = '<span style="color:' + catColors[di] + '">●</span>  ' + shortLabels[si] + '  —  ' + catLabels[di] + ' <span style="color:var(--ink3);font-weight:400">(' + names.length + ' engineers)</span>';
+        if (!names.length) {
+          body.textContent = "No engineers in this category.";
+        } else {
+          body.innerHTML = names.map(function(n){
+            return '<span style="display:block">• ' + n + '</span>';
+          }).join("");
+        }
+        panel.style.display = "block";
+      }
+    }
+  });
 }
 
 // ── Public actions wired to UI ──────────────────────
@@ -3856,6 +4058,7 @@ function renderAnalytics() {
   _anRenderMainChart(agg, groupBy);
   _anRenderStatusChart(rows);
   _anRenderTrendChart(rows);
+  _anRenderBreakdownChart(rows);
   _anRenderLeaveTrendChart((document.getElementById("anSite")||{}).value||"");
 }
 
@@ -3938,11 +4141,16 @@ function _anRenderMainChart(agg, groupBy) {
             title: function(ctx){ return ctx[0] ? agg[ctx[0].dataIndex].key : ""; },
             label: function(ctx){
               var g = agg[ctx.dataIndex];
-              return [
+              var lines = [
                 "✅ Total: " + g.count + " check-ins",
                 "📥 In: " + g.checkedIn + "  |  📤 Out: " + g.checkedOut,
                 "⏰ Late: " + g.late + "  |  ⏱ Avg: " + _anFmtDuration(g.avgDur)
               ];
+              if (groupBy === "site") {
+                var roster = _anSiteRoster(g.key);
+                lines.splice(1, 0, "👷 Engineers: " + g.uniqueEngineers + (roster ? " / " + roster : ""));
+              }
+              return lines;
             }
           }
         }
@@ -4323,6 +4531,81 @@ function exportAnalyticsXLSX() {
   var fname = "attendance_analytics_" + stamp + ".xlsx";
   XLSX.writeFile(wb, fname);
   toast("📊 Excel exported · " + rows.length + " records · 5 sheets", "t-ok");
+}
+
+// ── Export Attendance Breakdown (Late & Absent) as Excel ──
+function exportBreakdownXLSX() {
+  if (typeof XLSX === "undefined") { toast("📊 Excel library still loading — try again in a moment", "t-err"); return; }
+  var rows = _anFiltered();
+  if (!rows.length) { toast("No data to export for current filters", "t-err"); return; }
+
+  var cache = _anBuildBreakdown(rows);
+  var sites = Object.keys(cache).sort();
+
+  if (!sites.length) { toast("No site data available", "t-err"); return; }
+
+  // Sheet 1: Summary per site
+  var summaryRows = [];
+  sites.forEach(function(site) {
+    var d = cache[site];
+    var roster = _anSiteRoster(site);
+    summaryRows.push({
+      "Site":           site,
+      "Roster":         roster != null ? roster : "—",
+      "On Time":        d.onTime.length,
+      "Late":           d.late.length,
+      "Absent":         d.absent.length,
+      "Late Rate":      (d.onTime.length + d.late.length) > 0 ? Math.round(d.late.length / (d.onTime.length + d.late.length) * 100) + "%" : "—"
+    });
+  });
+
+  // Sheet 2: Individual engineer breakdown (one row per engineer per site)
+  var detailRows = [];
+  sites.forEach(function(site) {
+    var d = cache[site];
+    d.onTime.forEach(function(name) { detailRows.push({ "Site": site, "Engineer": name, "Status": "On Time" }); });
+    d.late.forEach(function(name)   { detailRows.push({ "Site": site, "Engineer": name, "Status": "Late" }); });
+    d.absent.forEach(function(name) { detailRows.push({ "Site": site, "Engineer": name, "Status": "Absent" }); });
+  });
+
+  // Sheet 3: Late engineers only
+  var lateRows = detailRows.filter(function(r){ return r.Status === "Late"; });
+  // Sheet 4: Absent engineers only
+  var absentRows = detailRows.filter(function(r){ return r.Status === "Absent"; });
+
+  var siteFilter = (document.getElementById("anSite")    ||{}).value || "All Sites";
+  var df         = (document.getElementById("anDateFrom")||{}).value || "—";
+  var dt         = (document.getElementById("anDateTo")  ||{}).value || "—";
+
+  var wb = XLSX.utils.book_new();
+  function autoW(ws, data) {
+    if (!data.length) return;
+    var keys = Object.keys(data[0]);
+    ws["!cols"] = keys.map(function(k){
+      var m = k.length;
+      data.forEach(function(row){ var v = String(row[k] == null ? "" : row[k]); if (v.length > m) m = v.length; });
+      return { wch: Math.min(m + 2, 40) };
+    });
+  }
+
+  var ws1 = XLSX.utils.json_to_sheet(summaryRows);
+  var ws2 = XLSX.utils.json_to_sheet(detailRows.length ? detailRows : [{ Note: "No data" }]);
+  var ws3 = XLSX.utils.json_to_sheet(lateRows.length ? lateRows : [{ Note: "No late engineers for this filter" }]);
+  var ws4 = XLSX.utils.json_to_sheet(absentRows.length ? absentRows : [{ Note: "No absent engineers for this filter" }]);
+
+  autoW(ws1, summaryRows);
+  autoW(ws2, detailRows.length ? detailRows : [{ Note: "x" }]);
+  autoW(ws3, lateRows.length ? lateRows : [{ Note: "x" }]);
+  autoW(ws4, absentRows.length ? absentRows : [{ Note: "x" }]);
+
+  XLSX.utils.book_append_sheet(wb, ws1, "Site Summary");
+  XLSX.utils.book_append_sheet(wb, ws2, "All Engineers");
+  XLSX.utils.book_append_sheet(wb, ws3, "Late Engineers");
+  XLSX.utils.book_append_sheet(wb, ws4, "Absent Engineers");
+
+  var stamp = new Date().toISOString().split("T")[0];
+  XLSX.writeFile(wb, "attendance_breakdown_" + stamp + ".xlsx");
+  toast("📊 Breakdown exported · " + detailRows.length + " engineers · 4 sheets", "t-ok");
 }
 // ╚══════════════════════════════════════════════════════╝
 
