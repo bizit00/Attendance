@@ -4200,7 +4200,7 @@ function _anRenderBreakdownChart(rows) {
       onClick: function(evt, elements) {
         if (!elements.length) return;
         var el        = elements[0];
-        var si        = el.dataIndex;
+        var si        = el.index;        // Chart.js v4 uses .index, not .dataIndex
         var di        = el.datasetIndex;
         var cats      = ["onTime", "late", "absent"];
         var catLabels = ["On Time", "Late", "Absent"];
