@@ -1322,8 +1322,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <div class="chart-card an-chart-side">
           <div class="chart-card-hdr">
             <div>
-              <div class="chart-card-title">🌴 Leave on Date</div>
-              <div class="chart-card-sub" id="anLeaveStatusSub">Approved leave on the snapshot date</div>
+              <div class="chart-card-title">🌴 Leave by Period</div>
+              <div class="chart-card-sub" id="anLeaveStatusSub">Approved leave in the selected date range</div>
             </div>
           </div>
           <div class="chart-canvas-wrap" style="height:280px;position:relative">
@@ -4519,26 +4519,33 @@ function _anRenderStatusChart(rows) {
   });
 }
 
-// ── Leave on Date (by leave type) — follows the "Snapshot as of" date picker ──
+// ── Leave on Date (by leave type) — follows the From → To date range filter ──
 function _anRenderLeaveStatusChart() {
   var canvas  = document.getElementById("anLeaveStatusChart");
   var emptyEl = document.getElementById("anLeaveStatusEmpty");
   var subEl   = document.getElementById("anLeaveStatusSub");
   if (!canvas) return;
 
-  // Follow the snapshot date picker; fall back to today if not set
-  var asOfEl  = document.getElementById("anAsOfDate");
-  var asOf    = (asOfEl && asOfEl.value) ? asOfEl.value : new Date().toISOString().split("T")[0];
+  // Use the From → To date range filter; if neither set, use today as both ends
+  var todayIso = new Date().toISOString().split("T")[0];
+  var fromEl   = document.getElementById("anDateFrom");
+  var toEl     = document.getElementById("anDateTo");
+  var rangeFrom = (fromEl && fromEl.value) ? fromEl.value : todayIso;
+  var rangeTo   = (toEl   && toEl.value)   ? toEl.value   : (fromEl && fromEl.value ? fromEl.value : todayIso);
 
-  // Pretty label like "18 May 2026"
-  var asOfParts = asOf.split("-");
-  var asOfDate  = new Date(+asOfParts[0], +asOfParts[1]-1, +asOfParts[2]);
-  var asOfLabel = asOfDate.toLocaleDateString("en-SG", { day:"numeric", month:"short", year:"numeric" });
+  // Build a human-readable label
+  function _fmtDate(iso) {
+    var p = iso.split("-");
+    return new Date(+p[0], +p[1]-1, +p[2]).toLocaleDateString("en-SG", { day:"numeric", month:"short", year:"numeric" });
+  }
+  var asOfLabel = (rangeFrom === rangeTo)
+    ? _fmtDate(rangeFrom)
+    : _fmtDate(rangeFrom) + " – " + _fmtDate(rangeTo);
 
-  // All approved leaves that cover the selected date
+  // All approved leaves that overlap with the selected range
   var todayLeaves = (leaveRecs||[]).filter(function(r) {
     if (r.status !== "approved" || !r.fromDate || !r.toDate) return false;
-    return r.fromDate <= asOf && r.toDate >= asOf;
+    return r.fromDate <= rangeTo && r.toDate >= rangeFrom;
   });
 
   _anLeaveStatusAsOfLabel = asOfLabel;  // keep module-level label current even for empty state
