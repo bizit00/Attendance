@@ -1230,18 +1230,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <button class="tb-btn tb-out" onclick="analyticsClearFilters()">✕ Clear</button>
       </div>
 
-      <!-- ── Snapshot header ───────────────────────── -->
-      <div class="an-snapshot-hdr">
-        <div class="an-snapshot-hdr-left">
-          <span class="an-section-label">📅 Snapshot as of</span>
-          <input type="date" id="anAsOfDate" onchange="_raDebounced()" class="an-snapshot-date" title="Pick any date"/>
-          <button class="an-snap-btn" onclick="anAsOfToday()">Today</button>
-          <button class="an-snap-btn an-snap-nav" onclick="anAsOfShift(-1)" title="Previous day">◀</button>
-          <button class="an-snap-btn an-snap-nav" onclick="anAsOfShift(1)"  title="Next day">▶</button>
-        </div>
-        <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()">⚙️ Configure Manpower</button>
-      </div>
-
       <!-- ── KPI Cards ──────────────────────────────── -->
       <div class="an-kpi-row">
         <div class="an-kpi-card an-kpi-blue">
@@ -1446,6 +1434,17 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <option value="">All Sites</option>
         </select>
         <button class="tb-btn tb-out" onclick="calGoToday()">Today</button>
+      </div>
+      <!-- ── Snapshot as of (used by Manpower Gap in Analytics) ── -->
+      <div class="an-snapshot-hdr" style="margin:10px 0 4px">
+        <div class="an-snapshot-hdr-left">
+          <span class="an-section-label">📅 Snapshot as of</span>
+          <input type="date" id="anAsOfDate" onchange="_raDebounced()" class="an-snapshot-date" title="Pick any date"/>
+          <button class="an-snap-btn" onclick="anAsOfToday()">Today</button>
+          <button class="an-snap-btn an-snap-nav" onclick="anAsOfShift(-1)" title="Previous day">◀</button>
+          <button class="an-snap-btn an-snap-nav" onclick="anAsOfShift(1)"  title="Next day">▶</button>
+        </div>
+        <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()">⚙️ Configure Manpower</button>
       </div>
       <div class="cal-grid" id="calGrid"></div>
     </div>
@@ -3852,6 +3851,9 @@ function dTab(id, el) {
         var o = document.createElement("option"); o.value = s.name; o.textContent = s.name; cSite.appendChild(o);
       });
     }
+    // Default snapshot date to today on first open
+    var asOfEl = document.getElementById("anAsOfDate");
+    if (asOfEl && !asOfEl.value) asOfEl.value = new Date().toISOString().split("T")[0];
     if (!leaveRecs.length && db) { loadLeaves(); }
     renderCalendar();
   }
@@ -4574,40 +4576,54 @@ function _anRenderLeaveStatusChart() {
   var colors = types.map(function(t){ return (LEAVE_TYPE_COLORS[t] || "#64748b") + "cc"; });
 
   if (subEl) subEl.textContent =
-    todayLeaves.length + " engineer" + (todayLeaves.length !== 1 ? "s" : "") + " on leave on " + asOfLabel + " — click a bar for details";
+    todayLeaves.length + " engineer" + (todayLeaves.length !== 1 ? "s" : "") + " on leave on " + asOfLabel + " — click a slice for details";
 
   // Store for click handler (module-level — not stale after chart.update())
   _anLeaveStatusData      = byType;
   _anLeaveStatusTypes     = types;
   _anLeaveStatusAsOfLabel = asOfLabel;
 
+  // Use solid colors for doughnut (no opacity suffix)
+  var solidColors = types.map(function(t){ return LEAVE_TYPE_COLORS[t] || "#64748b"; });
+
   // Reuse chart if possible
   if (_anLeaveStatusChart) {
     _anLeaveStatusChart.data.labels = types;
-    _anLeaveStatusChart.data.datasets[0].data   = counts;
-    _anLeaveStatusChart.data.datasets[0].backgroundColor = colors;
+    _anLeaveStatusChart.data.datasets[0].data             = counts;
+    _anLeaveStatusChart.data.datasets[0].backgroundColor  = solidColors;
     _anLeaveStatusChart.update({ duration: 250 });
     return;
   }
 
   _anLeaveStatusChart = new Chart(canvas, {
-    type: "bar",
+    type: "doughnut",
     data: {
       labels: types,
       datasets: [{
         data: counts,
-        backgroundColor: colors,
-        borderRadius: 6,
-        borderSkipped: false
+        backgroundColor: solidColors,
+        borderWidth: 2,
+        borderColor: "#ffffff",
+        hoverOffset: 8
       }]
     },
     options: {
-      indexAxis: "y",
       responsive: true,
       maintainAspectRatio: false,
+      cutout: "58%",
       animation: { duration: 300, easing: "easeOutQuart" },
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          position: "bottom",
+          labels: {
+            font: { family: "'DM Sans',sans-serif", size: 11 },
+            color: "#3d4451",
+            padding: 12,
+            usePointStyle: true,
+            pointStyleWidth: 10
+          }
+        },
         tooltip: {
           backgroundColor: "#0d1117",
           titleFont: { family: "'DM Sans',sans-serif", size: 12, weight: "700" },
@@ -4616,31 +4632,20 @@ function _anRenderLeaveStatusChart() {
           callbacks: {
             title: function(ctx){ return _anLeaveStatusTypes[ctx[0].dataIndex] || ""; },
             label: function(ctx){
-              var n = ctx.parsed.x;
-              return "  " + n + " engineer" + (n !== 1 ? "s" : "") + " on leave on " + _anLeaveStatusAsOfLabel;
+              var n = ctx.parsed;
+              var total = ctx.dataset.data.reduce(function(a,b){ return a+b; }, 0);
+              var pct   = total ? Math.round(n / total * 100) : 0;
+              return "  " + n + " engineer" + (n !== 1 ? "s" : "") + " (" + pct + "%)";
             },
             afterLabel: function(ctx) {
               var t    = _anLeaveStatusTypes[ctx.dataIndex];
               var recs = (_anLeaveStatusData[t] || []);
               var MAX  = 6;
               var lines = recs.slice(0, MAX).map(function(r){ return "  • " + sanitizeHtml(r.empName || r.empId); });
-              if (recs.length > MAX) lines.push("  … +" + (recs.length - MAX) + " more — click bar");
+              if (recs.length > MAX) lines.push("  … +" + (recs.length - MAX) + " more — click slice");
               return lines;
             }
           }
-        }
-      },
-      scales: {
-        x: {
-          beginAtZero: true,
-          grid: { color: "#f0f1f3", drawBorder: false },
-          border: { display: false },
-          ticks: { precision: 0, font: { family: "'DM Sans',sans-serif", size: 11 }, color: "#6b7280" }
-        },
-        y: {
-          grid: { display: false },
-          border: { display: false },
-          ticks: { font: { family: "'DM Sans',sans-serif", size: 11 }, color: "#3d4451" }
         }
       },
       onClick: function(evt, elements) {
