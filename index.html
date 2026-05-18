@@ -1318,12 +1318,12 @@ tr.on-leave-row td{background:#f0f9ff!important}
           </div>
         </div>
 
-        <!-- Today's Leave Status -->
+        <!-- Leave on Date -->
         <div class="chart-card an-chart-side">
           <div class="chart-card-hdr">
             <div>
-              <div class="chart-card-title">🌴 Today's Leave</div>
-              <div class="chart-card-sub" id="anLeaveStatusSub">Active approved leave by type</div>
+              <div class="chart-card-title">🌴 Leave on Date</div>
+              <div class="chart-card-sub" id="anLeaveStatusSub">Approved leave on the snapshot date</div>
             </div>
           </div>
           <div class="chart-canvas-wrap" style="height:280px;position:relative">
@@ -4003,8 +4003,9 @@ var _anBreakdownSites = [];  // full site names parallel to chart Y-axis labels
 var _anBreakdownShortLabels = []; // short labels — module-level so onClick/afterDraw always read current values
 var _anBreakdownChart = null;
 var _anLeaveStatusChart = null;
-var _anLeaveStatusData  = {};   // leaveType → [records]
-var _anLeaveStatusTypes = [];   // ordered leave type labels
+var _anLeaveStatusData     = {};   // leaveType → [records]
+var _anLeaveStatusTypes    = [];   // ordered leave type labels
+var _anLeaveStatusAsOfLabel = "";  // human-readable date label shown in tooltip/detail
 
 // Build per-site attendance breakdown.
 // onTime/late entries: { empId, name, checkinTime, checkoutTime, checkinDate, duration, isLate }
@@ -4518,26 +4519,35 @@ function _anRenderStatusChart(rows) {
   });
 }
 
-// ── Today's Leave Status (by leave type) ────────────
+// ── Leave on Date (by leave type) — follows the "Snapshot as of" date picker ──
 function _anRenderLeaveStatusChart() {
   var canvas  = document.getElementById("anLeaveStatusChart");
   var emptyEl = document.getElementById("anLeaveStatusEmpty");
   var subEl   = document.getElementById("anLeaveStatusSub");
   if (!canvas) return;
 
-  var today = new Date().toISOString().split("T")[0];
+  // Follow the snapshot date picker; fall back to today if not set
+  var asOfEl  = document.getElementById("anAsOfDate");
+  var asOf    = (asOfEl && asOfEl.value) ? asOfEl.value : new Date().toISOString().split("T")[0];
 
-  // All approved leaves that cover today
+  // Pretty label like "18 May 2026"
+  var asOfParts = asOf.split("-");
+  var asOfDate  = new Date(+asOfParts[0], +asOfParts[1]-1, +asOfParts[2]);
+  var asOfLabel = asOfDate.toLocaleDateString("en-SG", { day:"numeric", month:"short", year:"numeric" });
+
+  // All approved leaves that cover the selected date
   var todayLeaves = (leaveRecs||[]).filter(function(r) {
     if (r.status !== "approved" || !r.fromDate || !r.toDate) return false;
-    return r.fromDate <= today && r.toDate >= today;
+    return r.fromDate <= asOf && r.toDate >= asOf;
   });
+
+  _anLeaveStatusAsOfLabel = asOfLabel;  // keep module-level label current even for empty state
 
   if (!todayLeaves.length) {
     if (emptyEl) emptyEl.style.display = "flex";
     canvas.style.display = "none";
     if (_anLeaveStatusChart) { _anLeaveStatusChart.destroy(); _anLeaveStatusChart = null; }
-    if (subEl) subEl.textContent = "No approved leave today";
+    if (subEl) subEl.textContent = "No approved leave on " + asOfLabel;
     return;
   }
   if (emptyEl) emptyEl.style.display = "none";
@@ -4557,11 +4567,12 @@ function _anRenderLeaveStatusChart() {
   var colors = types.map(function(t){ return (LEAVE_TYPE_COLORS[t] || "#64748b") + "cc"; });
 
   if (subEl) subEl.textContent =
-    todayLeaves.length + " engineer" + (todayLeaves.length !== 1 ? "s" : "") + " on leave today — click a bar for details";
+    todayLeaves.length + " engineer" + (todayLeaves.length !== 1 ? "s" : "") + " on leave on " + asOfLabel + " — click a bar for details";
 
   // Store for click handler (module-level — not stale after chart.update())
-  _anLeaveStatusData  = byType;
-  _anLeaveStatusTypes = types;
+  _anLeaveStatusData      = byType;
+  _anLeaveStatusTypes     = types;
+  _anLeaveStatusAsOfLabel = asOfLabel;
 
   // Reuse chart if possible
   if (_anLeaveStatusChart) {
@@ -4599,7 +4610,7 @@ function _anRenderLeaveStatusChart() {
             title: function(ctx){ return _anLeaveStatusTypes[ctx[0].dataIndex] || ""; },
             label: function(ctx){
               var n = ctx.parsed.x;
-              return "  " + n + " engineer" + (n !== 1 ? "s" : "") + " on leave";
+              return "  " + n + " engineer" + (n !== 1 ? "s" : "") + " on leave on " + _anLeaveStatusAsOfLabel;
             },
             afterLabel: function(ctx) {
               var t    = _anLeaveStatusTypes[ctx.dataIndex];
@@ -4640,7 +4651,7 @@ function _anRenderLeaveStatusChart() {
         title.innerHTML =
           '<span style="color:' + color + '">●</span>  ' + sanitizeHtml(leaveType) +
           ' <span style="color:var(--ink3);font-weight:400">(' + recs.length +
-          ' engineer' + (recs.length !== 1 ? 's' : '') + ' today)</span>';
+          ' engineer' + (recs.length !== 1 ? 's' : '') + ' on ' + sanitizeHtml(_anLeaveStatusAsOfLabel) + ')</span>';
 
         body.innerHTML =
           '<table style="width:100%;border-collapse:collapse;font-size:.77rem">' +
