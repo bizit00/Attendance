@@ -803,6 +803,122 @@ tr.on-leave-row td{background:#f0f9ff!important}
 .otp-resend-timer { margin-top:6px;font-size:.78rem;color:var(--ink3); }
 @media(max-width:768px){.cal-cell{min-height:64px;padding:4px}.cal-chip{font-size:.62rem;padding:1px 5px}}
 @media(max-width:500px){.cal-cell{min-height:48px}.cal-chip{display:none}.cal-day-num{font-size:.65rem}}
+.tb-analytics-btn {
+  background: var(--ink);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-size: .85rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--body);
+  transition: all .2s;
+  white-space: nowrap;
+}
+.tb-analytics-btn:hover { background: #374151; }
+.tb-analytics-btn.active { background: var(--blue); }
+/* ── Slideshow ────────────────────────── */
+#slideshowModal {
+  background: #0d1117;
+  border-radius: 16px;
+  width: 88vw;
+  max-width: 1140px;
+  height: 84vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 40px 100px rgba(0,0,0,.8);
+  transition: width .25s, height .25s, border-radius .25s;
+  position: relative;
+}
+#slideshowModal.ss-maximized {
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0 !important;
+  max-width: none !important;
+}
+.ss-progress { height: 3px; background: #1e2530; flex-shrink: 0; }
+.ss-progress-bar { height: 100%; background: #3b82f6; width: 0%; }
+.ss-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 22px 12px;
+  border-bottom: 1px solid #1e2530;
+  flex-shrink: 0;
+}
+.ss-title {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: #e5e7eb;
+  flex: 1;
+}
+.ss-counter {
+  font-family: 'Space Mono', monospace;
+  font-size: .78rem;
+  color: #6b7280;
+  background: #1a1f2b;
+  padding: 4px 12px;
+  border-radius: 20px;
+  flex-shrink: 0;
+}
+.ss-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px 28px;
+  overflow: hidden;
+  background: #0d1117;
+}
+.ss-dots {
+  display: flex;
+  gap: 7px;
+  justify-content: center;
+  padding: 8px 0 4px;
+  flex-shrink: 0;
+}
+.ss-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #374151;
+  cursor: pointer;
+  transition: all .25s;
+  border: none;
+}
+.ss-dot.ss-dot-active {
+  background: #3b82f6;
+  width: 22px;
+  border-radius: 4px;
+}
+.ss-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 22px 16px;
+  border-top: 1px solid #1e2530;
+  flex-shrink: 0;
+}
+.ss-btn {
+  background: #1a1f2b;
+  border: 1px solid #2d3748;
+  color: #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: .85rem;
+  cursor: pointer;
+  transition: all .2s;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ss-btn:hover { background: #2d3748; border-color: #4b5563; }
+.ss-btn.ss-nav { padding: 8px 20px; font-size: 1rem; }
+.ss-btn.ss-exit { background: #450a0a; border-color: #7f1d1d; color: #fca5a5; }
+.ss-btn.ss-exit:hover { background: #7f1d1d; }
 </style>
 </head>
 <body>
@@ -1121,6 +1237,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <span class="tb-logo">AT</span>
     <span class="tb-title">Admin Dashboard</span>
     <span class="live-dot" style="margin-left:4px">LIVE</span>
+    <button class="tb-analytics-btn" id="topbarAnalyticsBtn" onclick="dTabFromTopbar('analytics')" title="Open Analytics dashboard">📊 Analytics</button>
     <button class="tb-back" onclick="doSignOut()" style="margin-left:auto">Sign Out</button>
   </div>
   <div class="dash-wrap">
@@ -1141,7 +1258,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <div class="dash-tabs">
       <div class="dash-tab on" onclick="dTab('live',this)">Live Status</div>
       <div class="dash-tab" onclick="dTab('feed',this)">Activity Feed</div>
-      <div class="dash-tab" onclick="dTab('analytics',this)">📊 Analytics</div>
       <div class="dash-tab" onclick="dTab('calendar',this)">📅 Calendar</div>
       <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">🗓️ Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('otp',this)" id="otpTabBtn">🔐 OTP Requests <span id="otpPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
@@ -1227,6 +1343,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <option value="status">🚦 By Status</option>
         </select>
         <div style="flex:1"></div>
+        <button class="tb-btn tb-out" onclick="startSlideshow()" title="Present charts as a slideshow" style="gap:6px">▶ Slideshow</button>
         <button class="tb-btn tb-pri" onclick="exportAnalyticsXLSX()" title="Download filtered dataset as Excel">⬇ Excel</button>
         <button class="tb-btn tb-out" onclick="analyticsClearFilters()">✕ Clear</button>
       </div>
@@ -3925,6 +4042,9 @@ function dTab(id, el) {
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
   if (el) el.classList.add("on");
+  // Keep topbar Analytics button in sync
+  var topBtn = document.getElementById("topbarAnalyticsBtn");
+  if (topBtn) topBtn.classList.toggle("active", id === "analytics");
   if (id === "leave")     loadLeaves();
   if (id === "otp")       loadOtpRequests();
   if (id === "device")    { renderDeviceAudit(); _renderBuddyPunchAlerts(); }
@@ -3943,6 +4063,18 @@ function dTab(id, el) {
     if (!leaveRecs.length && db) { loadLeaves(); }
     renderCalendar();
   }
+}
+
+function dTabFromTopbar(id) {
+  // Find the matching dash-tab element and delegate to dTab
+  var tabEl = null;
+  document.querySelectorAll(".dash-tab").forEach(function(el) {
+    if (el.getAttribute("onclick") && el.getAttribute("onclick").indexOf("'" + id + "'") !== -1) tabEl = el;
+  });
+  dTab(id, tabEl);
+  // Highlight the topbar button
+  var topBtn = document.getElementById("topbarAnalyticsBtn");
+  if (topBtn) topBtn.classList.add("active");
 }
 
 // ── CSV export ─────────────────────────────────────
@@ -9441,6 +9573,211 @@ function adminAccConfirmResetDev() {
 
 initFirebase();
 initEmailJS();
+
+// ══ CHART SLIDESHOW ═══════════════════════════════════════════════════
+var SS_SLIDES = [
+  { title: "👥 Attendance Status by Site",  canvasId: "anBreakdownChart"   },
+  { title: "🌴 Leave by Period",             canvasId: "anLeaveStatusChart" },
+  { title: "📈 14-Day Check-in Trend",       canvasId: "anTrendChart"       },
+  { title: "🗓️ Leave Trends by Type",        canvasId: "anLeaveTrendCanvas" },
+];
+var _ssIdx       = 0;
+var _ssPlaying   = true;
+var _ssTimer     = null;
+var _ssMaximized = false;
+var _SS_INTERVAL = 6000; // ms per slide
+
+function startSlideshow() {
+  // Ensure analytics data is rendered first
+  if (typeof renderAnalytics === "function") renderAnalytics();
+
+  _ssIdx       = 0;
+  _ssPlaying   = true;
+  _ssMaximized = false;
+
+  var overlay = document.getElementById("slideshowOverlay");
+  overlay.style.display = "flex";
+
+  // Reset maximize state
+  var modal = document.getElementById("slideshowModal");
+  if (modal) modal.classList.remove("ss-maximized");
+  var maxBtn = document.getElementById("ssMaxBtn");
+  if (maxBtn) maxBtn.innerHTML = "&#x26F6; Maximize";
+
+  // Build dot indicators
+  var dotsEl = document.getElementById("ssDots");
+  if (dotsEl) {
+    dotsEl.innerHTML = SS_SLIDES.map(function(s, i) {
+      return '<button class="ss-dot' + (i === 0 ? " ss-dot-active" : "") +
+             '" onclick="ssGoTo(' + i + ')" title="' + s.title + '"></button>';
+    }).join("");
+  }
+
+  // Play btn label
+  var playBtn = document.getElementById("ssPlayBtn");
+  if (playBtn) playBtn.innerHTML = "&#9646;&#9646; Pause";
+
+  ssShowSlide(0);
+  _ssScheduleNext();
+
+  document.addEventListener("keydown", _ssKeyHandler);
+}
+
+function ssShowSlide(idx) {
+  _ssIdx = ((idx % SS_SLIDES.length) + SS_SLIDES.length) % SS_SLIDES.length;
+  var slide = SS_SLIDES[_ssIdx];
+
+  // Update header
+  var titleEl = document.getElementById("ssTitle");
+  if (titleEl) titleEl.textContent = slide.title;
+  var ctrEl = document.getElementById("ssCounter");
+  if (ctrEl) ctrEl.textContent = (_ssIdx + 1) + " / " + SS_SLIDES.length;
+
+  // Update dots
+  document.querySelectorAll(".ss-dot").forEach(function(d, i) {
+    d.classList.toggle("ss-dot-active", i === _ssIdx);
+  });
+
+  // Capture chart canvas as PNG image
+  var canvas = document.getElementById(slide.canvasId);
+  var img    = document.getElementById("ssChartImg");
+  if (img) {
+    if (canvas && typeof canvas.toDataURL === "function") {
+      // Render on a white background so chart is visible on dark modal
+      var tmp = document.createElement("canvas");
+      tmp.width  = canvas.width;
+      tmp.height = canvas.height;
+      var ctx = tmp.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, tmp.width, tmp.height);
+      ctx.drawImage(canvas, 0, 0);
+      img.src = tmp.toDataURL("image/png");
+      img.style.display = "block";
+    } else {
+      img.src = "";
+      img.style.display = "none";
+    }
+  }
+
+  // Restart progress bar animation
+  _ssRestartProgress();
+}
+
+function _ssRestartProgress() {
+  var bar = document.getElementById("ssProgressBar");
+  if (!bar) return;
+  bar.style.transition = "none";
+  bar.style.width = "0%";
+  if (_ssPlaying) {
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        bar.style.transition = "width " + (_SS_INTERVAL / 1000) + "s linear";
+        bar.style.width = "100%";
+      });
+    });
+  }
+}
+
+function _ssScheduleNext() {
+  clearTimeout(_ssTimer);
+  if (_ssPlaying) {
+    _ssTimer = setTimeout(function() {
+      ssShowSlide(_ssIdx + 1);
+      _ssScheduleNext();
+    }, _SS_INTERVAL);
+  }
+}
+
+function ssNext() {
+  clearTimeout(_ssTimer);
+  ssShowSlide(_ssIdx + 1);
+  _ssScheduleNext();
+}
+
+function ssPrev() {
+  clearTimeout(_ssTimer);
+  ssShowSlide(_ssIdx - 1);
+  _ssScheduleNext();
+}
+
+function ssGoTo(idx) {
+  clearTimeout(_ssTimer);
+  ssShowSlide(idx);
+  _ssScheduleNext();
+}
+
+function ssPlayPause() {
+  _ssPlaying = !_ssPlaying;
+  var btn = document.getElementById("ssPlayBtn");
+  var bar = document.getElementById("ssProgressBar");
+  if (_ssPlaying) {
+    if (btn) btn.innerHTML = "&#9646;&#9646; Pause";
+    _ssScheduleNext();
+    _ssRestartProgress();
+  } else {
+    if (btn) btn.innerHTML = "&#9654; Play";
+    clearTimeout(_ssTimer);
+    if (bar) { bar.style.transition = "none"; bar.style.width = "0%"; }
+  }
+}
+
+function ssToggleMax() {
+  _ssMaximized = !_ssMaximized;
+  var modal  = document.getElementById("slideshowModal");
+  var maxBtn = document.getElementById("ssMaxBtn");
+  if (_ssMaximized) {
+    if (modal)  modal.classList.add("ss-maximized");
+    if (maxBtn) maxBtn.innerHTML = "&#x229F; Minimize";
+  } else {
+    if (modal)  modal.classList.remove("ss-maximized");
+    if (maxBtn) maxBtn.innerHTML = "&#x26F6; Maximize";
+  }
+}
+
+function ssOverlayClick(e) {
+  if (e.target === document.getElementById("slideshowOverlay")) ssExit();
+}
+
+function _ssKeyHandler(e) {
+  if (e.key === "Escape")      { ssExit(); return; }
+  if (e.key === "ArrowRight")  { ssNext(); }
+  if (e.key === "ArrowLeft")   { ssPrev(); }
+  if (e.key === " ")           { ssPlayPause(); e.preventDefault(); }
+}
+
+function ssExit() {
+  clearTimeout(_ssTimer);
+  document.removeEventListener("keydown", _ssKeyHandler);
+  _ssPlaying   = true;
+  _ssMaximized = false;
+  var overlay = document.getElementById("slideshowOverlay");
+  if (overlay) overlay.style.display = "none";
+  var modal = document.getElementById("slideshowModal");
+  if (modal) modal.classList.remove("ss-maximized");
+}
+// ══ END SLIDESHOW ═════════════════════════════════════════════════════
 </script>
+<!-- ══ CHART SLIDESHOW OVERLAY ══════════════════════════════════════ -->
+<div id="slideshowOverlay" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.96);z-index:9100;align-items:center;justify-content:center" onclick="ssOverlayClick(event)">
+  <div id="slideshowModal">
+    <div class="ss-progress"><div class="ss-progress-bar" id="ssProgressBar"></div></div>
+    <div class="ss-header">
+      <span class="ss-title" id="ssTitle">—</span>
+      <span class="ss-counter" id="ssCounter">1 / 4</span>
+    </div>
+    <div class="ss-body">
+      <img id="ssChartImg" src="" alt="chart slide" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;display:block"/>
+    </div>
+    <div class="ss-dots" id="ssDots"></div>
+    <div class="ss-footer">
+      <button class="ss-btn ss-nav" onclick="ssPrev()" title="Previous (←)">&#9664;</button>
+      <button class="ss-btn" onclick="ssPlayPause()" id="ssPlayBtn">&#9646;&#9646; Pause</button>
+      <button class="ss-btn ss-nav" onclick="ssNext()" title="Next (→)">&#9654;</button>
+      <div style="width:1px;height:24px;background:#2d3748;margin:0 4px"></div>
+      <button class="ss-btn" onclick="ssToggleMax()" id="ssMaxBtn" title="Maximize">&#x26F6; Maximize</button>
+      <button class="ss-btn ss-exit" onclick="ssExit()" title="Exit (ESC)">&#10005; Exit</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
