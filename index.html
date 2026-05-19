@@ -1126,20 +1126,21 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
         <div class="field">
           <label>Leave Type <span style="color:var(--red)">*</span></label>
-          <select id="leaveType"></select>
+          <select id="leaveType" onchange="onLeaveTypeChange()"></select>
         </div>
       </div>
+      <div id="leaveTypeBalanceHint" style="display:none;margin-top:-6px;margin-bottom:12px;padding:10px 14px;border-radius:10px;font-size:.82rem;font-weight:600;line-height:1.6;border:1.5px solid"></div>
 
       <div class="card">
         <div class="card-lbl">📅 Leave Period</div>
         <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;min-width:0">
           <div class="field" style="margin-bottom:0;min-width:0">
             <label>From Date <span style="color:var(--red)">*</span></label>
-            <input type="date" id="leaveFrom" onchange="calcLeaveDays()" style="min-width:0;width:100%"/>
+            <input type="date" id="leaveFrom" onchange="calcLeaveDays();onLeaveTypeChange()" style="min-width:0;width:100%"/>
           </div>
           <div class="field" style="margin-bottom:0;min-width:0">
             <label>To Date <span style="color:var(--red)">*</span></label>
-            <input type="date" id="leaveTo" onchange="calcLeaveDays()" style="min-width:0;width:100%"/>
+            <input type="date" id="leaveTo" onchange="calcLeaveDays();onLeaveTypeChange()" style="min-width:0;width:100%"/>
           </div>
           <div class="field" style="margin-bottom:0;min-width:0">
             <label>Days</label>
@@ -2298,6 +2299,7 @@ service cloud.firestore {
       <button id="myLeavesSearchBtn" onclick="loadMyLeaves()" style="padding:10px 18px;border-radius:var(--r);background:var(--blue);color:#fff;border:none;font-weight:700;font-family:var(--body);cursor:pointer;font-size:.88rem">Search</button>
     </div>
 
+    <div id="myLeavesBalance" style="display:none;margin-bottom:16px"></div>
     <div id="myLeavesList"><div style="text-align:center;padding:30px;color:var(--ink3);font-size:.88rem">Loading…</div></div>
   </div>
 </div>
@@ -6905,6 +6907,73 @@ function clearLeaveError() {
   var box = document.getElementById("leaveErrorBox"); if (box) box.remove();
 }
 
+// ── Live balance hint when engineer picks a leave type ──
+function onLeaveTypeChange() {
+  var hint = document.getElementById("leaveTypeBalanceHint");
+  if (!hint) return;
+
+  var leaveType = (document.getElementById("leaveType") || {}).value || "";
+  var empId     = sanitize(getEngId("leaveEmpId"), 20);
+  var fromDate  = (document.getElementById("leaveFrom") || {}).value || "";
+  var toDate    = (document.getElementById("leaveTo")   || {}).value || "";
+
+  if (!leaveType || !empId || empId === "Eng") { hint.style.display = "none"; return; }
+
+  var year     = new Date().getFullYear();
+  var numDays  = (fromDate && toDate) ? Math.round((new Date(toDate) - new Date(fromDate)) / 86400000) + 1 : 0;
+
+  _anFetchEntitlement(empId, year, function(doc) {
+    if (!doc || !doc.quotas || doc.quotas[leaveType] == null) {
+      hint.style.display = "none";
+      return;
+    }
+    var quota = (doc.quotas[leaveType] || 0);
+    var adj   = (doc.adjustments && doc.adjustments[leaveType] != null) ? doc.adjustments[leaveType] : 0;
+
+    // Need live "used" count — query Firestore for this engineer's approved leaves this year
+    if (!window.db) {
+      hint.style.display = "none";
+      return;
+    }
+    db.collection("leaveApplications")
+      .where("empId", "==", empId)
+      .where("leaveType", "==", leaveType)
+      .where("status", "==", "approved")
+      .get()
+      .then(function(snap) {
+        var used = 0;
+        snap.forEach(function(d) {
+          var r = d.data();
+          var y = parseInt((r.fromDate || "").slice(0, 4), 10);
+          if (y === year) used += (parseInt(r.numDays, 10) || 0);
+        });
+        var balance = quota + adj - used;
+        var afterThis = (numDays > 0) ? balance - numDays : null;
+
+        if (balance <= 0) {
+          hint.style.background  = "#fef2f2";
+          hint.style.borderColor = "#fca5a5";
+          hint.style.color       = "#dc2626";
+          hint.innerHTML = "⛔ No remaining <strong>" + sanitizeHtml(leaveType) + "</strong> balance "
+            + "(0 of " + (quota + adj) + " days left). Contact admin for adjustment.";
+        } else if (afterThis !== null && afterThis < 0) {
+          hint.style.background  = "#fffbeb";
+          hint.style.borderColor = "#fde68a";
+          hint.style.color       = "#92400e";
+          hint.innerHTML = "⚠️ This application (" + numDays + " days) exceeds your <strong>" + sanitizeHtml(leaveType) + "</strong> balance of <strong>" + balance + " day" + (balance !== 1 ? "s" : "") + "</strong>. It will be blocked on submit.";
+        } else {
+          hint.style.background  = "#f0fdf4";
+          hint.style.borderColor = "#86efac";
+          hint.style.color       = "#15803d";
+          var balAfterTxt = (afterThis !== null) ? " → <strong>" + afterThis + " remaining</strong> after this" : "";
+          hint.innerHTML = "✅ <strong>" + sanitizeHtml(leaveType) + "</strong> balance: <strong>" + balance + " day" + (balance !== 1 ? "s" : "") + "</strong> remaining" + balAfterTxt + ".";
+        }
+        hint.style.display = "block";
+      })
+      .catch(function() { hint.style.display = "none"; });
+  });
+}
+
 // ── Submit Leave Application ────────────────────────
 function submitLeave() {
   clearLeaveError();
@@ -6946,7 +7015,55 @@ function submitLeave() {
 
   var numDays = Math.round((new Date(toDate)-new Date(fromDate))/(1000*60*60*24))+1;
   var now = new Date();
+  var year = parseInt(fromDate.slice(0,4), 10) || new Date().getFullYear();
 
+  // ── Entitlement check (async) ────────────────────
+  // Check quota before writing. If no entitlement set, allow through.
+  _anFetchEntitlement(empId, year, function(entDoc) {
+    if (entDoc && entDoc.quotas && entDoc.quotas[leaveType] != null) {
+      var quota   = entDoc.quotas[leaveType] || 0;
+      var adj     = (entDoc.adjustments && entDoc.adjustments[leaveType] != null) ? entDoc.adjustments[leaveType] : 0;
+      // Fetch used days from Firestore (engineer side — leaveRecs may be empty)
+      var doSubmit = function(used) {
+        var balance = quota + adj - used;
+        if (balance < numDays) {
+          showLeaveError("⛔ Insufficient " + leaveType + " balance.\n\nYou have " + balance + " day" + (balance !== 1 ? "s" : "") + " remaining but this application is for " + numDays + " day" + (numDays !== 1 ? "s" : "") + ".\n\nPlease contact your admin to request an entitlement adjustment.");
+          var btn2 = document.getElementById("leaveSubmitBtn");
+          if (btn2) { btn2.disabled = false; btn2.innerHTML = "📩 Submit Leave Application"; }
+          return;
+        }
+        _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now);
+      };
+
+      if (fbOk && db) {
+        db.collection("leaveApplications")
+          .where("empId", "==", empId)
+          .where("leaveType", "==", leaveType)
+          .where("status", "==", "approved")
+          .get()
+          .then(function(snap) {
+            var used = 0;
+            snap.forEach(function(d) {
+              var r = d.data();
+              var y = parseInt((r.fromDate || "").slice(0, 4), 10);
+              if (y === year) used += (parseInt(r.numDays, 10) || 0);
+            });
+            doSubmit(used);
+          })
+          .catch(function() { _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now); });
+      } else {
+        // No Firebase: use in-memory leaveRecs if available
+        doSubmit(_anComputeUsed(empId, year, leaveType));
+      }
+    } else {
+      // No entitlement configured for this leave type — allow submission
+      _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now);
+    }
+  });
+}  // end submitLeave — actual write is in _doActualLeaveSubmit below
+
+// ── Actual Firestore write (called after entitlement check passes) ──
+function _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now) {
   // ── No Firebase: save locally ────────────────────
   if (!fbOk || !db) {
     var ll = JSON.parse(localStorage.getItem("at_leaves")||"[]");
@@ -7093,7 +7210,21 @@ function renderLeaveTable() {
       "Compassionate Leave":"#b45309;border:1px solid #fde68a;background:#fffbeb",
       "Emergency Leave":"#b91c1c;border:1px solid #fca5a5;background:#fef2f2"
     }[r.leaveType]||"#374151;border:1px solid #d1d5db;background:#f9fafb";
-    var leaveBdg = '<span class="bdg" style="color:'+ltColor+'">'+(r.leaveType||"—")+'</span>';
+
+    // ── Balance badge ────────────────────────────────
+    var _balYear = parseInt((r.fromDate || new Date().toISOString()).slice(0,4), 10);
+    var _entKey  = r.empId + "_" + _balYear;
+    var _entDoc  = entitlementCache[_entKey] || null;
+    var _bal     = _anGetBalance(_entDoc, r.leaveType, r.empId, _balYear);
+    var balBadge = "";
+    if (_bal.quota !== null) {
+      var _badgeColor = _bal.balance > 3 ? "#15803d" : _bal.balance > 0 ? "#92400e" : "#dc2626";
+      var _badgeBg    = _bal.balance > 3 ? "#f0fdf4" : _bal.balance > 0 ? "#fffbeb" : "#fef2f2";
+      balBadge = '<span style="display:inline-block;margin-left:4px;padding:1px 6px;border-radius:10px;font-size:.68rem;font-weight:700;background:' + _badgeBg + ';color:' + _badgeColor + '">'
+        + _bal.balance + 'd left</span>';
+    }
+
+    var leaveBdg = '<span class="bdg" style="color:'+ltColor+'">'+(r.leaveType||"—")+'</span>'+balBadge;
 
     var actions = "";
     if (r.status==="pending") {
@@ -8869,6 +9000,7 @@ function loadMyLeaves() {
         + btns
         +'</div>';
     }).join("");
+    _renderMyLeavesBalance(verifiedEmpId, recs);
   }
 
   if (fbOk && db) {
@@ -8883,6 +9015,55 @@ function loadMyLeaves() {
     var ll = JSON.parse(localStorage.getItem("at_leaves")||"[]");
     renderMyList(ll.filter(function(r){ return r.empId===empId; }));
   }
+}
+
+function _renderMyLeavesBalance(empId, recs) {
+  var balEl = document.getElementById("myLeavesBalance");
+  if (!balEl || !empId) return;
+
+  var year = new Date().getFullYear();
+  _anFetchEntitlement(empId, year, function(doc) {
+    if (!doc || !doc.quotas || !Object.keys(doc.quotas).length) {
+      balEl.style.display = "none";
+      return;
+    }
+
+    var rows = "";
+    LEAVE_TYPES.forEach(function(lt) {
+      if (doc.quotas[lt] == null) return; // skip types with no quota set
+      var quota = doc.quotas[lt] || 0;
+      var adj   = (doc.adjustments && doc.adjustments[lt] != null) ? doc.adjustments[lt] : 0;
+      var used  = 0;
+      (recs || []).forEach(function(r) {
+        if (r.leaveType !== lt) return;
+        if (r.status !== "approved") return;
+        var y = parseInt((r.fromDate || "").slice(0, 4), 10);
+        if (y === year) used += (parseInt(r.numDays, 10) || 0);
+      });
+      var total   = quota + adj;
+      var balance = total - used;
+      var pct     = total > 0 ? Math.min(100, Math.round(used / total * 100)) : 0;
+      var barColor = balance > 0 ? (balance <= 3 ? "#f59e0b" : "#22c55e") : "#ef4444";
+      var balColor = balance > 0 ? (balance <= 3 ? "#92400e" : "#15803d") : "#dc2626";
+      rows += '<div style="margin-bottom:10px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'
+        + '<span style="font-size:.8rem;font-weight:700;color:var(--ink)">' + sanitizeHtml(lt) + '</span>'
+        + '<span style="font-size:.78rem;font-family:var(--mono);font-weight:700;color:' + balColor + '">'
+        + balance + ' / ' + total + ' days left</span>'
+        + '</div>'
+        + '<div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden">'
+        + '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';border-radius:3px;transition:width .4s"></div>'
+        + '</div>'
+        + '</div>';
+    });
+
+    if (!rows) { balEl.style.display = "none"; return; }
+
+    balEl.innerHTML = '<div style="background:var(--paper);border:1.5px solid var(--border);border-radius:10px;padding:14px 16px">'
+      + '<div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--ink3);margin-bottom:10px">📊 Leave Balance — ' + year + '</div>'
+      + rows + '</div>';
+    balEl.style.display = "block";
+  });
 }
 
 // ── Engineer: Cancel a leave ────────────────────────
