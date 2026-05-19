@@ -888,15 +888,16 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <div id="ciForm">
       <div class="card">
         <div class="card-lbl">Engineer Details</div>
-        <div class="field"><label>Engineer ID</label>
+        <div class="field"><label>Full Name</label><input type="text" id="empName" placeholder="e.g. Ahmad Bin Ali" oninput="chkBtn()"/></div>
+        <div class="field"><label>Engineer ID <span id="engIdOptLabel" style="color:var(--ink3);font-size:.75rem;font-weight:400">(leave blank if forgotten — enter name &amp; email first)</span></label>
           <div style="display:flex;align-items:center;border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;background:#fafaf8;transition:border .2s,box-shadow .2s" id="engIdWrap">
             <span style="padding:11px 10px 11px 14px;font-weight:800;font-family:var(--mono);font-size:.95rem;color:var(--blue);background:#eff6ff;border-right:1.5px solid var(--border);white-space:nowrap;user-select:none">Eng</span>
-            <input type="text" id="empId" placeholder="01" inputmode="numeric" pattern="[0-9]*" maxlength="10"
+            <input type="text" id="empId" placeholder="01 — or auto-filled from your account" inputmode="numeric" pattern="[0-9]*" maxlength="10"
               style="border:none;background:transparent;padding:11px 14px;font-size:.95rem;font-family:var(--mono);width:100%;outline:none;color:var(--ink)"
               oninput="engIdInput(this)"/>
           </div>
+          <div id="engIdAutoFillHint" style="display:none;margin-top:5px;font-size:.8rem;color:var(--green);font-weight:600"></div>
         </div>
-        <div class="field"><label>Full Name</label><input type="text" id="empName" placeholder="e.g. Ahmad Bin Ali" oninput="chkBtn()"/></div>
         <div class="field"><label>Email Address <span style="color:var(--red);font-size:.75rem">REQUIRED</span></label>
           <input type="email" id="empEmail" placeholder="your.email@company.com" oninput="chkBtn()" autocomplete="email"/>
           <div id="emailBindStatus" style="margin-top:6px"></div>
@@ -2644,10 +2645,19 @@ function setSessDocId(id) { if(id) localStorage.setItem("at_sess_doc",id); else 
 
 // ── Engineer ID prefix helpers ──────────────────────
 // All Engineer IDs are stored as "Eng" + whatever the user types (e.g. "Eng01")
+var _autoFilledEmpId = null;  // full "EngXX" that was auto-filled; null = user typed it manually
+var _autoFillTimer   = null;
+
 function engIdInput(input) {
   // Strip any non-alphanumeric characters; prevent user from typing "Eng" prefix manually
   var val = input.value.replace(/^[Ee][Nn][Gg]*/,"").replace(/[^a-zA-Z0-9]/g,"");
   input.value = val;
+  // If the user is manually editing, clear any previous auto-fill so we don't conflict
+  var full = val ? ("Eng" + val) : "";
+  if (_autoFilledEmpId && full !== _autoFilledEmpId) {
+    _autoFilledEmpId = null;
+    _updateEngIdAutoFillHint(null);
+  }
   chkBtn();
 }
 
@@ -2680,6 +2690,9 @@ function chkBtn() {
   var site  = (document.getElementById("empSite") ||{}).value||"";
   var email = (document.getElementById("empEmail")||{}).value||"";
   var emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  // Auto-fill Engineer ID if engineer types name + email first
+  _maybeAutoFillEngId(name, email, emailOk);
 
   // Show real-time binding status pill
   var statusEl = document.getElementById("emailBindStatus");
@@ -2724,6 +2737,79 @@ function chkBtn() {
   // Auto-check if this device is already OTP-verified for the entered email.
   // Debounced so we don't hit Firestore on every keystroke.
   _maybeCheckOtpForEmail(email, emailOk);
+}
+
+// ── Engineer ID auto-fill (name + email → look up empId) ──────────────────
+// Called from chkBtn() each time name or email changes.
+// Only fills when: ID field is empty (or still showing our previous auto-fill)
+//                  AND name + email both match a registered emailBinding.
+function _maybeAutoFillEngId(name, email, emailOk) {
+  var nameTrim  = name.trim().toLowerCase();
+  var emailKey  = email.trim().toLowerCase();
+  var currentId = getEngId("empId");
+
+  // If user already typed their own ID (not auto-filled), don't touch it
+  if (currentId && currentId !== _autoFilledEmpId) return;
+
+  // Clear auto-fill hint if name or email is wiped
+  if (!nameTrim || !emailOk) {
+    if (_autoFilledEmpId && (!currentId || currentId === _autoFilledEmpId)) {
+      document.getElementById("empId").value = "";
+      _autoFilledEmpId = null;
+    }
+    _updateEngIdAutoFillHint(null);
+    return;
+  }
+
+  // ① Fast path: check localStorage cache first
+  var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(e){}
+  var cached = eb[emailKey];
+  if (cached && cached.empId) {
+    var cachedName = (cached.empName || "").trim().toLowerCase();
+    if (cachedName && cachedName === nameTrim) {
+      _doEngIdAutoFill(cached.empId);
+      return;
+    }
+  }
+
+  // ② Slow path: Firestore lookup (debounced 600ms)
+  if (_autoFillTimer) clearTimeout(_autoFillTimer);
+  _autoFillTimer = setTimeout(function() {
+    if (!fbOk || !db) return;
+    db.collection("emailBindings").doc(emailKey).get().then(function(snap) {
+      if (!snap.exists) return;
+      var d = snap.data();
+      // Re-check the form hasn't changed while we waited
+      var nameNow  = ((document.getElementById("empName") ||{}).value||"").trim().toLowerCase();
+      var emailNow = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+      if (nameNow !== nameTrim || emailNow !== emailKey) return;
+      // Name must match what's stored
+      var storedName = (d.empName || "").trim().toLowerCase();
+      if (!storedName || storedName !== nameTrim) return;
+      // ID field must still be empty or still showing our previous auto-fill
+      var idNow = getEngId("empId");
+      if (idNow && idNow !== _autoFilledEmpId) return;
+      _doEngIdAutoFill(d.empId);
+    }).catch(function(){});
+  }, 600);
+}
+
+function _doEngIdAutoFill(fullEmpId) {
+  // fullEmpId is stored as "Eng01" — strip prefix for the input field
+  var raw = (fullEmpId || "").replace(/^[Ee][Nn][Gg]/i, "");
+  var input = document.getElementById("empId");
+  if (!input || !raw) return;
+  input.value = raw;
+  _autoFilledEmpId = "Eng" + raw;
+  _updateEngIdAutoFillHint("✅ Engineer ID auto-filled from your registered account (Eng" + raw + ")");
+  chkBtn();
+}
+
+function _updateEngIdAutoFillHint(msg) {
+  var el = document.getElementById("engIdAutoFillHint");
+  if (!el) return;
+  if (msg) { el.textContent = msg; el.style.display = "block"; }
+  else      { el.textContent = "";  el.style.display = "none";  }
 }
 
 // Track the last email we checked so we don't spam Firestore on every keystroke
