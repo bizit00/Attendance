@@ -1013,6 +1013,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
               oninput="engIdInput(this)"/>
           </div>
           <div id="engIdAutoFillHint" style="display:none;margin-top:5px;font-size:.8rem;color:var(--green);font-weight:600"></div>
+          <div id="engIdAvailHint" style="display:none;margin-top:4px;padding:6px 10px;border-radius:8px;font-size:.78rem;font-weight:600;border:1.5px solid"></div>
         </div>
         <div class="field"><label>Email Address <span style="color:var(--red);font-size:.75rem">REQUIRED</span></label>
           <input type="email" id="empEmail" placeholder="your.email@company.com" oninput="chkBtn()" autocomplete="email"/>
@@ -1025,6 +1026,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
           </div>
           <div class="otp-msg" id="otpMsg"></div>
           <div class="otp-verified-badge" id="otpVerifiedBadge" style="display:none">✅ Email verified</div>
+          <div id="onbValidationStatus" style="display:none;margin-top:6px;padding:8px 12px;border-radius:8px;font-size:.8rem;font-weight:600;border:1.5px solid;line-height:1.5"></div>
         </div>
         <div class="field"><label>Work Site</label>
           <select id="empSite" onchange="chkBtn();resetGps('in')">
@@ -1263,6 +1265,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">🗓️ Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('otp',this)" id="otpTabBtn">🔐 OTP Requests <span id="otpPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('device',this)">🔒 Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
+      <div class="dash-tab" onclick="dTab('onboarding',this)">📋 Onboarding</div>
       <div class="dash-tab" onclick="dTab('accounts',this)">👷 Eng Accounts</div>
       <div class="dash-tab" onclick="dTab('setup',this)">⚙️ Setup Guide</div>
     </div>
@@ -1568,6 +1571,33 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="cal-grid" id="calGrid"></div>
     </div>
 
+<!-- ONBOARDING TAB -->
+<div id="dTab-onboarding" style="display:none">
+  <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:flex-start">
+    <div style="font-weight:700;font-size:1rem;color:var(--ink);flex:1;min-width:200px">📋 Engineer Onboarding</div>
+    <button class="tb-btn tb-pri" onclick="onbOpenForm(null)">＋ Add Engineer</button>
+    <button class="tb-btn tb-out" onclick="onbExportExcel()">⬇ Export Excel</button>
+  </div>
+
+  <!-- Onboarding table -->
+  <div class="tbl-wrap" style="margin-top:8px">
+    <div style="overflow-x:auto">
+      <table id="onbTable">
+        <thead><tr>
+          <th>Eng ID</th><th>Name</th><th>Gender</th><th>NRIC</th>
+          <th>Phone</th><th>Email</th><th>Status</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="onbTbody"></tbody>
+      </table>
+    </div>
+    <div id="onbEmpty" class="empty" style="display:none">
+      <div class="empty-icon">📋</div>
+      <div class="empty-t">No onboarding records yet</div>
+      <div>Click "＋ Add Engineer" to pre-record engineer details before they register.</div>
+    </div>
+  </div>
+</div>
+
 <!-- LEAVE MANAGEMENT TAB -->
     <div id="dTab-leave" style="display:none">
 
@@ -1826,6 +1856,12 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // ── 4. Engineer Onboarding ─────────────────────────
+    match /engineerOnboarding/{docId} {
+      allow read: if true;   // Engineers need to verify their own record on registration
+      allow write: if request.auth != null;  // Admin only
+    }
+
     // OTP verification requests (engineer ↔ admin handshake)
     match /otpRequests/{doc} {
       allow read, write: if true;
@@ -2055,6 +2091,12 @@ service cloud.firestore {
     match /leaveEntitlements/{doc} {
       allow read: if true;
       allow write: if request.auth != null;
+    }
+
+    // ── 4. Engineer Onboarding ─────────────────────────
+    match /engineerOnboarding/{docId} {
+      allow read: if true;   // Engineers need to verify their own record on registration
+      allow write: if request.auth != null;  // Admin only
     }
 
     // OTP verification requests (engineer ↔ admin handshake)
@@ -2368,6 +2410,81 @@ service cloud.firestore {
     <div class="modal-actions">
       <button class="modal-btn-cancel" onclick="anCloseManpowerConfig()">Cancel</button>
       <button class="modal-btn-confirm" onclick="anSaveManpowerConfig()">💾 Save Targets</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ONBOARDING FORM MODAL ══════════════════════ -->
+<div id="onbModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:580px;max-height:92vh;overflow-y:auto">
+    <button class="modal-close" onclick="onbCloseForm()">✕</button>
+    <div class="modal-title" id="onbModalTitle">＋ Add Engineer</div>
+    <div class="modal-sub">Pre-record engineer details before they register.</div>
+    <input type="hidden" id="onbEditId"/>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="field" style="grid-column:1/-1">
+        <label>Engineer ID <span style="color:var(--red)">*</span></label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div style="display:flex;align-items:center;border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;background:#fafaf8;flex:1">
+            <span style="padding:10px 8px 10px 14px;font-weight:800;font-family:var(--mono);font-size:.9rem;color:var(--blue);background:#eff6ff;border-right:1.5px solid var(--border);user-select:none">Eng</span>
+            <input type="text" id="onbEngId" placeholder="001" style="border:none;background:transparent;padding:10px 12px;font-size:.9rem;font-family:var(--mono);width:100%;outline:none;color:var(--ink)" oninput="this.value=this.value.replace(/[^a-zA-Z0-9]/g,'')"/>
+          </div>
+          <button class="tb-btn tb-out" onclick="onbGenerateId()" style="white-space:nowrap">⚡ Generate ID</button>
+        </div>
+        <div id="onbEngIdStatus" style="font-size:.75rem;margin-top:4px;min-height:16px"></div>
+      </div>
+
+      <div class="field">
+        <label>Full Name <span style="color:var(--red)">*</span></label>
+        <input type="text" id="onbName" placeholder="e.g. Ahmad Bin Ali"/>
+      </div>
+      <div class="field">
+        <label>Gender</label>
+        <select id="onbGender">
+          <option value="">— Select —</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="Prefer not to say">Prefer not to say</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>NRIC / ID Number</label>
+        <input type="text" id="onbNric" placeholder="e.g. S1234567A"/>
+      </div>
+      <div class="field">
+        <label>Phone Number</label>
+        <input type="text" id="onbPhone" placeholder="e.g. +65 9123 4567"/>
+      </div>
+
+      <div class="field" style="grid-column:1/-1">
+        <label>Address</label>
+        <input type="text" id="onbAddress" placeholder="e.g. 123 Main St, Singapore 123456"/>
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label>Email Address <span style="color:var(--red)">*</span></label>
+        <input type="email" id="onbEmail" placeholder="engineer@company.com"/>
+      </div>
+    </div>
+
+    <div id="onbFormStatus" style="font-size:.8rem;min-height:18px;margin:8px 0;font-family:var(--mono)"></div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="onbCloseForm()">Cancel</button>
+      <button class="modal-btn-confirm" style="background:var(--blue)" onclick="onbSave()">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ONBOARDING DELETE CONFIRM MODAL ══════════════ -->
+<div id="onbDeleteModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:400px">
+    <button class="modal-close" onclick="document.getElementById('onbDeleteModal').classList.remove('open')">✕</button>
+    <div class="modal-title">🗑️ Delete Onboarding Record</div>
+    <div class="modal-sub" id="onbDeleteSub">Are you sure?</div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="document.getElementById('onbDeleteModal').classList.remove('open')">Cancel</button>
+      <button class="modal-btn-confirm" style="background:var(--red)" onclick="onbConfirmDelete()">🗑️ Delete</button>
     </div>
   </div>
 </div>
@@ -2764,8 +2881,11 @@ function setSessDocId(id) { if(id) localStorage.setItem("at_sess_doc",id); else 
 
 // ── Engineer ID prefix helpers ──────────────────────
 // All Engineer IDs are stored as "Eng" + whatever the user types (e.g. "Eng01")
-var _autoFilledEmpId = null;  // full "EngXX" that was auto-filled; null = user typed it manually
-var _autoFillTimer   = null;
+var _autoFilledEmpId  = null;  // full "EngXX" that was auto-filled; null = user typed it manually
+var _autoFillTimer    = null;
+var _idAvailTimer     = null;
+var _onbValidated     = false; // true once onboarding pre-validation passes (or no record found)
+var _onbValidateTimer = null;
 
 function engIdInput(input) {
   // Strip any non-alphanumeric characters; prevent user from typing "Eng" prefix manually
@@ -2778,6 +2898,31 @@ function engIdInput(input) {
     _updateEngIdAutoFillHint(null);
   }
   chkBtn();
+
+  // Real-time availability check
+  if (_idAvailTimer) clearTimeout(_idAvailTimer);
+  var idAvailEl = document.getElementById("engIdAvailHint");
+  if (idAvailEl) { idAvailEl.style.display = "none"; idAvailEl.textContent = ""; }
+  if (val && window.db) {
+    _idAvailTimer = setTimeout(function() {
+      var fullId = "Eng" + val;
+      db.collection("empBindings").doc(fullId).get().then(function(snap) {
+        var hint = document.getElementById("engIdAvailHint");
+        if (!hint) return;
+        var curVal = (document.getElementById("empId") || {}).value || "";
+        if (curVal !== val) return; // user kept typing
+        if (snap.exists) {
+          hint.style.background = "#fef2f2"; hint.style.borderColor = "#fca5a5"; hint.style.color = "#dc2626";
+          hint.textContent = "⛔ " + fullId + " is already registered. Please use your assigned ID.";
+          hint.style.display = "block";
+        } else {
+          hint.style.background = "#f0fdf4"; hint.style.borderColor = "#86efac"; hint.style.color = "#15803d";
+          hint.textContent = "✅ " + fullId + " is available.";
+          hint.style.display = "block";
+        }
+      }).catch(function(){});
+    }, 600);
+  }
 }
 
 // Returns the full ID with Eng prefix, or "" if input is empty
@@ -2825,12 +2970,12 @@ function chkBtn() {
       var xb = {}; try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(e){}
       var id = getEngId("empId");
 
-      if (eb[emailKey] && id && eb[emailKey].empId !== id) {
-        // Email is already bound to a different engineer
-        statusEl.innerHTML = '<div class="pill pill-bad" style="margin-top:4px">⛔ This email is registered to <strong>' + sanitizeHtml(eb[emailKey].empId) + '</strong> — use your own email.</div>';
-      } else if (id && xb[id] && xb[id].email !== emailKey) {
+      if (id && xb[id] && xb[id].email !== emailKey) {
         // This engineer ID is already bound to a different email
-        statusEl.innerHTML = '<div class="pill pill-bad" style="margin-top:4px">⛔ <strong>' + sanitizeHtml(id) + '</strong> is registered to a different email. Contact admin to update.</div>';
+        statusEl.innerHTML = '<div class="pill pill-bad" style="margin-top:4px">⛔ Engineer ID <strong>' + sanitizeHtml(id) + '</strong> is already registered to another person. Please use your assigned ID or contact admin.</div>';
+      } else if (eb[emailKey] && id && eb[emailKey].empId !== id) {
+        // Email is already bound to a different engineer
+        statusEl.innerHTML = '<div class="pill pill-bad" style="margin-top:4px">⛔ This email is already linked to a different Engineer ID (<strong>' + sanitizeHtml(eb[emailKey].empId) + '</strong>). Please use your own email.</div>';
       } else if (eb[emailKey] && eb[emailKey].empId === id) {
         statusEl.innerHTML = '<div class="pill pill-ok" style="margin-top:4px">✅ Email recognised — registered to <strong>' + sanitizeHtml(id) + '</strong></div>';
       } else {
@@ -2849,13 +2994,16 @@ function chkBtn() {
   // Show Verify Email button when form has enough info and OTP not yet done
   var verifyBtn = document.getElementById("otpVerifyBtn");
   if (verifyBtn) {
-    var formReady = !!(id && name.trim() && emailOk);
+    var formReady = !!(id && name.trim() && emailOk && _onbValidated !== false);
     verifyBtn.style.display = (formReady && !otpVerified) ? "block" : "none";
   }
 
   // Auto-check if this device is already OTP-verified for the entered email.
   // Debounced so we don't hit Firestore on every keystroke.
   _maybeCheckOtpForEmail(email, emailOk);
+
+  // Onboarding pre-registration validation
+  _onbValidateRegistration();
 }
 
 // ── Engineer ID auto-fill (name + email → look up empId) ──────────────────
@@ -2929,6 +3077,68 @@ function _updateEngIdAutoFillHint(msg) {
   if (!el) return;
   if (msg) { el.textContent = msg; el.style.display = "block"; }
   else      { el.textContent = "";  el.style.display = "none";  }
+}
+
+// ── Onboarding pre-registration validation ──────────
+function _onbValidateRegistration() {
+  var empId  = getEngId("empId");
+  var email  = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+  var statusEl = document.getElementById("onbValidationStatus");
+  if (!statusEl) return;
+
+  if (!empId || empId === "Eng" || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    statusEl.style.display = "none";
+    _onbValidated = false;
+    return;
+  }
+
+  if (_onbValidateTimer) clearTimeout(_onbValidateTimer);
+  _onbValidateTimer = setTimeout(function() {
+    if (!window.db) { _onbValidated = true; return; } // no Firebase = demo mode, allow
+
+    db.collection("engineerOnboarding").doc(empId).get().then(function(snap) {
+      var elNow = document.getElementById("onbValidationStatus");
+      if (!elNow) return;
+      // Re-check the form hasn't changed while we waited
+      var empIdNow = getEngId("empId");
+      var emailNow = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+      if (empIdNow !== empId || emailNow !== email) return;
+
+      if (!snap.exists) {
+        // No onboarding record — allow (existing engineer or demo)
+        elNow.style.display = "none";
+        _onbValidated = true;
+        chkBtn();
+        return;
+      }
+
+      var data = snap.data();
+      var recordedEmail = (data.email || "").trim().toLowerCase();
+
+      if (recordedEmail && recordedEmail !== email) {
+        // Email mismatch — BLOCK
+        elNow.style.background  = "#fef2f2";
+        elNow.style.borderColor = "#fca5a5";
+        elNow.style.color       = "#dc2626";
+        elNow.innerHTML = "⛔ <strong>Information mismatch.</strong> Please ensure your Engineer ID and Email match the details provided during onboarding. Contact your admin if unsure.";
+        elNow.style.display = "block";
+        _onbValidated = false;
+        chkBtn();
+        return;
+      }
+
+      // Match — show green confirmation
+      elNow.style.background  = "#f0fdf4";
+      elNow.style.borderColor = "#86efac";
+      elNow.style.color       = "#15803d";
+      elNow.innerHTML = "✅ Identity pre-verified against onboarding record. Proceed with email verification.";
+      elNow.style.display = "block";
+      _onbValidated = true;
+      chkBtn();
+    }).catch(function() {
+      _onbValidated = true; // if check fails, allow through
+    });
+  }, 700);
 }
 
 // Track the last email we checked so we don't spam Firestore on every keystroke
@@ -3192,6 +3402,19 @@ function confirmOtp() {
     document.getElementById("otpVerifyBtn").style.display = "none";
     document.getElementById("otpResendTimer").style.display = "none";
     document.getElementById("otpVerifiedBadge").style.display = "block";
+
+    // Mark onboarding record as active
+    var empId = getEngId("empId");
+    if (empId && window.db) {
+      db.collection("engineerOnboarding").doc(empId).get().then(function(snap) {
+        if (snap.exists && snap.data().status !== "active") {
+          db.collection("engineerOnboarding").doc(empId).update({
+            status: "active",
+            activatedAt: new Date().toISOString()
+          }).catch(function(){});
+        }
+      }).catch(function(){});
+    }
 
     db.collection("otpRequests").doc(reqId).update({
       status: "verified",
@@ -4039,7 +4262,7 @@ function refreshDash() {
 
 // ── Dashboard tabs ─────────────────────────────────
 function dTab(id, el) {
-  ["live","feed","analytics","calendar","leave","otp","device","accounts","setup"].forEach(function(t){
+  ["live","feed","analytics","calendar","leave","otp","device","onboarding","accounts","setup"].forEach(function(t){
     var p = document.getElementById("dTab-"+t); if(p) p.style.display = t===id?"block":"none";
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
@@ -4047,11 +4270,12 @@ function dTab(id, el) {
   // Keep topbar Analytics button in sync
   var topBtn = document.getElementById("topbarAnalyticsBtn");
   if (topBtn) topBtn.classList.toggle("active", id === "analytics");
-  if (id === "leave")     loadLeaves();
-  if (id === "otp")       loadOtpRequests();
-  if (id === "device")    { renderDeviceAudit(); _renderBuddyPunchAlerts(); }
-  if (id === "accounts")  adminAccLoad();
-  if (id === "analytics") renderAnalytics();
+  if (id === "leave")       loadLeaves();
+  if (id === "otp")         loadOtpRequests();
+  if (id === "device")      { renderDeviceAudit(); _renderBuddyPunchAlerts(); }
+  if (id === "onboarding")  loadOnboarding();
+  if (id === "accounts")    adminAccLoad();
+  if (id === "analytics")   renderAnalytics();
   if (id === 'calendar') {
     var cSite = document.getElementById("calSite");
     if (cSite && cSite.options.length <= 1) {
@@ -9403,6 +9627,259 @@ function sendTestEmail() {
 // ══════════════════════════════════════════════════════
 // ADMIN — ENGINEER ACCOUNTS MANAGEMENT
 // Reads from Firestore: emailBindings + empBindings
+// ══ ENGINEER ONBOARDING ══════════════════════════════════════════════
+var _onbRecords = [];      // local cache of all onboarding docs
+var _onbDeleteId = null;   // ID queued for deletion
+
+// ── Load & render ────────────────────────────────────
+function loadOnboarding() {
+  var tbody = document.getElementById("onbTbody");
+  var empty = document.getElementById("onbEmpty");
+  if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--ink3)">Loading…</td></tr>';
+
+  if (!fbOk || !db) {
+    _onbRecords = [];
+    _onbRenderTable();
+    return;
+  }
+  db.collection("engineerOnboarding").orderBy("createdAt","desc").get()
+    .then(function(snap) {
+      _onbRecords = [];
+      snap.forEach(function(d) { _onbRecords.push(Object.assign({ _id: d.id }, d.data())); });
+      _onbRenderTable();
+    })
+    .catch(function(e) {
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="color:var(--red);padding:20px;text-align:center">Error loading: ' + sanitizeHtml(e.message||"unknown") + '</td></tr>';
+    });
+}
+
+function _onbRenderTable() {
+  var tbody = document.getElementById("onbTbody");
+  var empty = document.getElementById("onbEmpty");
+  if (!tbody) return;
+  if (!_onbRecords.length) {
+    tbody.innerHTML = "";
+    if (empty) empty.style.display = "block";
+    return;
+  }
+  if (empty) empty.style.display = "none";
+
+  tbody.innerHTML = _onbRecords.map(function(r) {
+    var statusColor = r.status === "active" ? "var(--green)" : "#f59e0b";
+    var statusLabel = r.status === "active" ? "✅ Active" : "⏳ Pending";
+    return '<tr>'
+      + '<td style="font-family:var(--mono);font-weight:700;color:var(--blue)">' + sanitizeHtml(r.engId||r._id) + '</td>'
+      + '<td style="font-weight:600">' + sanitizeHtml(r.name||"—") + '</td>'
+      + '<td>' + sanitizeHtml(r.gender||"—") + '</td>'
+      + '<td style="font-family:var(--mono);font-size:.78rem">' + sanitizeHtml(r.nric||"—") + '</td>'
+      + '<td>' + sanitizeHtml(r.phone||"—") + '</td>'
+      + '<td style="font-size:.82rem">' + sanitizeHtml(r.email||"—") + '</td>'
+      + '<td><span style="font-size:.78rem;font-weight:700;color:' + statusColor + '">' + statusLabel + '</span></td>'
+      + '<td><div style="display:flex;gap:6px">'
+      + '<button class="leave-act-btn" style="background:#eff6ff;color:var(--blue)" onclick="onbOpenForm(\'' + sanitizeHtml(r._id) + '\')">✏️ Edit</button>'
+      + '<button class="leave-act-btn" style="background:#fef2f2;color:var(--red)" onclick="onbPromptDelete(\'' + sanitizeHtml(r._id) + '\')">🗑️</button>'
+      + '</div></td>'
+      + '</tr>';
+  }).join("");
+}
+
+// ── Form open / close ─────────────────────────────────
+function onbOpenForm(id) {
+  var modal = document.getElementById("onbModal");
+  var title = document.getElementById("onbModalTitle");
+  var status = document.getElementById("onbFormStatus");
+  if (!modal) return;
+
+  // Clear form
+  ["onbEngId","onbName","onbPhone","onbNric","onbAddress","onbEmail"].forEach(function(fid) {
+    var el = document.getElementById(fid); if (el) el.value = "";
+  });
+  var gSel = document.getElementById("onbGender"); if (gSel) gSel.value = "";
+  if (status) status.textContent = "";
+  var engIdStatus = document.getElementById("onbEngIdStatus"); if (engIdStatus) engIdStatus.textContent = "";
+  var editId = document.getElementById("onbEditId"); if (editId) editId.value = "";
+
+  if (id) {
+    // Edit mode
+    var rec = _onbRecords.find(function(r) { return r._id === id; });
+    if (!rec) { toast("Record not found", "t-err"); return; }
+    if (title) title.textContent = "✏️ Edit Engineer";
+    if (editId) editId.value = id;
+    var ei = document.getElementById("onbEngId"); if (ei) { ei.value = (rec.engId||id).replace(/^[Ee][Nn][Gg]/i,""); ei.readOnly = true; ei.style.background="#f3f4f6"; ei.style.color="var(--ink3)"; }
+    var ni = document.getElementById("onbName"); if (ni) ni.value = rec.name||"";
+    if (gSel) gSel.value = rec.gender||"";
+    var nr = document.getElementById("onbNric"); if (nr) nr.value = rec.nric||"";
+    var ph = document.getElementById("onbPhone"); if (ph) ph.value = rec.phone||"";
+    var ad = document.getElementById("onbAddress"); if (ad) ad.value = rec.address||"";
+    var em = document.getElementById("onbEmail"); if (em) em.value = rec.email||"";
+  } else {
+    // Add mode
+    if (title) title.textContent = "＋ Add Engineer";
+    var ei2 = document.getElementById("onbEngId"); if (ei2) { ei2.readOnly = false; ei2.style.background=""; ei2.style.color=""; }
+  }
+  modal.classList.add("open");
+}
+
+function onbCloseForm() {
+  document.getElementById("onbModal").classList.remove("open");
+}
+
+// ── Sequential ID generator ───────────────────────────
+function onbGenerateId() {
+  var statusEl = document.getElementById("onbEngIdStatus");
+  if (statusEl) statusEl.textContent = "Generating…";
+
+  var allIds = [];
+
+  // Collect from local onboarding cache
+  _onbRecords.forEach(function(r) {
+    var id = r.engId || r._id || "";
+    var m = id.match(/[Ee][Nn][Gg](\d+)/);
+    if (m) allIds.push(parseInt(m[1], 10));
+  });
+
+  var finalize = function() {
+    var max = allIds.length ? Math.max.apply(null, allIds) : 0;
+    var next = max + 1;
+    var formatted = String(next).padStart(Math.max(2, String(max).length), "0");
+    var nextId = "Eng" + formatted;
+    var inp = document.getElementById("onbEngId");
+    if (inp) inp.value = formatted;
+    if (statusEl) { statusEl.style.color = "var(--green)"; statusEl.textContent = "✅ Generated: " + nextId; }
+  };
+
+  // Also check empBindings for existing registered engineers
+  if (fbOk && db) {
+    db.collection("empBindings").get().then(function(snap) {
+      snap.forEach(function(d) {
+        var m = d.id.match(/[Ee][Nn][Gg](\d+)/);
+        if (m) allIds.push(parseInt(m[1], 10));
+      });
+      finalize();
+    }).catch(finalize);
+  } else {
+    finalize();
+  }
+}
+
+// ── Save (create or update) ───────────────────────────
+function onbSave() {
+  var editId  = (document.getElementById("onbEditId")||{}).value || "";
+  var rawId   = ((document.getElementById("onbEngId")||{}).value||"").trim();
+  var engId   = rawId ? "Eng" + rawId : "";
+  var name    = ((document.getElementById("onbName")||{}).value||"").trim();
+  var gender  = (document.getElementById("onbGender")||{}).value||"";
+  var nric    = ((document.getElementById("onbNric")||{}).value||"").trim();
+  var phone   = ((document.getElementById("onbPhone")||{}).value||"").trim();
+  var address = ((document.getElementById("onbAddress")||{}).value||"").trim();
+  var email   = ((document.getElementById("onbEmail")||{}).value||"").trim().toLowerCase();
+  var statusEl = document.getElementById("onbFormStatus");
+
+  if (!engId || engId === "Eng") { if (statusEl) { statusEl.style.color="var(--red)"; statusEl.textContent="Engineer ID is required."; } return; }
+  if (!name)  { if (statusEl) { statusEl.style.color="var(--red)"; statusEl.textContent="Name is required."; } return; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { if (statusEl) { statusEl.style.color="var(--red)"; statusEl.textContent="Valid email is required."; } return; }
+
+  if (statusEl) statusEl.textContent = "Saving…";
+
+  var now = new Date().toISOString();
+  var adminEmail = (firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || "admin";
+
+  var doc = {
+    engId: engId,
+    name: name,
+    gender: gender,
+    nric: nric,
+    phone: phone,
+    address: address,
+    email: email,
+    status: editId ? ((_onbRecords.find(function(r){return r._id===editId;})||{}).status||"pending") : "pending",
+    createdAt: editId ? ((_onbRecords.find(function(r){return r._id===editId;})||{}).createdAt||now) : now,
+    createdBy: editId ? ((_onbRecords.find(function(r){return r._id===editId;})||{}).createdBy||adminEmail) : adminEmail,
+    activatedAt: editId ? ((_onbRecords.find(function(r){return r._id===editId;})||{}).activatedAt||null) : null,
+    updatedAt: now
+  };
+
+  var docId = editId || engId;
+
+  if (fbOk && db) {
+    db.collection("engineerOnboarding").doc(docId).set(doc)
+      .then(function() {
+        if (statusEl) { statusEl.style.color="var(--green)"; statusEl.textContent="✅ Saved!"; }
+        toast("Onboarding record saved", "t-ok");
+        onbCloseForm();
+        loadOnboarding();
+      })
+      .catch(function(e) {
+        if (statusEl) { statusEl.style.color="var(--red)"; statusEl.textContent="Error: "+(e.message||"write failed"); }
+        toast("Save failed — check Firestore rules", "t-err");
+      });
+  } else {
+    // Local fallback
+    var existing = _onbRecords.findIndex(function(r){ return r._id === docId; });
+    if (existing >= 0) _onbRecords[existing] = Object.assign({ _id: docId }, doc);
+    else _onbRecords.unshift(Object.assign({ _id: docId }, doc));
+    _onbRenderTable();
+    if (statusEl) { statusEl.style.color="var(--green)"; statusEl.textContent="✅ Saved locally"; }
+    toast("Saved locally (Firebase not connected)", "t-ok");
+    onbCloseForm();
+  }
+}
+
+// ── Delete ────────────────────────────────────────────
+function onbPromptDelete(id) {
+  _onbDeleteId = id;
+  var rec = _onbRecords.find(function(r){ return r._id === id; });
+  var sub = document.getElementById("onbDeleteSub");
+  if (sub && rec) sub.innerHTML = 'Delete onboarding record for <strong>' + sanitizeHtml(rec.name||id) + '</strong> (' + sanitizeHtml(rec.engId||id) + ')? This cannot be undone.';
+  document.getElementById("onbDeleteModal").classList.add("open");
+}
+
+function onbConfirmDelete() {
+  if (!_onbDeleteId) return;
+  var id = _onbDeleteId;
+  document.getElementById("onbDeleteModal").classList.remove("open");
+
+  if (fbOk && db) {
+    db.collection("engineerOnboarding").doc(id).delete()
+      .then(function() { toast("Record deleted", "t-ok"); loadOnboarding(); })
+      .catch(function(e) { toast("Delete failed: "+(e.message||"error"), "t-err"); });
+  } else {
+    _onbRecords = _onbRecords.filter(function(r){ return r._id !== id; });
+    _onbRenderTable();
+    toast("Deleted locally", "t-ok");
+  }
+  _onbDeleteId = null;
+}
+
+// ── Export Excel ──────────────────────────────────────
+function onbExportExcel() {
+  if (!_onbRecords.length) { toast("No records to export", "t-err"); return; }
+  if (typeof XLSX === "undefined") { toast("XLSX library not loaded", "t-err"); return; }
+
+  var rows = _onbRecords.map(function(r) {
+    return {
+      "Engineer ID": r.engId || r._id,
+      "Name":        r.name    || "",
+      "Gender":      r.gender  || "",
+      "NRIC / ID":   r.nric    || "",
+      "Phone":       r.phone   || "",
+      "Address":     r.address || "",
+      "Email":       r.email   || "",
+      "Status":      r.status  || "pending",
+      "Registered":  r.activatedAt ? r.activatedAt.slice(0,10) : "",
+      "Created":     r.createdAt   ? r.createdAt.slice(0,10)   : "",
+      "Created By":  r.createdBy  || ""
+    };
+  });
+
+  var ws = XLSX.utils.json_to_sheet(rows);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Onboarding");
+  XLSX.writeFile(wb, "engineer_onboarding_" + new Date().toISOString().slice(0,10) + ".xlsx");
+  toast("Excel exported", "t-ok");
+}
+// ══ END ONBOARDING ════════════════════════════════════
+
 // Falls back to localStorage at_email_bind_v2 in demo mode
 // ══════════════════════════════════════════════════════
 
