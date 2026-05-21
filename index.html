@@ -1294,7 +1294,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
             <thead><tr>
               <th>Engineer</th><th>Site</th><th>Status</th>
               <th>Check-In</th><th>Check-Out</th><th>Duration</th>
-              <th>GPS In</th><th>GPS Out</th><th>Device</th><th>Date</th><th>Action</th>
+              <th>GPS In</th><th>GPS Out</th><th>Device</th><th>Date</th>
             </tr></thead>
             <tbody id="tblBody"></tbody>
           </table>
@@ -4205,17 +4205,6 @@ function renderTable() {
         + (isSuspicious ? ' <span class="bdg" style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;font-size:.68rem" title="Same device used by another engineer on this date">⚠ Flagged</span>' : '')
       : '<span style="font-size:.75rem;color:var(--ink3)">—</span>';
 
-    var forceCoBtn = r.status === "in"
-      ? '<button onclick="openForceCoModal(\''+( r._docId||'')+'\',' + (r.checkinTimestamp||0) + ',\''
-          + (r.empName||'').replace(/'/g,"\\'") + '\',\''
-          + (r.empId||'').replace(/'/g,"\\'") + '\',\''
-          + (r.site||'').replace(/'/g,"\\'") + '\',\''
-          + (r.checkinDate||'') + '\',\''
-          + (r.checkinTime||'') + '\')" '
-          + 'style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:.75rem;font-weight:700;cursor:pointer;white-space:nowrap" '
-          + 'title="Force check-out this engineer">🔓 Force CO</button>'
-      : '<span style="font-size:.75rem;color:var(--ink3)">—</span>';
-
     return '<tr' + (isSuspicious ? ' style="background:#fff5f5"' : '') + '>'
       +'<td><div class="ec"><div class="av">'+ini+'</div><div><div class="en">'+(r.empName||"—")+'</div><div class="eid">'+(r.empId||"—")+'</div></div></div></td>'
       +'<td style="font-size:.82rem;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(r.site||"—")+'</td>'
@@ -4227,7 +4216,6 @@ function renderTable() {
       +'<td>'+mapOut+'</td>'
       +'<td>'+devCell+'</td>'
       +'<td style="font-size:.78rem;color:var(--ink3)">'+(r.checkinDate||"—")+'</td>'
-      +'<td style="text-align:center">'+forceCoBtn+'</td>'
       +'</tr>';
   }).join("");
 }
@@ -4281,10 +4269,24 @@ function renderFeed() {
   feed.innerHTML = evs.slice(0,60).map(function(e){
     var t = new Date(e.ts).toLocaleTimeString("en-SG",{hour:"2-digit",minute:"2-digit"});
     var d = new Date(e.ts).toLocaleDateString("en-SG",{month:"short",day:"numeric"});
+    // Show Force CO button on check-in events where the engineer has not checked out yet
+    var showForceCo = e.type === "in" && e.r.status === "in";
+    var forceCo = showForceCo
+      ? '<button onclick="openForceCoModal(\''+(e.r._docId||'')+'\',' + (e.r.checkinTimestamp||0) + ',\''
+          + (e.r.empName||'').replace(/'/g,"\\'") + '\',\''
+          + (e.r.empId||'').replace(/'/g,"\\'") + '\',\''
+          + (e.r.site||'').replace(/'/g,"\\'") + '\',\''
+          + (e.r.checkinDate||'') + '\',\''
+          + (e.r.checkinTime||'') + '\')" '
+          + 'style="margin-top:5px;background:#f59e0b;color:#fff;border:none;border-radius:5px;padding:3px 10px;font-size:.72rem;font-weight:700;cursor:pointer;display:inline-block" '
+          + 'title="Admin force check-out">🔓 Force CO</button>'
+      : '';
     return '<div class="feed-item">'
       +'<div class="fd '+(e.type==="in"?"fd-in":"fd-out")+'"></div>'
       +'<div style="flex:1"><div class="fn">'+(e.r.empName||"Unknown")+' <span style="font-size:.75rem;color:var(--ink3);font-weight:400">('+e.r.empId+')</span></div>'
-      +'<div class="fd2">'+(e.type==="in"?"✅ Checked in at":"🔴 Checked out from")+' <strong>'+(e.r.site||"Unknown site")+'</strong></div></div>'
+      +'<div class="fd2">'+(e.type==="in"?"✅ Checked in at":"🔴 Checked out from")+' <strong>'+(e.r.site||"Unknown site")+'</strong></div>'
+      + forceCo
+      +'</div>'
       +'<div><div class="ft">'+t+'</div><div style="font-size:.72rem;color:var(--ink3);text-align:right">'+d+'</div></div>'
       +'</div>';
   }).join("");
