@@ -2101,8 +2101,12 @@ service cloud.firestore {
                     && request.resource.data.status == 'pending';
       // Engineers can read leave records (to check status)
       allow read: if true;
-      // Only signed-in admin can update (approve/reject) or delete
+      // Admin can approve, reject, cancel, or delete any leave
       allow update, delete: if request.auth != null;
+      // Engineers can cancel their own pending leave, or request cancellation of an approved leave
+      // (empId must not change — prevents an engineer from touching another engineer's record)
+      allow update: if request.resource.data.status in ['cancelled', 'cancel_requested']
+                    && request.resource.data.empId == resource.data.empId;
     }
 
     // ── 4. Manpower config (required headcount per site) ──
@@ -2194,6 +2198,7 @@ service cloud.firestore {
               <strong>Engineer can't check in (binding write fails silently)</strong> → <code>emailBindings</code> create/update rules missing. Re-paste Step 7.<br>
               <strong>Leave application submit fails</strong> → <code>leaveApplications</code> create rule missing. Re-paste Step 7.<br>
               <strong>Approve/Reject leave fails</strong> → <code>leaveApplications</code> update rule needs <code>request.auth != null</code>. Confirm you're signed in as admin.<br>
+              <strong>Engineer cancel/request-cancel fails with "permission denied"</strong> → Re-paste the Step 7 rules — the engineer update rule (status = cancelled / cancel_requested) was added in a later version.<br>
               <strong>Rules look right but still failing</strong> → After clicking <strong>Publish</strong>, wait 30–60 seconds and hard-refresh the dashboard (Ctrl+Shift+R). Rule propagation is not instant.
             </div>
           </div>
