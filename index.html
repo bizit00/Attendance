@@ -1775,81 +1775,26 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <!-- Toolbar -->
       <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:18px">
         <div style="font-weight:700;font-size:1rem;color:var(--ink);flex:1">🖥️ TDR Report</div>
-        <label for="tdrFileInput" class="tb-btn tb-pri" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">📂 Upload TDR Excel</label>
-        <input type="file" id="tdrFileInput" accept=".xlsx,.xls" style="display:none" onchange="tdrLoadFile(this)"/>
-        <span id="tdrFileName" style="font-size:.8rem;color:var(--ink3);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        <label for="tdrFileInput" class="tb-btn tb-pri" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">📂 Add Site Report</label>
+        <input type="file" id="tdrFileInput" accept=".xlsx,.xls" multiple style="display:none" onchange="tdrLoadFiles(this)"/>
+        <button class="tb-btn tb-out" onclick="tdrClearAll()" id="tdrClearBtn" style="display:none">🗑 Clear All</button>
       </div>
 
       <!-- Empty state -->
       <div id="tdrEmpty" class="empty">
         <div class="empty-icon">📊</div>
-        <div class="empty-t">No TDR file uploaded yet</div>
-        <div>Click "📂 Upload TDR Excel" to load the TDR record spreadsheet.<br>The system reads <strong>Column B</strong> (Workstation), <strong>Column H</strong> (Status), <strong>Column J</strong> (Error Code).</div>
+        <div class="empty-t">No TDR files uploaded yet</div>
+        <div>Click "📂 Add Site Report" to load one or more TDR Excel files.<br>Each file = one site. Reads <strong>Col B</strong> (Workstation), <strong>Col H</strong> (Status), <strong>Col J</strong> (Error Code), <strong>Col K</strong> (Details).</div>
       </div>
 
-      <!-- Results (hidden until file loaded) -->
-      <div id="tdrResults" style="display:none">
-
-        <!-- Summary cards -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px">
-          <div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;text-align:center">
-            <div style="font-size:1.8rem;font-weight:800;color:var(--ink)" id="tdrTotal">0</div>
-            <div style="font-size:.78rem;color:var(--ink3);margin-top:2px">Total Workstations</div>
-          </div>
-          <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px 16px;text-align:center">
-            <div style="font-size:1.8rem;font-weight:800;color:#16a34a" id="tdrPassed">0</div>
-            <div style="font-size:.78rem;color:#15803d;margin-top:2px">✅ Passed</div>
-          </div>
-          <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:14px 16px;text-align:center">
-            <div style="font-size:1.8rem;font-weight:800;color:#dc2626" id="tdrFailed">0</div>
-            <div style="font-size:.78rem;color:#b91c1c;margin-top:2px">❌ Failed</div>
-          </div>
-          <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;text-align:center">
-            <div style="font-size:1.8rem;font-weight:800;color:#d97706" id="tdrPending">0</div>
-            <div style="font-size:.78rem;color:#92400e;margin-top:2px">⏳ Not Attended</div>
-          </div>
-          <div style="background:#f0f9ff;border:1.5px solid #7dd3fc;border-radius:12px;padding:14px 16px;text-align:center">
-            <div style="font-size:1.8rem;font-weight:800;color:#0369a1" id="tdrPassRate">0%</div>
-            <div style="font-size:.78rem;color:#0284c7;margin-top:2px">Pass Rate</div>
-          </div>
-        </div>
-
-        <!-- Charts row -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
-          <!-- Status breakdown doughnut -->
-          <div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px">
-            <div style="font-weight:700;font-size:.9rem;color:var(--ink);margin-bottom:12px">📊 Status Breakdown</div>
-            <div style="position:relative;height:220px;display:flex;align-items:center;justify-content:center">
-              <canvas id="tdrStatusCanvas"></canvas>
-            </div>
-          </div>
-          <!-- Error types bar -->
-          <div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px">
-            <div style="font-weight:700;font-size:.9rem;color:var(--ink);margin-bottom:12px">🔴 Failed — Error Types</div>
-            <div id="tdrNoErrors" style="display:none;font-size:.83rem;color:var(--ink3);text-align:center;padding:60px 0">No failed records</div>
-            <div style="position:relative;height:220px">
-              <canvas id="tdrErrorCanvas"></canvas>
-            </div>
-          </div>
-        </div>
-
-        <!-- Error detail table -->
-        <div id="tdrErrorTableWrap" style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px;display:none">
-          <div style="font-weight:700;font-size:.9rem;color:var(--ink);margin-bottom:10px">🗂️ Error Code Breakdown</div>
-          <div style="overflow-x:auto">
-            <table id="tdrErrorTable" style="width:100%;border-collapse:collapse;font-size:.83rem">
-              <thead>
-                <tr style="background:#f8fafc">
-                  <th style="text-align:left;padding:8px 12px;border-bottom:1.5px solid #e2e8f0;font-size:.78rem;color:var(--ink3);font-weight:600">Error Code</th>
-                  <th style="text-align:center;padding:8px 12px;border-bottom:1.5px solid #e2e8f0;font-size:.78rem;color:var(--ink3);font-weight:600">Count</th>
-                  <th style="text-align:center;padding:8px 12px;border-bottom:1.5px solid #e2e8f0;font-size:.78rem;color:var(--ink3);font-weight:600">% of Failed</th>
-                </tr>
-              </thead>
-              <tbody id="tdrErrorTbody"></tbody>
-            </table>
-          </div>
-        </div>
+      <!-- Comparison overview (shown when ≥2 sites) -->
+      <div id="tdrOverview" style="display:none;background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:18px;margin-bottom:20px">
+        <div style="font-weight:700;font-size:.95rem;color:var(--ink);margin-bottom:14px">📊 All Sites — Pass Rate Comparison</div>
+        <div style="position:relative;height:200px"><canvas id="tdrCompareCanvas"></canvas></div>
       </div>
+
+      <!-- Per-site cards rendered here -->
+      <div id="tdrSiteList"></div>
     </div>
     <!-- END TDR REPORT TAB -->
 
@@ -10669,31 +10614,39 @@ function ssExit() {
 }
 // ══ END SLIDESHOW ═════════════════════════════════════════════════════
 
-// ══ TDR REPORT ════════════════════════════════════════════════════════
-var _tdrStatusChart = null;
-var _tdrErrorChart  = null;
+// ══ TDR REPORT (MULTI-SITE) ═══════════════════════════════════════════
+var _tdrSites       = [];   // [{ name, fileName, total, passed, failed, notAttended, errorTypes, errorDetails }]
+var _tdrCharts      = {};   // keyed by "siteIdx_status" / "siteIdx_error"
+var _tdrCompareChart = null;
+var _TDR_COLORS     = ["#dc2626","#f59e0b","#7c3aed","#0369a1","#059669","#d97706","#6d28d9","#0891b2"];
 
-function tdrLoadFile(input) {
-  var file = input.files[0];
-  if (!file) return;
-  var nameEl = document.getElementById("tdrFileName");
-  if (nameEl) nameEl.textContent = file.name;
+// ── File loading ─────────────────────────────────────────────────────
+function tdrLoadFiles(input) {
+  var files = Array.prototype.slice.call(input.files || []);
+  if (!files.length) return;
+  input.value = ""; // reset immediately so same file can be re-added
 
+  files.forEach(function(file) {
+    tdrParseFile(file, function(data) {
+      tdrAddSite(file.name.replace(/\.[^.]+$/, ""), file.name, data);
+    });
+  });
+}
+
+function tdrParseFile(file, callback) {
   var reader = new FileReader();
   reader.onload = function(ev) {
     try {
-      var data = new Uint8Array(ev.target.result);
-      var wb   = XLSX.read(data, { type: "array" });
+      var wb = XLSX.read(new Uint8Array(ev.target.result), { type: "array" });
 
       // Prefer a sheet whose name contains "TDR" or "Status"; else first sheet
       var sheetName = wb.SheetNames[0];
-      wb.SheetNames.forEach(function(n){
+      wb.SheetNames.forEach(function(n) {
         if (/tdr|status/i.test(n)) sheetName = n;
       });
-      var ws   = wb.Sheets[sheetName];
-      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "" });
 
-      // Skip header rows until col B looks like a real workstation name (not a label)
+      // Skip header rows until Col B looks like a workstation name
       var startRow = 1;
       for (var i = 0; i < Math.min(rows.length, 5); i++) {
         var cellB = String(rows[i][1] || "").trim();
@@ -10701,16 +10654,16 @@ function tdrLoadFile(input) {
       }
 
       var total = 0, passed = 0, failed = 0, notAttended = 0;
-      var errorTypes   = {};   // { errorCode: count }
-      var errorDetails = {};   // { errorCode: [ { workstation, detail } ] }
+      var errorTypes   = {};
+      var errorDetails = {};
 
       rows.slice(startRow).forEach(function(row) {
-        var wsName    = String(row[1]  || "").trim();  // Col B — Workstation
+        var wsName = String(row[1]  || "").trim();   // Col B
         if (!wsName) return;
         total++;
-        var status    = String(row[7]  || "").trim().toUpperCase(); // Col H — Status
-        var errorCode = String(row[9]  || "").trim();               // Col J — Error Code
-        var detail    = String(row[10] || "").trim();               // Col K — Details
+        var status    = String(row[7]  || "").trim().toUpperCase(); // Col H
+        var errorCode = String(row[9]  || "").trim();               // Col J
+        var detail    = String(row[10] || "").trim();               // Col K
 
         if (status === "PASSED") {
           passed++;
@@ -10725,141 +10678,324 @@ function tdrLoadFile(input) {
         }
       });
 
-      tdrRenderResults(total, passed, failed, notAttended, errorTypes, errorDetails);
+      callback({ total: total, passed: passed, failed: failed, notAttended: notAttended,
+                 errorTypes: errorTypes, errorDetails: errorDetails });
     } catch(e) {
-      toast("❌ Failed to read Excel file: " + (e.message || e), "t-err");
+      toast("❌ Failed to read " + file.name + ": " + (e.message || e), "t-err");
     }
   };
   reader.readAsArrayBuffer(file);
-  input.value = ""; // reset so same file can be re-uploaded
 }
 
-function tdrRenderResults(total, passed, failed, notAttended, errorTypes, errorDetails) {
-  errorDetails = errorDetails || {};
+// ── Add / remove sites ───────────────────────────────────────────────
+function tdrAddSite(name, fileName, data) {
+  // Avoid exact-duplicate file names
+  for (var x = 0; x < _tdrSites.length; x++) {
+    if (_tdrSites[x].fileName === fileName) {
+      toast("⚠️ " + fileName + " is already loaded.", "t-warn");
+      return;
+    }
+  }
 
-  // ── Summary cards ────────────────────────────────────────────────────
-  document.getElementById("tdrTotal").textContent    = total;
-  document.getElementById("tdrPassed").textContent   = passed;
-  document.getElementById("tdrFailed").textContent   = failed;
-  document.getElementById("tdrPending").textContent  = notAttended;
-  var pct = total > 0 ? Math.round(passed / total * 100) : 0;
-  document.getElementById("tdrPassRate").textContent = pct + "%";
+  var idx = _tdrSites.length;
+  _tdrSites.push({ name: name, fileName: fileName,
+    total: data.total, passed: data.passed, failed: data.failed,
+    notAttended: data.notAttended, errorTypes: data.errorTypes, errorDetails: data.errorDetails });
 
+  // Show panel elements
   document.getElementById("tdrEmpty").style.display   = "none";
-  document.getElementById("tdrResults").style.display = "block";
+  document.getElementById("tdrClearBtn").style.display = "";
 
-  // ── Status doughnut chart ────────────────────────────────────────────
-  if (_tdrStatusChart) { _tdrStatusChart.destroy(); _tdrStatusChart = null; }
-  var sc = document.getElementById("tdrStatusCanvas");
+  // Inject card HTML into list
+  var list = document.getElementById("tdrSiteList");
+  var div  = document.createElement("div");
+  div.id   = "tdrCard_" + idx;
+  div.innerHTML = tdrBuildCardHtml(idx);
+  list.appendChild(div);
+
+  // Initialise charts for this card
+  tdrInitCardCharts(idx);
+
+  // Update / show comparison chart
+  tdrRenderCompare();
+}
+
+function tdrRemoveSite(idx) {
+  // Destroy charts for this site
+  ["status","error"].forEach(function(t) {
+    var key = idx + "_" + t;
+    if (_tdrCharts[key]) { try { _tdrCharts[key].destroy(); } catch(e){} delete _tdrCharts[key]; }
+  });
+
+  // Remove card DOM
+  var card = document.getElementById("tdrCard_" + idx);
+  if (card) card.parentNode.removeChild(card);
+
+  // Null out slot (keep indices stable)
+  _tdrSites[idx] = null;
+
+  // If all gone, reset
+  var anyLeft = _tdrSites.some(function(s){ return s !== null; });
+  if (!anyLeft) {
+    _tdrSites = [];
+    _tdrCharts = {};
+    document.getElementById("tdrEmpty").style.display    = "";
+    document.getElementById("tdrOverview").style.display = "none";
+    document.getElementById("tdrClearBtn").style.display = "none";
+    if (_tdrCompareChart) { try { _tdrCompareChart.destroy(); } catch(e){} _tdrCompareChart = null; }
+    return;
+  }
+
+  tdrRenderCompare();
+}
+
+function tdrClearAll() {
+  if (_tdrSites.length && !confirm("Remove all site reports?")) return;
+
+  // Destroy all charts
+  Object.keys(_tdrCharts).forEach(function(k) {
+    try { _tdrCharts[k].destroy(); } catch(e){}
+  });
+  _tdrCharts = {};
+  if (_tdrCompareChart) { try { _tdrCompareChart.destroy(); } catch(e){} _tdrCompareChart = null; }
+
+  _tdrSites = [];
+  document.getElementById("tdrSiteList").innerHTML      = "";
+  document.getElementById("tdrEmpty").style.display     = "";
+  document.getElementById("tdrOverview").style.display  = "none";
+  document.getElementById("tdrClearBtn").style.display  = "none";
+}
+
+// ── Card HTML builder ────────────────────────────────────────────────
+function tdrBuildCardHtml(idx) {
+  var s    = _tdrSites[idx];
+  var pct  = s.total > 0 ? Math.round(s.passed / s.total * 100) : 0;
+  var pctColor = pct >= 80 ? "#16a34a" : pct >= 50 ? "#f59e0b" : "#dc2626";
+
+  return '<div style="background:#fff;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,.08);'
+       + 'margin-bottom:22px;overflow:hidden;">'
+
+    // Card header
+    + '<div style="display:flex;align-items:center;justify-content:space-between;'
+    +   'padding:12px 16px;background:linear-gradient(135deg,#1e293b,#334155);color:#fff;">'
+    +   '<div style="font-weight:700;font-size:.95rem;">🖥️ ' + _esc(s.name) + '</div>'
+    +   '<div style="display:flex;align-items:center;gap:12px">'
+    +     '<span style="font-size:.78rem;color:#94a3b8;font-style:italic">' + _esc(s.fileName) + '</span>'
+    +     '<button onclick="tdrRemoveSite(' + idx + ')" '
+    +       'style="background:#ef4444;border:none;color:#fff;border-radius:6px;'
+    +              'padding:3px 10px;font-size:.78rem;cursor:pointer;font-weight:700">✕ Remove</button>'
+    +   '</div>'
+    + '</div>'
+
+    // Summary cards row
+    + '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:14px 16px 8px;">'
+    +   _tdrStatCard("Total",      s.total,       "#1e293b")
+    +   _tdrStatCard("Passed",     s.passed,      "#16a34a")
+    +   _tdrStatCard("Failed",     s.failed,      "#dc2626")
+    +   _tdrStatCard("Not Attended", s.notAttended, "#f59e0b")
+    +   '<div style="background:#f8fafc;border-radius:10px;padding:12px 16px;min-width:90px;text-align:center;'
+    +        'border:2px solid ' + pctColor + ';">'
+    +     '<div style="font-size:1.5rem;font-weight:800;color:' + pctColor + '">' + pct + '%</div>'
+    +     '<div style="font-size:.72rem;color:var(--ink3);margin-top:2px">Pass Rate</div>'
+    +   '</div>'
+    + '</div>'
+
+    // Charts row
+    + '<div style="display:flex;flex-wrap:wrap;gap:10px;padding:8px 16px 14px;">'
+
+    // Status doughnut
+    + '<div style="flex:0 0 auto;width:220px;">'
+    +   '<div style="font-size:.75rem;font-weight:600;color:var(--ink2);margin-bottom:4px">Status Breakdown</div>'
+    +   '<div style="position:relative;height:160px"><canvas id="tdrStatusCanvas_' + idx + '"></canvas></div>'
+    + '</div>'
+
+    // Error bar (only if there are errors)
+    + (Object.keys(s.errorTypes).length
+      ? '<div style="flex:1 1 260px;">'
+      +   '<div style="font-size:.75rem;font-weight:600;color:var(--ink2);margin-bottom:4px">Error Code Breakdown</div>'
+      +   '<div style="position:relative;height:160px"><canvas id="tdrErrorCanvas_' + idx + '"></canvas></div>'
+      + '</div>'
+      : '<div style="flex:1 1 260px;display:flex;align-items:center;justify-content:center;'
+      +      'color:var(--ink3);font-size:.85rem;">✅ No failures recorded</div>')
+
+    + '</div>'
+
+    // Error table (only if errors)
+    + (Object.keys(s.errorTypes).length ? tdrBuildErrorTable(idx) : '')
+
+    + '</div>';
+}
+
+function _tdrStatCard(label, val, color) {
+  return '<div style="background:#f8fafc;border-radius:10px;padding:12px 16px;min-width:80px;text-align:center;">'
+    + '<div style="font-size:1.5rem;font-weight:800;color:' + color + '">' + val + '</div>'
+    + '<div style="font-size:.72rem;color:var(--ink3);margin-top:2px">' + label + '</div>'
+    + '</div>';
+}
+
+function tdrBuildErrorTable(idx) {
+  var s        = _tdrSites[idx];
+  var errKeys  = Object.keys(s.errorTypes).sort(function(a,b){ return s.errorTypes[b]-s.errorTypes[a]; });
+  var colors   = _TDR_COLORS;
+
+  var rows = errKeys.map(function(k, i) {
+    var cnt      = s.errorTypes[k];
+    var pct      = s.failed > 0 ? Math.round(cnt / s.failed * 100) : 0;
+    var color    = colors[i % colors.length];
+    var detailId = "tdrDetail_" + idx + "_" + i;
+    var arrowId  = "tdrArrow_"  + idx + "_" + i;
+
+    var detailRows = (s.errorDetails[k] || []).map(function(r) {
+      return '<tr style="background:#fafafa">'
+        + '<td style="padding:5px 12px 5px 32px;border-bottom:1px solid #f1f5f9;'
+        +      'font-family:var(--mono);font-size:.78rem;color:var(--ink2)">📟 ' + _esc(r.workstation) + '</td>'
+        + '<td colspan="2" style="padding:5px 12px;border-bottom:1px solid #f1f5f9;font-size:.78rem;color:var(--ink3)">'
+        +   (r.detail ? _esc(r.detail) : '<span style="color:#cbd5e1;font-style:italic">No detail recorded</span>')
+        + '</td></tr>';
+    }).join("");
+
+    return '<tr style="cursor:pointer;transition:background .15s" '
+      + 'onclick="tdrToggleDetail(\'' + detailId + '\',\'' + arrowId + '\',this)" '
+      + 'title="Click to see workstation details">'
+      + '<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;font-family:var(--mono);'
+      +      'font-size:.82rem;display:flex;align-items:center;gap:8px">'
+      +   '<span id="' + arrowId + '" style="font-size:.7rem;color:var(--ink3);'
+      +        'transition:transform .2s;display:inline-block">▶</span>'
+      +   '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+      +        'background:' + color + ';flex-shrink:0"></span>'
+      +   _esc(k)
+      + '</td>'
+      + '<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:center;'
+      +      'font-weight:700;color:#dc2626">' + cnt + '</td>'
+      + '<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:center;'
+      +      'color:var(--ink2)">' + pct + '%</td>'
+      + '</tr>'
+      + '<tr id="' + detailId + '" style="display:none"><td colspan="3" style="padding:0">'
+      +   '<table style="width:100%;border-collapse:collapse">' + detailRows + '</table>'
+      + '</td></tr>';
+  }).join("");
+
+  return '<div style="padding:0 16px 16px">'
+    + '<div style="font-size:.8rem;font-weight:600;color:var(--ink2);margin-bottom:6px">Error Code Details</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:.83rem">'
+    +   '<thead><tr style="background:#f1f5f9">'
+    +     '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Error Code</th>'
+    +     '<th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e2e8f0">Count</th>'
+    +     '<th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e2e8f0">% of Failed</th>'
+    +   '</tr></thead>'
+    +   '<tbody>' + rows + '</tbody>'
+    + '</table></div>';
+}
+
+// ── Chart initialisation for a single card ───────────────────────────
+function tdrInitCardCharts(idx) {
+  var s = _tdrSites[idx];
+
+  // Status doughnut
+  var sc = document.getElementById("tdrStatusCanvas_" + idx);
   if (sc) {
-    _tdrStatusChart = new Chart(sc, {
+    _tdrCharts[idx + "_status"] = new Chart(sc, {
       type: "doughnut",
       data: {
         labels: ["✅ Passed", "❌ Failed", "⏳ Not Attended"],
-        datasets: [{ data: [passed, failed, notAttended],
+        datasets: [{ data: [s.passed, s.failed, s.notAttended],
           backgroundColor: ["#16a34a","#dc2626","#f59e0b"],
           borderWidth: 2, borderColor: "#fff" }]
       },
       options: {
         cutout: "60%",
-        plugins: { legend: { display: true, position: "bottom", labels: { font: { size: 11 } } } },
+        plugins: { legend: { display: true, position: "bottom", labels: { font: { size: 10 } } } },
         responsive: true, maintainAspectRatio: false
       }
     });
   }
 
-  // ── Error types bar chart ────────────────────────────────────────────
-  if (_tdrErrorChart) { _tdrErrorChart.destroy(); _tdrErrorChart = null; }
-  var ecCanvas = document.getElementById("tdrErrorCanvas");
-  var noErr        = document.getElementById("tdrNoErrors");
-  var errTableWrap = document.getElementById("tdrErrorTableWrap");
-  var errTbody     = document.getElementById("tdrErrorTbody");
+  // Error bar (only if errors exist)
+  var ec = document.getElementById("tdrErrorCanvas_" + idx);
+  if (ec && Object.keys(s.errorTypes).length) {
+    var errKeys   = Object.keys(s.errorTypes).sort(function(a,b){ return s.errorTypes[b]-s.errorTypes[a]; });
+    var errCounts = errKeys.map(function(k){ return s.errorTypes[k]; });
+    _tdrCharts[idx + "_error"] = new Chart(ec, {
+      type: "bar",
+      data: {
+        labels: errKeys,
+        datasets: [{ label: "Count", data: errCounts,
+          backgroundColor: errKeys.map(function(_,i){ return _TDR_COLORS[i % _TDR_COLORS.length]; }),
+          borderRadius: 6 }]
+      },
+      options: {
+        indexAxis: errKeys.length > 5 ? "y" : "x",
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: 10 } } },
+          y: { ticks: { font: { size: 10 } }, beginAtZero: true }
+        },
+        responsive: true, maintainAspectRatio: false
+      }
+    });
+  }
+}
 
-  var errKeys   = Object.keys(errorTypes).sort(function(a,b){ return errorTypes[b]-errorTypes[a]; });
-  var errCounts = errKeys.map(function(k){ return errorTypes[k]; });
-  var colors    = ["#dc2626","#f59e0b","#7c3aed","#0369a1","#059669","#d97706","#6d28d9","#0891b2"];
+// ── Comparison overview chart ────────────────────────────────────────
+function tdrRenderCompare() {
+  var active = _tdrSites.filter(function(s){ return s !== null; });
+  var overview = document.getElementById("tdrOverview");
+  if (!overview) return;
 
-  if (!errKeys.length) {
-    if (ecCanvas)     ecCanvas.style.display    = "none";
-    if (noErr)        noErr.style.display       = "block";
-    if (errTableWrap) errTableWrap.style.display = "none";
+  if (active.length < 2) {
+    overview.style.display = "none";
+    if (_tdrCompareChart) { try { _tdrCompareChart.destroy(); } catch(e){} _tdrCompareChart = null; }
     return;
   }
 
-  if (ecCanvas)     ecCanvas.style.display    = "";
-  if (noErr)        noErr.style.display       = "none";
-  if (errTableWrap) errTableWrap.style.display = "block";
+  overview.style.display = "";
 
-  _tdrErrorChart = new Chart(ecCanvas, {
+  var labels    = active.map(function(s){ return s.name; });
+  var passRates = active.map(function(s){ return s.total > 0 ? Math.round(s.passed/s.total*100) : 0; });
+  var bgColors  = passRates.map(function(r){ return r >= 80 ? "#16a34a" : r >= 50 ? "#f59e0b" : "#dc2626"; });
+
+  if (_tdrCompareChart) { try { _tdrCompareChart.destroy(); } catch(e){} _tdrCompareChart = null; }
+
+  var canvas = document.getElementById("tdrCompareCanvas");
+  if (!canvas) return;
+
+  _tdrCompareChart = new Chart(canvas, {
     type: "bar",
     data: {
-      labels: errKeys,
-      datasets: [{ label: "Count", data: errCounts,
-        backgroundColor: errKeys.map(function(_,i){ return colors[i % colors.length]; }),
-        borderRadius: 6 }]
+      labels: labels,
+      datasets: [{ label: "Pass Rate (%)", data: passRates,
+        backgroundColor: bgColors, borderRadius: 8 }]
     },
     options: {
-      indexAxis: errKeys.length > 5 ? "y" : "x",
-      plugins: { legend: { display: false } },
+      indexAxis: "y",
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: function(ctx){ return ctx.raw + "%"; } } }
+      },
       scales: {
-        x: { ticks: { font: { size: 10 } } },
-        y: { ticks: { font: { size: 10 } }, beginAtZero: true }
+        x: { min: 0, max: 100, ticks: { callback: function(v){ return v + "%"; }, font: { size: 10 } } },
+        y: { ticks: { font: { size: 11 } } }
       },
       responsive: true, maintainAspectRatio: false
     }
   });
-
-  // ── Error table with expandable detail rows ──────────────────────────
-  if (!errTbody) return;
-  errTbody.innerHTML = errKeys.map(function(k, idx) {
-    var cnt     = errorTypes[k];
-    var pct     = failed > 0 ? Math.round(cnt / failed * 100) : 0;
-    var color   = colors[idx % colors.length];
-    var rows    = (errorDetails[k] || []);
-    var detailId = "tdrDetail_" + idx;
-
-    // Build inner detail rows (workstation + Col K description)
-    var detailHtml = rows.map(function(r) {
-      return '<tr style="background:#fafafa">'
-        + '<td style="padding:5px 12px 5px 32px;border-bottom:1px solid #f1f5f9;font-family:var(--mono);font-size:.78rem;color:var(--ink2)">'
-        +   '📟 ' + r.workstation
-        + '</td>'
-        + '<td colspan="2" style="padding:5px 12px;border-bottom:1px solid #f1f5f9;font-size:.78rem;color:var(--ink3)">'
-        +   (r.detail || '<span style="color:#cbd5e1;font-style:italic">No detail recorded</span>')
-        + '</td>'
-        + '</tr>';
-    }).join("");
-
-    return '<tr style="cursor:pointer;transition:background .15s" '
-        + 'onclick="tdrToggleDetail(\'' + detailId + '\', this)" '
-        + 'title="Click to see workstation details">'
-      + '<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;font-family:var(--mono);font-size:.82rem;display:flex;align-items:center;gap:8px">'
-      +   '<span id="tdrArrow_' + idx + '" style="font-size:.7rem;color:var(--ink3);transition:transform .2s;display:inline-block">▶</span>'
-      +   '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';flex-shrink:0"></span>'
-      +   k
-      + '</td>'
-      + '<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:700;color:#dc2626">' + cnt + '</td>'
-      + '<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:center;color:var(--ink2)">' + pct + '%</td>'
-      + '</tr>'
-      + '<tr id="' + detailId + '" style="display:none"><td colspan="3" style="padding:0">'
-      +   '<table style="width:100%;border-collapse:collapse">' + detailHtml + '</table>'
-      + '</td></tr>';
-  }).join("");
 }
 
-function tdrToggleDetail(detailId, headerRow) {
+// ── Toggle expand/collapse detail rows ───────────────────────────────
+function tdrToggleDetail(detailId, arrowId, headerRow) {
   var detail = document.getElementById(detailId);
   if (!detail) return;
   var open = detail.style.display !== "none";
   detail.style.display = open ? "none" : "table-row";
-  // rotate arrow
-  var idx = detailId.replace("tdrDetail_","");
-  var arrow = document.getElementById("tdrArrow_" + idx);
+  var arrow = document.getElementById(arrowId);
   if (arrow) arrow.style.transform = open ? "" : "rotate(90deg)";
-  // highlight row
   if (headerRow) headerRow.style.background = open ? "" : "#fff5f5";
 }
-// ══ END TDR REPORT ════════════════════════════════════════════════════
+
+// ── Tiny HTML-escape helper (safe for card labels) ───────────────────
+function _esc(str) {
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+// ══ END TDR REPORT (MULTI-SITE) ═══════════════════════════════════════
 
 // ══ ADMIN FORCE CHECK-OUT ═════════════════════════════════════════════
 var _fcoDocId = null;
