@@ -4272,7 +4272,7 @@ function renderFeed() {
     // Show Force CO button on check-in events where the engineer has not checked out yet
     var showForceCo = e.type === "in" && e.r.status === "in";
     var forceCo = showForceCo
-      ? '<button onclick="openForceCoModal(\''+(e.r._docId||'')+'\',' + (e.r.checkinTimestamp||0) + ',\''
+      ? '<button onclick="openForceCoModal(\''+(e.r.id||'')+'\',' + (e.r.checkinTimestamp||0) + ',\''
           + (e.r.empName||'').replace(/'/g,"\\'") + '\',\''
           + (e.r.empId||'').replace(/'/g,"\\'") + '\',\''
           + (e.r.site||'').replace(/'/g,"\\'") + '\',\''
@@ -10570,7 +10570,7 @@ function confirmForceCheckout() {
     .then(function() {
       closeForceCoModal();
       // Update local record
-      var rec = allRecs.find(function(r){ return r._docId === _fcoDocId; });
+      var rec = allRecs.find(function(r){ return r.id === _fcoDocId; });
       if (rec) {
         rec.checkoutTime      = updates.checkoutTime;
         rec.checkoutISO       = updates.checkoutISO;
