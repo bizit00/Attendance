@@ -1904,11 +1904,11 @@ tr.on-leave-row td{background:#f0f9ff!important}
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Attendance records — anyone can create (check-in), admin can read/update/delete
+    // Attendance records — public read/create/update; admin delete only
+    // Engineers need read to detect admin force check-out on their own device
     match /attendance/{doc} {
-      allow create: if true;
-      allow update: if true;  // Engineers can check out; admin can force check-out
-      allow read, delete: if request.auth != null;
+      allow read, create, update: if true;
+      allow delete: if request.auth != null;
     }
 
     // Email ↔ Engineer ID bindings — read/write for binding checks + admin CRUD
@@ -2955,6 +2955,43 @@ function setSess(d) { localStorage.setItem("at_sess", d ? JSON.stringify(d) : "n
 function getSessDocId() { return localStorage.getItem("at_sess_doc") || null; }
 function setSessDocId(id) { if(id) localStorage.setItem("at_sess_doc",id); else localStorage.removeItem("at_sess_doc"); }
 
+// Real-time force-checkout listener (unsubscribe fn stored here)
+var _forceCoListener = null;
+
+// Fallback: check empBindings for a forceCheckoutAt signal written by admin
+// Used when onSnapshot on attendance is blocked by Firestore rules (engineer not authed)
+function _checkForceCoSignal(sess, sessDoc) {
+  if (!fbOk || !db || !sess || !sess.empId) return;
+  db.collection("empBindings").doc(sess.empId).get().then(function(snap) {
+    if (!snap.exists) return;
+    var d = snap.data();
+    var sigTs = d.forceCheckoutAt || 0;
+    // If admin wrote a signal AFTER the engineer's check-in → stale session
+    if (sigTs && sess.checkinTimestamp && sigTs > sess.checkinTimestamp) {
+      setSess(null);
+      setSessDocId(null);
+      document.getElementById("ciForm").style.display    = "block";
+      document.getElementById("coSection").style.display = "none";
+      document.getElementById("sessBadge").style.display = "none";
+      document.getElementById("resultCard").style.display= "none";
+      toast("ℹ️ Your session was closed by admin. You can now check in at your new location.", "t-ok");
+    } else {
+      // No signal — trust local session
+      var s = getSess();
+      if (s) {
+        document.getElementById("ciForm").style.display    = "none";
+        document.getElementById("coSection").style.display = "block";
+        document.getElementById("sessBadge").style.display = "block";
+        document.getElementById("sb-emp").textContent  = s.empName + " (" + s.empId + ")";
+        document.getElementById("sb-site").textContent = s.site;
+        document.getElementById("sb-cin").textContent  = s.checkinTime;
+        updateDur();
+        checkApprovedLeaveForEmp(s.empId);
+      }
+    }
+  }).catch(function() {});
+}
+
 // ── Engineer ID prefix helpers ──────────────────────
 // All Engineer IDs are stored as "Eng" + whatever the user types (e.g. "Eng01")
 var _autoFilledEmpId  = null;  // full "EngXX" that was auto-filled; null = user typed it manually
@@ -3607,29 +3644,39 @@ function initEmp() {
   var sess    = getSess();
   var sessDoc = getSessDocId();
 
+  // Cancel any previous force-checkout listener
+  if (_forceCoListener) { try { _forceCoListener(); } catch(e){} _forceCoListener = null; }
+
   if (sess && sess.checkinTimestamp && !sess.checkoutTimestamp) {
-    // Local session says "checked in" — verify against Firestore in case admin force-checked-out
     if (fbOk && db && sessDoc) {
-      db.collection("attendance").doc(sessDoc).get().then(function(snap) {
-        if (snap.exists && snap.data().status === "out") {
-          // Admin has force-checked-out this engineer — clear the stale local session
+      // Use a real-time listener so force checkout is detected immediately,
+      // even without the engineer refreshing the page.
+      // NOTE: Firestore rules must allow attendance reads without auth (see Setup → Rules).
+      _forceCoListener = db.collection("attendance").doc(sessDoc).onSnapshot(function(snap) {
+        if (!snap.exists) return;
+        if (snap.data().status === "out") {
+          // Admin force-checked-out — clear stale local session immediately
+          if (_forceCoListener) { _forceCoListener(); _forceCoListener = null; }
           setSess(null);
           setSessDocId(null);
           document.getElementById("ciForm").style.display    = "block";
           document.getElementById("coSection").style.display = "none";
           document.getElementById("sessBadge").style.display = "none";
           document.getElementById("resultCard").style.display= "none";
-          toast("ℹ️ Your previous session was closed by admin. You can now check in.", "t-ok");
+          toast("ℹ️ Your session was closed by admin. You can now check in at your new location.", "t-ok");
         } else {
-          // Still checked in — show checkout mode
-          _initEmpShowCheckout(sess);
+          // Still checked in — show checkout mode (only on first snapshot)
+          var co = document.getElementById("coSection");
+          if (co && co.style.display !== "block") _initEmpShowCheckout(sess);
         }
-      }).catch(function() {
-        // Firestore unreachable — fall back to local session
-        _initEmpShowCheckout(sess);
+      }, function(err) {
+        // Listener failed (likely permission denied) — do a plain one-time get instead
+        console.warn("[AT] onSnapshot failed:", err.code, "— falling back to .get()");
+        _forceCoListener = null;
+        // Try empBindings collection (public read) as a signal channel
+        _checkForceCoSignal(sess, sessDoc);
       });
     } else {
-      // No Firestore or no doc ID — trust local session
       _initEmpShowCheckout(sess);
     }
   } else {
@@ -10903,6 +10950,15 @@ function confirmForceCheckout() {
         rec.duration          = dur;
         rec.isOvertime        = isOT;
         rec.adminForced       = true;
+      }
+      // Write a public signal to empBindings so the engineer's phone
+      // can detect the force checkout even if attendance read is blocked by rules.
+      // empBindings is publicly readable — this acts as the notification channel.
+      if (_fcoEmpId) {
+        db.collection("empBindings").doc(_fcoEmpId).set(
+          { forceCheckoutAt: Date.now() },
+          { merge: true }
+        ).catch(function(){});
       }
       renderTable();
       renderFeed();
