@@ -2912,8 +2912,22 @@ function engIdInput(input) {
         var curVal = (document.getElementById("empId") || {}).value || "";
         if (curVal !== val) return; // user kept typing
         if (snap.exists) {
-          hint.style.background = "#fef2f2"; hint.style.borderColor = "#fca5a5"; hint.style.color = "#dc2626";
-          hint.textContent = "⛔ " + fullId + " is already registered. Please use your assigned ID.";
+          // Cross-check against the email the engineer has entered
+          var enteredEmail = ((document.getElementById("empEmail") || {}).value || "").trim().toLowerCase();
+          var boundEmail   = (snap.data().email || "").trim().toLowerCase();
+          if (enteredEmail && boundEmail && enteredEmail === boundEmail) {
+            // ✅ This is the engineer's own registered account — not a conflict
+            hint.style.background = "#f0fdf4"; hint.style.borderColor = "#86efac"; hint.style.color = "#15803d";
+            hint.textContent = "✅ " + fullId + " — your registered account.";
+          } else if (!enteredEmail) {
+            // Email not typed yet — show neutral hint
+            hint.style.background = "#fffbeb"; hint.style.borderColor = "#fde68a"; hint.style.color = "#92400e";
+            hint.textContent = "ℹ️ " + fullId + " is registered. Enter your email below to verify it's yours.";
+          } else {
+            // ⛔ Different email — belongs to someone else
+            hint.style.background = "#fef2f2"; hint.style.borderColor = "#fca5a5"; hint.style.color = "#dc2626";
+            hint.textContent = "⛔ " + fullId + " is registered to a different person. Please use your own assigned ID.";
+          }
           hint.style.display = "block";
         } else {
           hint.style.background = "#f0fdf4"; hint.style.borderColor = "#86efac"; hint.style.color = "#15803d";
@@ -2952,6 +2966,9 @@ function chkBtn() {
   var id    = getEngId("empId");
   var name  = (document.getElementById("empName") ||{}).value||"";
   var site  = (document.getElementById("empSite") ||{}).value||"";
+
+  // Re-evaluate the ID availability hint now that email may have changed
+  _refreshIdAvailHint(id);
   var email = (document.getElementById("empEmail")||{}).value||"";
   var emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
@@ -3070,6 +3087,34 @@ function _doEngIdAutoFill(fullEmpId) {
   _autoFilledEmpId = "Eng" + raw;
   _updateEngIdAutoFillHint("✅ Engineer ID auto-filled from your registered account (Eng" + raw + ")");
   chkBtn();
+}
+
+// Re-check the availability hint when email changes — turns neutral → green/red
+function _refreshIdAvailHint(fullId) {
+  var hint = document.getElementById("engIdAvailHint");
+  if (!hint || hint.style.display === "none") return;
+  // Only act if the hint is currently showing the "neutral / enter email" state
+  if (hint.style.borderColor !== "#fde68a" && hint.color !== "#92400e") return;
+  // Re-trigger the check by simulating an input (reuse the existing timer logic)
+  var inp = document.getElementById("empId");
+  if (inp && fullId && window.db) {
+    var val = (inp.value || "").replace(/^[Ee][Nn][Gg]*/i, "");
+    var enteredEmail = ((document.getElementById("empEmail") || {}).value || "").trim().toLowerCase();
+    if (!enteredEmail) return;
+    db.collection("empBindings").doc(fullId).get().then(function(snap) {
+      var h = document.getElementById("engIdAvailHint");
+      if (!h) return;
+      if (!snap.exists) return; // handled by engIdInput already
+      var boundEmail = (snap.data().email || "").trim().toLowerCase();
+      if (enteredEmail === boundEmail) {
+        h.style.background = "#f0fdf4"; h.style.borderColor = "#86efac"; h.style.color = "#15803d";
+        h.textContent = "✅ " + fullId + " — your registered account.";
+      } else {
+        h.style.background = "#fef2f2"; h.style.borderColor = "#fca5a5"; h.style.color = "#dc2626";
+        h.textContent = "⛔ " + fullId + " is registered to a different person. Please use your own assigned ID.";
+      }
+    }).catch(function(){});
+  }
 }
 
 function _updateEngIdAutoFillHint(msg) {
