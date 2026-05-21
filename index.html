@@ -1831,10 +1831,11 @@ tr.on-leave-row td{background:#f0f9ff!important}
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Attendance records — anyone can write (check-in), admin can read all
+    // Attendance records — anyone can create (check-in), admin can read/update/delete
     match /attendance/{doc} {
       allow create: if true;
-      allow read, update, delete: if request.auth != null;
+      allow update: if true;  // Engineers can check out; admin can force check-out
+      allow read, delete: if request.auth != null;
     }
 
     // Email ↔ Engineer ID bindings — read/write for binding checks + admin CRUD
@@ -2045,8 +2046,8 @@ service cloud.firestore {
                         'checkoutAcc','status','duration','isOvertime'])
                     && request.resource.data.status == 'out';
 
-      // Only signed-in admin can read or delete records
-      allow read, delete: if request.auth != null;
+      // Signed-in admin can read, update (force check-out) or delete records
+      allow read, update, delete: if request.auth != null;
     }
 
     // ── 2. Email ↔ Engineer ID bindings ──────────────
@@ -10590,7 +10591,12 @@ function confirmForceCheckout() {
       toast("✅ Force check-out applied for " + _fcoEmpName + ". Duration: " + dur, "t-ok");
     })
     .catch(function(e) {
-      errEl.textContent = "Error: " + (e.message || e);
+      var msg = (e.message || String(e));
+      if (msg.toLowerCase().indexOf("permission") !== -1) {
+        errEl.innerHTML = "⛔ Firestore permission denied. Go to <strong>Setup tab → Firestore Rules</strong> and re-copy the rules into Firebase Console, then try again.";
+      } else {
+        errEl.textContent = "Error: " + msg;
+      }
     })
     .finally(function() {
       if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ Confirm Force Check-Out"; }
