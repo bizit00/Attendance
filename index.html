@@ -1261,13 +1261,13 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <div class="dash-tabs">
       <div class="dash-tab on" onclick="dTab('live',this)">Live Status</div>
       <div class="dash-tab" onclick="dTab('feed',this)">Activity Feed</div>
-      <div class="dash-tab" onclick="dTab('calendar',this)">📅 Calendar</div>
-      <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">🗓️ Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
-      <div class="dash-tab" onclick="dTab('otp',this)" id="otpTabBtn">🔐 OTP Requests <span id="otpPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
-      <div class="dash-tab" onclick="dTab('device',this)">🔒 Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
-      <div class="dash-tab" onclick="dTab('onboarding',this)">📋 Onboarding</div>
-      <div class="dash-tab" onclick="dTab('accounts',this)">👷 Eng Accounts</div>
-      <div class="dash-tab" onclick="dTab('setup',this)">⚙️ Setup Guide</div>
+      <div class="dash-tab" onclick="dTab('calendar',this)">Calendar</div>
+      <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
+      <div class="dash-tab" onclick="dTab('otp',this)" id="otpTabBtn">OTP Requests <span id="otpPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
+      <div class="dash-tab" onclick="dTab('device',this)">Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
+      <div class="dash-tab" onclick="dTab('team',this)">Team</div>
+      <div class="dash-tab" onclick="dTab('tdr',this)">TDR Report</div>
+      <div class="dash-tab" onclick="dTab('setup',this)">Setup Guide</div>
     </div>
 
     <!-- LIVE TAB -->
@@ -1572,31 +1572,49 @@ tr.on-leave-row td{background:#f0f9ff!important}
     </div>
 
 <!-- ONBOARDING TAB -->
-<div id="dTab-onboarding" style="display:none">
-  <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:flex-start">
-    <div style="font-weight:700;font-size:1rem;color:var(--ink);flex:1;min-width:200px">📋 Engineer Onboarding</div>
-    <button class="tb-btn tb-pri" onclick="onbOpenForm(null)">＋ Add Engineer</button>
-    <button class="tb-btn tb-out" onclick="onbExportExcel()">⬇ Export Excel</button>
+<!-- ══ TEAM TAB (Onboarding + Accounts merged) ══════════════════════ -->
+<div id="dTab-team" style="display:none">
+  <!-- Sub-tab bar -->
+  <div style="display:flex;gap:6px;margin-bottom:18px;border-bottom:2px solid var(--border);padding-bottom:0">
+    <button id="teamSubBtnOnboarding" onclick="teamSubTab('onboarding')"
+      style="padding:7px 18px;border:none;background:none;font-size:.87rem;font-weight:700;color:var(--blue);border-bottom:2px solid var(--blue);margin-bottom:-2px;cursor:pointer;font-family:var(--body)">
+      📋 Onboarding
+    </button>
+    <button id="teamSubBtnAccounts" onclick="teamSubTab('accounts')"
+      style="padding:7px 18px;border:none;background:none;font-size:.87rem;font-weight:700;color:var(--ink3);border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;font-family:var(--body)">
+      👷 Eng Accounts
+    </button>
   </div>
 
-  <!-- Onboarding table -->
-  <div class="tbl-wrap" style="margin-top:8px">
-    <div style="overflow-x:auto">
-      <table id="onbTable">
-        <thead><tr>
-          <th>Eng ID</th><th>Name</th><th>Gender</th><th>NRIC</th>
-          <th>Phone</th><th>Email</th><th>Status</th><th>Actions</th>
-        </tr></thead>
-        <tbody id="onbTbody"></tbody>
-      </table>
+  <!-- Onboarding pane -->
+  <div id="teamPane-onboarding">
+    <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:flex-start">
+      <div style="font-weight:700;font-size:1rem;color:var(--ink);flex:1;min-width:200px">📋 Engineer Onboarding</div>
+      <button class="tb-btn tb-pri" onclick="onbOpenForm(null)">＋ Add Engineer</button>
+      <button class="tb-btn tb-out" onclick="onbExportExcel()">⬇ Export Excel</button>
     </div>
-    <div id="onbEmpty" class="empty" style="display:none">
-      <div class="empty-icon">📋</div>
-      <div class="empty-t">No onboarding records yet</div>
-      <div>Click "＋ Add Engineer" to pre-record engineer details before they register.</div>
+    <div class="tbl-wrap" style="margin-top:8px">
+      <div style="overflow-x:auto">
+        <table id="onbTable">
+          <thead><tr>
+            <th>Eng ID</th><th>Name</th><th>Gender</th><th>NRIC</th>
+            <th>Phone</th><th>Email</th><th>Status</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="onbTbody"></tbody>
+        </table>
+      </div>
+      <div id="onbEmpty" class="empty" style="display:none">
+        <div class="empty-icon">📋</div>
+        <div class="empty-t">No onboarding records yet</div>
+        <div>Click "＋ Add Engineer" to pre-record engineer details before they register.</div>
+      </div>
     </div>
   </div>
+
+  <!-- Accounts pane (hidden by default; content moved in by teamSubTab JS) -->
+  <div id="teamPane-accounts" style="display:none"></div>
 </div>
+<!-- END TEAM TAB -->
 
 <!-- LEAVE MANAGEMENT TAB -->
     <div id="dTab-leave" style="display:none">
@@ -1772,9 +1790,94 @@ tr.on-leave-row td{background:#f0f9ff!important}
     </div>
 
     <!-- ENGINEER ACCOUNTS TAB -->
-    <div id="dTab-accounts" style="display:none">
+    <!-- accounts pane lives inside dTab-team; this stub is kept so old dTab() refs don't crash -->
+    <div id="dTab-accounts" style="display:none"></div>
 
-      <!-- Header -->
+    <!-- TDR REPORT TAB -->
+    <div id="dTab-tdr" style="display:none">
+      <!-- Toolbar -->
+      <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:18px">
+        <div style="font-weight:700;font-size:1rem;color:var(--ink);flex:1">🖥️ TDR Report</div>
+        <label for="tdrFileInput" class="tb-btn tb-pri" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">📂 Upload TDR Excel</label>
+        <input type="file" id="tdrFileInput" accept=".xlsx,.xls" style="display:none" onchange="tdrLoadFile(this)"/>
+        <span id="tdrFileName" style="font-size:.8rem;color:var(--ink3);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      </div>
+
+      <!-- Empty state -->
+      <div id="tdrEmpty" class="empty">
+        <div class="empty-icon">📊</div>
+        <div class="empty-t">No TDR file uploaded yet</div>
+        <div>Click "📂 Upload TDR Excel" to load the TDR record spreadsheet.<br>The system reads <strong>Column B</strong> (Workstation), <strong>Column H</strong> (Status), <strong>Column J</strong> (Error Code).</div>
+      </div>
+
+      <!-- Results (hidden until file loaded) -->
+      <div id="tdrResults" style="display:none">
+
+        <!-- Summary cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px">
+          <div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;text-align:center">
+            <div style="font-size:1.8rem;font-weight:800;color:var(--ink)" id="tdrTotal">0</div>
+            <div style="font-size:.78rem;color:var(--ink3);margin-top:2px">Total Workstations</div>
+          </div>
+          <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px 16px;text-align:center">
+            <div style="font-size:1.8rem;font-weight:800;color:#16a34a" id="tdrPassed">0</div>
+            <div style="font-size:.78rem;color:#15803d;margin-top:2px">✅ Passed</div>
+          </div>
+          <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:14px 16px;text-align:center">
+            <div style="font-size:1.8rem;font-weight:800;color:#dc2626" id="tdrFailed">0</div>
+            <div style="font-size:.78rem;color:#b91c1c;margin-top:2px">❌ Failed</div>
+          </div>
+          <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;text-align:center">
+            <div style="font-size:1.8rem;font-weight:800;color:#d97706" id="tdrPending">0</div>
+            <div style="font-size:.78rem;color:#92400e;margin-top:2px">⏳ Not Attended</div>
+          </div>
+          <div style="background:#f0f9ff;border:1.5px solid #7dd3fc;border-radius:12px;padding:14px 16px;text-align:center">
+            <div style="font-size:1.8rem;font-weight:800;color:#0369a1" id="tdrPassRate">0%</div>
+            <div style="font-size:.78rem;color:#0284c7;margin-top:2px">Pass Rate</div>
+          </div>
+        </div>
+
+        <!-- Charts row -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+          <!-- Status breakdown doughnut -->
+          <div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px">
+            <div style="font-weight:700;font-size:.9rem;color:var(--ink);margin-bottom:12px">📊 Status Breakdown</div>
+            <div style="position:relative;height:220px;display:flex;align-items:center;justify-content:center">
+              <canvas id="tdrStatusCanvas"></canvas>
+            </div>
+          </div>
+          <!-- Error types bar -->
+          <div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px">
+            <div style="font-weight:700;font-size:.9rem;color:var(--ink);margin-bottom:12px">🔴 Failed — Error Types</div>
+            <div id="tdrNoErrors" style="display:none;font-size:.83rem;color:var(--ink3);text-align:center;padding:60px 0">No failed records</div>
+            <div style="position:relative;height:220px">
+              <canvas id="tdrErrorCanvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error detail table -->
+        <div id="tdrErrorTableWrap" style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;padding:16px;display:none">
+          <div style="font-weight:700;font-size:.9rem;color:var(--ink);margin-bottom:10px">🗂️ Error Code Breakdown</div>
+          <div style="overflow-x:auto">
+            <table id="tdrErrorTable" style="width:100%;border-collapse:collapse;font-size:.83rem">
+              <thead>
+                <tr style="background:#f8fafc">
+                  <th style="text-align:left;padding:8px 12px;border-bottom:1.5px solid #e2e8f0;font-size:.78rem;color:var(--ink3);font-weight:600">Error Code</th>
+                  <th style="text-align:center;padding:8px 12px;border-bottom:1.5px solid #e2e8f0;font-size:.78rem;color:var(--ink3);font-weight:600">Count</th>
+                  <th style="text-align:center;padding:8px 12px;border-bottom:1.5px solid #e2e8f0;font-size:.78rem;color:var(--ink3);font-weight:600">% of Failed</th>
+                </tr>
+              </thead>
+              <tbody id="tdrErrorTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- END TDR REPORT TAB -->
+
+    <!-- Accounts content — hidden here, moved into teamPane-accounts by teamSubTab() -->
+    <div id="_accContentWrap" style="display:none">
       <div style="background:linear-gradient(135deg,#0d1117,#1a2233);border-radius:var(--r2);padding:18px 20px;margin-bottom:18px;display:flex;align-items:flex-start;gap:14px">
         <div style="font-size:2rem;flex-shrink:0">👷</div>
         <div style="flex:1">
@@ -1878,6 +1981,7 @@ service cloud.firestore {
         <button onclick="var t=document.getElementById('fsRulesPre');var r=document.createRange();r.selectNode(t);window.getSelection().removeAllRanges();window.getSelection().addRange(r);try{document.execCommand('copy');toast('✅ Rules copied!','t-ok');}catch(e){toast('Select + copy manually','t-err');}" style="margin-top:8px;padding:6px 14px;border-radius:var(--r);background:#0d1117;color:#e6edf3;border:none;font-size:.78rem;font-weight:600;cursor:pointer;font-family:var(--body)">📋 Copy Rules</button>
       </div>
     </div>
+    </div><!-- end _accContentWrap -->
 
     <!-- EDIT ACCOUNT MODAL -->
     <div id="accEditModal" class="modal-overlay">
@@ -4323,7 +4427,7 @@ function refreshDash() {
 
 // ── Dashboard tabs ─────────────────────────────────
 function dTab(id, el) {
-  ["live","feed","analytics","calendar","leave","otp","device","onboarding","accounts","setup"].forEach(function(t){
+  ["live","feed","analytics","calendar","leave","otp","device","team","tdr","setup"].forEach(function(t){
     var p = document.getElementById("dTab-"+t); if(p) p.style.display = t===id?"block":"none";
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
@@ -4331,12 +4435,11 @@ function dTab(id, el) {
   // Keep topbar Analytics button in sync
   var topBtn = document.getElementById("topbarAnalyticsBtn");
   if (topBtn) topBtn.classList.toggle("active", id === "analytics");
-  if (id === "leave")       loadLeaves();
-  if (id === "otp")         loadOtpRequests();
-  if (id === "device")      { renderDeviceAudit(); _renderBuddyPunchAlerts(); }
-  if (id === "onboarding")  loadOnboarding();
-  if (id === "accounts")    adminAccLoad();
-  if (id === "analytics")   renderAnalytics();
+  if (id === "leave")     loadLeaves();
+  if (id === "otp")       loadOtpRequests();
+  if (id === "device")    { renderDeviceAudit(); _renderBuddyPunchAlerts(); }
+  if (id === "team")      teamSubTab(_teamCurrentSub || "onboarding");
+  if (id === "analytics") renderAnalytics();
   if (id === 'calendar') {
     var cSite = document.getElementById("calSite");
     if (cSite && cSite.options.length <= 1) {
@@ -4344,11 +4447,41 @@ function dTab(id, el) {
         var o = document.createElement("option"); o.value = s.name; o.textContent = s.name; cSite.appendChild(o);
       });
     }
-    // Default snapshot date to today on first open
     var asOfEl = document.getElementById("anAsOfDate");
     if (asOfEl && !asOfEl.value) asOfEl.value = new Date().toISOString().split("T")[0];
     if (!leaveRecs.length && db) { loadLeaves(); }
     renderCalendar();
+  }
+}
+
+// ── Team tab sub-navigation ────────────────────────────────────────────
+var _teamCurrentSub = "onboarding";
+var _accMoved = false;
+
+function teamSubTab(id) {
+  _teamCurrentSub = id;
+  ["onboarding","accounts"].forEach(function(t){
+    var p = document.getElementById("teamPane-"+t);
+    if (p) p.style.display = t===id ? "block" : "none";
+    var btn = document.getElementById("teamSubBtn"+t.charAt(0).toUpperCase()+t.slice(1));
+    if (btn) {
+      btn.style.color         = t===id ? "var(--blue)" : "var(--ink3)";
+      btn.style.borderBottom  = t===id ? "2px solid var(--blue)" : "2px solid transparent";
+    }
+  });
+  if (id === "onboarding") { loadOnboarding(); }
+  if (id === "accounts") {
+    // Move stray content into the pane on first access
+    if (!_accMoved) {
+      var wrap = document.getElementById("_accContentWrap");
+      var pane = document.getElementById("teamPane-accounts");
+      if (wrap && pane) {
+        while (wrap.firstChild) pane.appendChild(wrap.firstChild);
+        wrap.parentNode.removeChild(wrap);
+        _accMoved = true;
+      }
+    }
+    adminAccLoad();
   }
 }
 
@@ -10475,6 +10608,152 @@ function ssExit() {
   if (modal) modal.classList.remove("ss-maximized");
 }
 // ══ END SLIDESHOW ═════════════════════════════════════════════════════
+
+// ══ TDR REPORT ════════════════════════════════════════════════════════
+var _tdrStatusChart = null;
+var _tdrErrorChart  = null;
+
+function tdrLoadFile(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var nameEl = document.getElementById("tdrFileName");
+  if (nameEl) nameEl.textContent = file.name;
+
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      var data = new Uint8Array(ev.target.result);
+      var wb   = XLSX.read(data, { type: "array" });
+
+      // Prefer a sheet whose name contains "TDR" or "Status"; else first sheet
+      var sheetName = wb.SheetNames[0];
+      wb.SheetNames.forEach(function(n){
+        if (/tdr|status/i.test(n)) sheetName = n;
+      });
+      var ws   = wb.Sheets[sheetName];
+      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+      // Skip header rows until we find one whose col B looks like a workstation name
+      var startRow = 1;
+      for (var i = 0; i < Math.min(rows.length, 5); i++) {
+        var cellB = String(rows[i][1] || "").trim();
+        if (cellB && !/workstation|pc|name|hostname/i.test(cellB)) { startRow = i; break; }
+      }
+
+      var total = 0, passed = 0, failed = 0, notAttended = 0;
+      var errorTypes = {};
+
+      rows.slice(startRow).forEach(function(row) {
+        var wsName = String(row[1] || "").trim();  // Col B
+        if (!wsName) return;                        // skip blank rows
+        total++;
+        var status    = String(row[7]  || "").trim().toUpperCase(); // Col H
+        var errorCode = String(row[9]  || "").trim();               // Col J
+
+        if (status === "PASSED") {
+          passed++;
+        } else if (status === "FAILED") {
+          failed++;
+          var ec = errorCode || "Unknown";
+          errorTypes[ec] = (errorTypes[ec] || 0) + 1;
+        } else {
+          notAttended++;
+        }
+      });
+
+      tdrRenderResults(total, passed, failed, notAttended, errorTypes);
+    } catch(e) {
+      toast("❌ Failed to read Excel file: " + (e.message || e), "t-err");
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  // reset so same file can be re-uploaded
+  input.value = "";
+}
+
+function tdrRenderResults(total, passed, failed, notAttended, errorTypes) {
+  // Update cards
+  document.getElementById("tdrTotal").textContent    = total;
+  document.getElementById("tdrPassed").textContent   = passed;
+  document.getElementById("tdrFailed").textContent   = failed;
+  document.getElementById("tdrPending").textContent  = notAttended;
+  var pct = total > 0 ? Math.round(passed / total * 100) : 0;
+  document.getElementById("tdrPassRate").textContent = pct + "%";
+
+  document.getElementById("tdrEmpty").style.display   = "none";
+  document.getElementById("tdrResults").style.display = "block";
+
+  // ── Status doughnut chart ────────────────────────────────────────────
+  if (_tdrStatusChart) { _tdrStatusChart.destroy(); _tdrStatusChart = null; }
+  var sc = document.getElementById("tdrStatusCanvas");
+  if (sc) {
+    _tdrStatusChart = new Chart(sc, {
+      type: "doughnut",
+      data: {
+        labels: ["✅ Passed", "❌ Failed", "⏳ Not Attended"],
+        datasets: [{ data: [passed, failed, notAttended],
+          backgroundColor: ["#16a34a","#dc2626","#f59e0b"],
+          borderWidth: 2, borderColor: "#fff" }]
+      },
+      options: {
+        cutout: "60%",
+        plugins: { legend: { display: true, position: "bottom", labels: { font: { size: 11 } } } },
+        responsive: true, maintainAspectRatio: false
+      }
+    });
+  }
+
+  // ── Error types bar chart ────────────────────────────────────────────
+  if (_tdrErrorChart) { _tdrErrorChart.destroy(); _tdrErrorChart = null; }
+  var ec = document.getElementById("tdrErrorCanvas");
+  var noErr = document.getElementById("tdrNoErrors");
+  var errTableWrap = document.getElementById("tdrErrorTableWrap");
+  var errTbody     = document.getElementById("tdrErrorTbody");
+
+  var errKeys  = Object.keys(errorTypes).sort(function(a,b){ return errorTypes[b]-errorTypes[a]; });
+  var errCounts = errKeys.map(function(k){ return errorTypes[k]; });
+
+  if (!errKeys.length) {
+    if (ec)     ec.style.display   = "none";
+    if (noErr)  noErr.style.display = "block";
+    if (errTableWrap) errTableWrap.style.display = "none";
+  } else {
+    if (ec)     ec.style.display    = "";
+    if (noErr)  noErr.style.display = "none";
+    if (errTableWrap) errTableWrap.style.display = "block";
+
+    var colors = ["#dc2626","#f59e0b","#7c3aed","#0369a1","#059669","#d97706","#6d28d9","#0891b2"];
+    _tdrErrorChart = new Chart(ec, {
+      type: "bar",
+      data: {
+        labels: errKeys,
+        datasets: [{ label: "Count", data: errCounts,
+          backgroundColor: errKeys.map(function(_,i){ return colors[i % colors.length]; }),
+          borderRadius: 6 }]
+      },
+      options: {
+        indexAxis: errKeys.length > 5 ? "y" : "x",
+        plugins: { legend: { display: false } },
+        scales: { x: { ticks: { font: { size: 10 } } }, y: { ticks: { font: { size: 10 } }, beginAtZero: true } },
+        responsive: true, maintainAspectRatio: false
+      }
+    });
+
+    // Error table
+    if (errTbody) {
+      errTbody.innerHTML = errKeys.map(function(k) {
+        var cnt = errorTypes[k];
+        var pct = failed > 0 ? Math.round(cnt / failed * 100) : 0;
+        return '<tr>'
+          + '<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-family:var(--mono);font-size:.82rem">' + k + '</td>'
+          + '<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:700;color:#dc2626">' + cnt + '</td>'
+          + '<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center;color:var(--ink2)">' + pct + '%</td>'
+          + '</tr>';
+      }).join("");
+    }
+  }
+}
+// ══ END TDR REPORT ════════════════════════════════════════════════════
 
 // ══ ADMIN FORCE CHECK-OUT ═════════════════════════════════════════════
 var _fcoDocId = null;
