@@ -1294,7 +1294,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
             <thead><tr>
               <th>Engineer</th><th>Site</th><th>Status</th>
               <th>Check-In</th><th>Check-Out</th><th>Duration</th>
-              <th>GPS In</th><th>GPS Out</th><th>Device</th><th>Date</th>
+              <th>GPS In</th><th>GPS Out</th><th>Device</th><th>Date</th><th>Action</th>
             </tr></thead>
             <tbody id="tblBody"></tbody>
           </table>
@@ -4205,6 +4205,17 @@ function renderTable() {
         + (isSuspicious ? ' <span class="bdg" style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;font-size:.68rem" title="Same device used by another engineer on this date">⚠ Flagged</span>' : '')
       : '<span style="font-size:.75rem;color:var(--ink3)">—</span>';
 
+    var forceCoBtn = r.status === "in"
+      ? '<button onclick="openForceCoModal(\''+( r._docId||'')+'\',' + (r.checkinTimestamp||0) + ',\''
+          + (r.empName||'').replace(/'/g,"\\'") + '\',\''
+          + (r.empId||'').replace(/'/g,"\\'") + '\',\''
+          + (r.site||'').replace(/'/g,"\\'") + '\',\''
+          + (r.checkinDate||'') + '\',\''
+          + (r.checkinTime||'') + '\')" '
+          + 'style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:.75rem;font-weight:700;cursor:pointer;white-space:nowrap" '
+          + 'title="Force check-out this engineer">🔓 Force CO</button>'
+      : '<span style="font-size:.75rem;color:var(--ink3)">—</span>';
+
     return '<tr' + (isSuspicious ? ' style="background:#fff5f5"' : '') + '>'
       +'<td><div class="ec"><div class="av">'+ini+'</div><div><div class="en">'+(r.empName||"—")+'</div><div class="eid">'+(r.empId||"—")+'</div></div></div></td>'
       +'<td style="font-size:.82rem;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(r.site||"—")+'</td>'
@@ -4216,6 +4227,7 @@ function renderTable() {
       +'<td>'+mapOut+'</td>'
       +'<td>'+devCell+'</td>'
       +'<td style="font-size:.78rem;color:var(--ink3)">'+(r.checkinDate||"—")+'</td>'
+      +'<td style="text-align:center">'+forceCoBtn+'</td>'
       +'</tr>';
   }).join("");
 }
@@ -10459,7 +10471,184 @@ function ssExit() {
   if (modal) modal.classList.remove("ss-maximized");
 }
 // ══ END SLIDESHOW ═════════════════════════════════════════════════════
+
+// ══ ADMIN FORCE CHECK-OUT ═════════════════════════════════════════════
+var _fcoDocId = null;
+var _fcoCheckinTs = 0;
+var _fcoEmpName = "";
+var _fcoEmpId = "";
+var _fcoSite = "";
+var _fcoCheckinDate = "";
+var _fcoCheckinTime = "";
+
+function openForceCoModal(docId, checkinTs, empName, empId, site, checkinDate, checkinTime) {
+  _fcoDocId = docId;
+  _fcoCheckinTs = checkinTs;
+  _fcoEmpName = empName;
+  _fcoEmpId = empId;
+  _fcoSite = site;
+  _fcoCheckinDate = checkinDate;
+  _fcoCheckinTime = checkinTime;
+
+  var el = document.getElementById("fcoModal");
+  if (!el) return;
+
+  // Populate info
+  document.getElementById("fcoInfoName").textContent = empName + " (" + empId + ")";
+  document.getElementById("fcoInfoSite").textContent = site;
+  document.getElementById("fcoInfoCheckin").textContent = checkinDate + "  " + checkinTime;
+
+  // Default checkout datetime = now
+  var now = new Date();
+  var localIso = now.getFullYear() + "-"
+    + String(now.getMonth()+1).padStart(2,"0") + "-"
+    + String(now.getDate()).padStart(2,"0") + "T"
+    + String(now.getHours()).padStart(2,"0") + ":"
+    + String(now.getMinutes()).padStart(2,"0");
+  document.getElementById("fcoCoDateTime").value = localIso;
+  document.getElementById("fcoNote").value = "";
+  document.getElementById("fcoError").textContent = "";
+
+  el.style.display = "flex";
+}
+
+function closeForceCoModal() {
+  var el = document.getElementById("fcoModal");
+  if (el) el.style.display = "none";
+}
+
+function confirmForceCheckout() {
+  var coDateTimeVal = (document.getElementById("fcoCoDateTime").value || "").trim();
+  var note = (document.getElementById("fcoNote").value || "").trim();
+  var errEl = document.getElementById("fcoError");
+
+  if (!_fcoDocId) { errEl.textContent = "No record selected."; return; }
+  if (!coDateTimeVal) { errEl.textContent = "Please select a check-out date and time."; return; }
+
+  var coDateTime = new Date(coDateTimeVal);
+  if (isNaN(coDateTime.getTime())) { errEl.textContent = "Invalid date/time."; return; }
+
+  var coTs = coDateTime.getTime();
+  if (_fcoCheckinTs && coTs <= _fcoCheckinTs) {
+    errEl.textContent = "Check-out time must be after check-in time (" + _fcoCheckinTime + ").";
+    return;
+  }
+
+  // Calculate duration
+  var diffMs = coTs - (_fcoCheckinTs || coTs);
+  var diffH  = Math.floor(diffMs / 3600000);
+  var diffM  = Math.floor((diffMs % 3600000) / 60000);
+  var dur    = diffH + "h " + diffM + "m";
+  var isOT   = diffH >= 9;
+
+  var adminUser = (firebase && firebase.auth && firebase.auth().currentUser) || null;
+  var adminEmail = adminUser ? adminUser.email : "Admin";
+
+  var updates = {
+    checkoutTime:      coDateTime.toLocaleTimeString("en-SG", {hour:"2-digit", minute:"2-digit", second:"2-digit"}),
+    checkoutISO:       coDateTime.toISOString(),
+    checkoutTimestamp: coTs,
+    checkoutLat:       null,
+    checkoutLng:       null,
+    checkoutDist:      null,
+    checkoutAcc:       null,
+    status:            "out",
+    duration:          dur,
+    isOvertime:        isOT,
+    adminForced:       true,
+    adminForcedBy:     adminEmail,
+    adminForcedAt:     new Date().toISOString(),
+    adminNote:         note || "Admin force check-out"
+  };
+
+  var confirmBtn = document.getElementById("fcoConfirmBtn");
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Processing…"; }
+
+  db.collection("attendance").doc(_fcoDocId).update(updates)
+    .then(function() {
+      closeForceCoModal();
+      // Update local record
+      var rec = allRecs.find(function(r){ return r._docId === _fcoDocId; });
+      if (rec) {
+        rec.checkoutTime      = updates.checkoutTime;
+        rec.checkoutISO       = updates.checkoutISO;
+        rec.checkoutTimestamp = updates.checkoutTimestamp;
+        rec.checkoutLat       = null;
+        rec.checkoutLng       = null;
+        rec.checkoutDist      = null;
+        rec.checkoutAcc       = null;
+        rec.status            = "out";
+        rec.duration          = dur;
+        rec.isOvertime        = isOT;
+        rec.adminForced       = true;
+      }
+      renderTable();
+      renderFeed();
+      renderStats();
+      toast("✅ Force check-out applied for " + _fcoEmpName + ". Duration: " + dur, "t-ok");
+    })
+    .catch(function(e) {
+      errEl.textContent = "Error: " + (e.message || e);
+    })
+    .finally(function() {
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ Confirm Force Check-Out"; }
+    });
+}
+// ══ END ADMIN FORCE CHECK-OUT ═════════════════════════════════════════
 </script>
+<!-- ══ ADMIN FORCE CHECK-OUT MODAL ══════════════════════════════════ -->
+<div id="fcoModal" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.7);z-index:8500;align-items:center;justify-content:center" onclick="if(event.target===this)closeForceCoModal()">
+  <div style="background:#fff;border-radius:16px;padding:28px 28px 24px;max-width:440px;width:94%;box-shadow:0 8px 40px rgba(0,0,0,.22);position:relative">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      <div style="width:38px;height:38px;border-radius:10px;background:#fef3c7;display:flex;align-items:center;justify-content:center;font-size:1.25rem">🔓</div>
+      <div>
+        <div style="font-size:1rem;font-weight:700;color:var(--ink)">Admin Force Check-Out</div>
+        <div style="font-size:.78rem;color:var(--ink3)">Manually check out an engineer</div>
+      </div>
+      <button onclick="closeForceCoModal()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--ink3);line-height:1" title="Close">✕</button>
+    </div>
+
+    <!-- Engineer info -->
+    <div style="background:#f8fafc;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:.84rem">
+      <div style="display:grid;grid-template-columns:90px 1fr;row-gap:5px">
+        <span style="color:var(--ink3);font-weight:600">Engineer</span>
+        <span id="fcoInfoName" style="color:var(--ink);font-weight:700"></span>
+        <span style="color:var(--ink3);font-weight:600">Site</span>
+        <span id="fcoInfoSite" style="color:var(--ink)"></span>
+        <span style="color:var(--ink3);font-weight:600">Checked In</span>
+        <span id="fcoInfoCheckin" style="color:var(--ink)"></span>
+      </div>
+    </div>
+
+    <!-- Warning banner -->
+    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:9px 12px;margin-bottom:16px;font-size:.8rem;color:#92400e;display:flex;gap:8px;align-items:flex-start">
+      <span style="font-size:1rem;line-height:1.3">⚠️</span>
+      <span>This action will mark the engineer as <strong>checked out</strong>. No GPS will be recorded. Use only when the engineer genuinely forgot to check out.</span>
+    </div>
+
+    <!-- Check-out datetime -->
+    <label style="display:block;font-size:.82rem;font-weight:600;color:var(--ink2);margin-bottom:4px">Check-Out Date &amp; Time</label>
+    <input id="fcoCoDateTime" type="datetime-local"
+      style="width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 12px;font-size:.9rem;color:var(--ink);margin-bottom:14px;outline:none"/>
+
+    <!-- Admin note -->
+    <label style="display:block;font-size:.82rem;font-weight:600;color:var(--ink2);margin-bottom:4px">Admin Note <span style="font-weight:400;color:var(--ink3)">(optional)</span></label>
+    <textarea id="fcoNote" rows="2" placeholder="e.g. Engineer relocated to Site B next day"
+      style="width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 12px;font-size:.85rem;color:var(--ink);resize:vertical;margin-bottom:6px;outline:none;font-family:inherit"></textarea>
+
+    <!-- Error -->
+    <div id="fcoError" style="font-size:.8rem;color:#dc2626;min-height:18px;margin-bottom:10px"></div>
+
+    <!-- Actions -->
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="closeForceCoModal()" style="background:#f1f5f9;color:var(--ink2);border:none;border-radius:8px;padding:9px 18px;font-size:.87rem;font-weight:600;cursor:pointer">Cancel</button>
+      <button id="fcoConfirmBtn" onclick="confirmForceCheckout()" style="background:#f59e0b;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:.87rem;font-weight:700;cursor:pointer">✅ Confirm Force Check-Out</button>
+    </div>
+  </div>
+</div>
+<!-- ══ END ADMIN FORCE CHECK-OUT MODAL ══════════════════════════════ -->
+
 <!-- ══ CHART SLIDESHOW OVERLAY ══════════════════════════════════════ -->
 <div id="slideshowOverlay" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.96);z-index:9100;align-items:center;justify-content:center" onclick="ssOverlayClick(event)">
   <div id="slideshowModal">
