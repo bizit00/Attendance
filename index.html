@@ -1453,36 +1453,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
         </div>
       </div>
 
-      <!-- ── 14-Day Trend ───────────────────────────── -->
-      <div class="chart-card">
-        <div class="chart-card-hdr">
-          <div>
-            <div class="chart-card-title">📈 14-Day Check-in Trend</div>
-            <div class="chart-card-sub">Daily attendance volume — last 2 weeks</div>
-          </div>
-        </div>
-        <div class="chart-canvas-wrap" style="height:190px">
-          <canvas id="anTrendChart"></canvas>
-        </div>
-      </div>
-
-
-      <!-- ── Leave Trends ───────────────────────────── -->
-      <div class="chart-card" id="anLeaveTrendCard">
-        <div class="chart-card-hdr">
-          <div>
-            <div class="chart-card-title">🗓️ Leave Trends by Type</div>
-            <div class="chart-card-sub">Approved leave days per month — last 12 months</div>
-          </div>
-        </div>
-        <div class="chart-canvas-wrap" style="height:240px">
-          <canvas id="anLeaveTrendCanvas"></canvas>
-          <div id="anLeaveTrendEmpty" class="chart-empty" style="display:none;position:absolute;inset:0">
-            <div class="chart-empty-icon">📅</div>
-            <div>No approved leave data in the last 12 months</div>
-          </div>
-        </div>
-      </div>
 
       <!-- ── Manpower Gap Analysis ──────────────────── -->
       <div class="chart-card">
@@ -4967,8 +4937,6 @@ function renderAnalytics() {
   }
   _anRenderBreakdownChart(rows);
   _anRenderLeaveStatusChart();
-  _anRenderTrendChart(rows);
-  _anRenderLeaveTrendChart((document.getElementById("anSite")||{}).value||"");
 }
 
 // ── Main chart ──────────────────────────────────────
@@ -5330,8 +5298,8 @@ function _anRenderLeaveStatusChart() {
   });
 }
 
-// ── 14-day trend line ───────────────────────────────
-function _anRenderTrendChart(rows) {
+// ── 14-day trend line (removed) ─────────────────────
+function _anRenderTrendChart(rows) { return; // chart removed
   var canvas = document.getElementById("anTrendChart");
   if (!canvas) return;
 
@@ -6375,7 +6343,7 @@ function _calChip(r) {
   return '<span class="cal-chip" style="background:' + color + '" title="' + (r.empName||r.empId) + ' — ' + r.leaveType + '">' + name + '</span>';
 }
 
-function _anRenderLeaveTrendChart(siteFilter) {
+function _anRenderLeaveTrendChart(siteFilter) { return; // chart removed
   var canvas = document.getElementById("anLeaveTrendCanvas");
   var emptyEl = document.getElementById("anLeaveTrendEmpty");
   if (!canvas) return;
@@ -10430,8 +10398,6 @@ initEmailJS();
 var SS_SLIDES = [
   { title: "👥 Attendance Status by Site",  canvasId: "anBreakdownChart"   },
   { title: "🌴 Leave by Period",             canvasId: "anLeaveStatusChart" },
-  { title: "📈 14-Day Check-in Trend",       canvasId: "anTrendChart"       },
-  { title: "🗓️ Leave Trends by Type",        canvasId: "anLeaveTrendCanvas" },
 ];
 var _ssIdx       = 0;
 var _ssPlaying   = true;
