@@ -1072,6 +1072,13 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <button class="act-btn btn-co" id="coBtn" disabled onclick="doCheckout()">
         🔴 Check Out
       </button>
+
+      <!-- Admin force check-out reset banner -->
+      <div style="margin-top:14px;text-align:center">
+        <button onclick="adminResetSession()" style="background:none;border:none;color:var(--ink3);font-size:.78rem;cursor:pointer;text-decoration:underline;font-family:var(--body);padding:4px 8px">
+          Admin already checked you out? Tap here to reset
+        </button>
+      </div>
     </div>
 
     <!-- Result card -->
@@ -2957,6 +2964,19 @@ function setSessDocId(id) { if(id) localStorage.setItem("at_sess_doc",id); else 
 
 // Real-time force-checkout listener (unsubscribe fn stored here)
 var _forceCoListener = null;
+
+// Called when engineer taps "Admin already checked you out? Tap here"
+function adminResetSession() {
+  if (!confirm("This will clear your current check-in session so you can check in at a new location.\n\nOnly do this if admin has already processed your check-out. Continue?")) return;
+  if (_forceCoListener) { try { _forceCoListener(); } catch(e){} _forceCoListener = null; }
+  setSess(null);
+  setSessDocId(null);
+  document.getElementById("ciForm").style.display    = "block";
+  document.getElementById("coSection").style.display = "none";
+  document.getElementById("sessBadge").style.display = "none";
+  document.getElementById("resultCard").style.display= "none";
+  toast("✅ Session cleared. You can now check in at your new location.", "t-ok");
+}
 
 // Fallback: check empBindings for a forceCheckoutAt signal written by admin
 // Used when onSnapshot on attendance is blocked by Firestore rules (engineer not authed)
