@@ -3604,23 +3604,50 @@ function initEmp() {
   // Reset leave banner
   var lb = document.getElementById("leaveActiveBanner"); if(lb) lb.style.display="none";
 
-  var sess = getSess();
+  var sess    = getSess();
+  var sessDoc = getSessDocId();
+
   if (sess && sess.checkinTimestamp && !sess.checkoutTimestamp) {
-    // Already checked in — show checkout mode
-    document.getElementById("ciForm").style.display   = "none";
-    document.getElementById("coSection").style.display = "block";
-    document.getElementById("sessBadge").style.display = "block";
-    document.getElementById("sb-emp").textContent  = sess.empName+" ("+sess.empId+")";
-    document.getElementById("sb-site").textContent = sess.site;
-    document.getElementById("sb-cin").textContent  = sess.checkinTime;
-    updateDur();
-    // Also check if checked-in engineer has leave (just for info)
-    checkApprovedLeaveForEmp(sess.empId);
+    // Local session says "checked in" — verify against Firestore in case admin force-checked-out
+    if (fbOk && db && sessDoc) {
+      db.collection("attendance").doc(sessDoc).get().then(function(snap) {
+        if (snap.exists && snap.data().status === "out") {
+          // Admin has force-checked-out this engineer — clear the stale local session
+          setSess(null);
+          setSessDocId(null);
+          document.getElementById("ciForm").style.display    = "block";
+          document.getElementById("coSection").style.display = "none";
+          document.getElementById("sessBadge").style.display = "none";
+          document.getElementById("resultCard").style.display= "none";
+          toast("ℹ️ Your previous session was closed by admin. You can now check in.", "t-ok");
+        } else {
+          // Still checked in — show checkout mode
+          _initEmpShowCheckout(sess);
+        }
+      }).catch(function() {
+        // Firestore unreachable — fall back to local session
+        _initEmpShowCheckout(sess);
+      });
+    } else {
+      // No Firestore or no doc ID — trust local session
+      _initEmpShowCheckout(sess);
+    }
   } else {
     document.getElementById("ciForm").style.display    = "block";
     document.getElementById("coSection").style.display = "none";
     document.getElementById("sessBadge").style.display = "none";
     document.getElementById("resultCard").style.display= "none";
+  }
+
+  function _initEmpShowCheckout(s) {
+    document.getElementById("ciForm").style.display    = "none";
+    document.getElementById("coSection").style.display = "block";
+    document.getElementById("sessBadge").style.display = "block";
+    document.getElementById("sb-emp").textContent  = s.empName + " (" + s.empId + ")";
+    document.getElementById("sb-site").textContent = s.site;
+    document.getElementById("sb-cin").textContent  = s.checkinTime;
+    updateDur();
+    checkApprovedLeaveForEmp(s.empId);
   }
   // Always reset leave section to hidden, show buttons
   var ls = document.getElementById("leaveSection"); if(ls) ls.style.display="none";
