@@ -10633,7 +10633,7 @@ function tdrLoadFile(input) {
       var ws   = wb.Sheets[sheetName];
       var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
 
-      // Skip header rows until we find one whose col B looks like a workstation name
+      // Skip header rows until col B looks like a real workstation name (not a label)
       var startRow = 1;
       for (var i = 0; i < Math.min(rows.length, 5); i++) {
         var cellB = String(rows[i][1] || "").trim();
@@ -10641,14 +10641,16 @@ function tdrLoadFile(input) {
       }
 
       var total = 0, passed = 0, failed = 0, notAttended = 0;
-      var errorTypes = {};
+      var errorTypes   = {};   // { errorCode: count }
+      var errorDetails = {};   // { errorCode: [ { workstation, detail } ] }
 
       rows.slice(startRow).forEach(function(row) {
-        var wsName = String(row[1] || "").trim();  // Col B
-        if (!wsName) return;                        // skip blank rows
+        var wsName    = String(row[1]  || "").trim();  // Col B — Workstation
+        if (!wsName) return;
         total++;
-        var status    = String(row[7]  || "").trim().toUpperCase(); // Col H
-        var errorCode = String(row[9]  || "").trim();               // Col J
+        var status    = String(row[7]  || "").trim().toUpperCase(); // Col H — Status
+        var errorCode = String(row[9]  || "").trim();               // Col J — Error Code
+        var detail    = String(row[10] || "").trim();               // Col K — Details
 
         if (status === "PASSED") {
           passed++;
@@ -10656,23 +10658,26 @@ function tdrLoadFile(input) {
           failed++;
           var ec = errorCode || "Unknown";
           errorTypes[ec] = (errorTypes[ec] || 0) + 1;
+          if (!errorDetails[ec]) errorDetails[ec] = [];
+          errorDetails[ec].push({ workstation: wsName, detail: detail });
         } else {
           notAttended++;
         }
       });
 
-      tdrRenderResults(total, passed, failed, notAttended, errorTypes);
+      tdrRenderResults(total, passed, failed, notAttended, errorTypes, errorDetails);
     } catch(e) {
       toast("❌ Failed to read Excel file: " + (e.message || e), "t-err");
     }
   };
   reader.readAsArrayBuffer(file);
-  // reset so same file can be re-uploaded
-  input.value = "";
+  input.value = ""; // reset so same file can be re-uploaded
 }
 
-function tdrRenderResults(total, passed, failed, notAttended, errorTypes) {
-  // Update cards
+function tdrRenderResults(total, passed, failed, notAttended, errorTypes, errorDetails) {
+  errorDetails = errorDetails || {};
+
+  // ── Summary cards ────────────────────────────────────────────────────
   document.getElementById("tdrTotal").textContent    = total;
   document.getElementById("tdrPassed").textContent   = passed;
   document.getElementById("tdrFailed").textContent   = failed;
@@ -10705,53 +10710,94 @@ function tdrRenderResults(total, passed, failed, notAttended, errorTypes) {
 
   // ── Error types bar chart ────────────────────────────────────────────
   if (_tdrErrorChart) { _tdrErrorChart.destroy(); _tdrErrorChart = null; }
-  var ec = document.getElementById("tdrErrorCanvas");
-  var noErr = document.getElementById("tdrNoErrors");
+  var ecCanvas = document.getElementById("tdrErrorCanvas");
+  var noErr        = document.getElementById("tdrNoErrors");
   var errTableWrap = document.getElementById("tdrErrorTableWrap");
   var errTbody     = document.getElementById("tdrErrorTbody");
 
-  var errKeys  = Object.keys(errorTypes).sort(function(a,b){ return errorTypes[b]-errorTypes[a]; });
+  var errKeys   = Object.keys(errorTypes).sort(function(a,b){ return errorTypes[b]-errorTypes[a]; });
   var errCounts = errKeys.map(function(k){ return errorTypes[k]; });
+  var colors    = ["#dc2626","#f59e0b","#7c3aed","#0369a1","#059669","#d97706","#6d28d9","#0891b2"];
 
   if (!errKeys.length) {
-    if (ec)     ec.style.display   = "none";
-    if (noErr)  noErr.style.display = "block";
+    if (ecCanvas)     ecCanvas.style.display    = "none";
+    if (noErr)        noErr.style.display       = "block";
     if (errTableWrap) errTableWrap.style.display = "none";
-  } else {
-    if (ec)     ec.style.display    = "";
-    if (noErr)  noErr.style.display = "none";
-    if (errTableWrap) errTableWrap.style.display = "block";
-
-    var colors = ["#dc2626","#f59e0b","#7c3aed","#0369a1","#059669","#d97706","#6d28d9","#0891b2"];
-    _tdrErrorChart = new Chart(ec, {
-      type: "bar",
-      data: {
-        labels: errKeys,
-        datasets: [{ label: "Count", data: errCounts,
-          backgroundColor: errKeys.map(function(_,i){ return colors[i % colors.length]; }),
-          borderRadius: 6 }]
-      },
-      options: {
-        indexAxis: errKeys.length > 5 ? "y" : "x",
-        plugins: { legend: { display: false } },
-        scales: { x: { ticks: { font: { size: 10 } } }, y: { ticks: { font: { size: 10 } }, beginAtZero: true } },
-        responsive: true, maintainAspectRatio: false
-      }
-    });
-
-    // Error table
-    if (errTbody) {
-      errTbody.innerHTML = errKeys.map(function(k) {
-        var cnt = errorTypes[k];
-        var pct = failed > 0 ? Math.round(cnt / failed * 100) : 0;
-        return '<tr>'
-          + '<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-family:var(--mono);font-size:.82rem">' + k + '</td>'
-          + '<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:700;color:#dc2626">' + cnt + '</td>'
-          + '<td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center;color:var(--ink2)">' + pct + '%</td>'
-          + '</tr>';
-      }).join("");
-    }
+    return;
   }
+
+  if (ecCanvas)     ecCanvas.style.display    = "";
+  if (noErr)        noErr.style.display       = "none";
+  if (errTableWrap) errTableWrap.style.display = "block";
+
+  _tdrErrorChart = new Chart(ecCanvas, {
+    type: "bar",
+    data: {
+      labels: errKeys,
+      datasets: [{ label: "Count", data: errCounts,
+        backgroundColor: errKeys.map(function(_,i){ return colors[i % colors.length]; }),
+        borderRadius: 6 }]
+    },
+    options: {
+      indexAxis: errKeys.length > 5 ? "y" : "x",
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { font: { size: 10 } } },
+        y: { ticks: { font: { size: 10 } }, beginAtZero: true }
+      },
+      responsive: true, maintainAspectRatio: false
+    }
+  });
+
+  // ── Error table with expandable detail rows ──────────────────────────
+  if (!errTbody) return;
+  errTbody.innerHTML = errKeys.map(function(k, idx) {
+    var cnt     = errorTypes[k];
+    var pct     = failed > 0 ? Math.round(cnt / failed * 100) : 0;
+    var color   = colors[idx % colors.length];
+    var rows    = (errorDetails[k] || []);
+    var detailId = "tdrDetail_" + idx;
+
+    // Build inner detail rows (workstation + Col K description)
+    var detailHtml = rows.map(function(r) {
+      return '<tr style="background:#fafafa">'
+        + '<td style="padding:5px 12px 5px 32px;border-bottom:1px solid #f1f5f9;font-family:var(--mono);font-size:.78rem;color:var(--ink2)">'
+        +   '📟 ' + r.workstation
+        + '</td>'
+        + '<td colspan="2" style="padding:5px 12px;border-bottom:1px solid #f1f5f9;font-size:.78rem;color:var(--ink3)">'
+        +   (r.detail || '<span style="color:#cbd5e1;font-style:italic">No detail recorded</span>')
+        + '</td>'
+        + '</tr>';
+    }).join("");
+
+    return '<tr style="cursor:pointer;transition:background .15s" '
+        + 'onclick="tdrToggleDetail(\'' + detailId + '\', this)" '
+        + 'title="Click to see workstation details">'
+      + '<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;font-family:var(--mono);font-size:.82rem;display:flex;align-items:center;gap:8px">'
+      +   '<span id="tdrArrow_' + idx + '" style="font-size:.7rem;color:var(--ink3);transition:transform .2s;display:inline-block">▶</span>'
+      +   '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + color + ';flex-shrink:0"></span>'
+      +   k
+      + '</td>'
+      + '<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:700;color:#dc2626">' + cnt + '</td>'
+      + '<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:center;color:var(--ink2)">' + pct + '%</td>'
+      + '</tr>'
+      + '<tr id="' + detailId + '" style="display:none"><td colspan="3" style="padding:0">'
+      +   '<table style="width:100%;border-collapse:collapse">' + detailHtml + '</table>'
+      + '</td></tr>';
+  }).join("");
+}
+
+function tdrToggleDetail(detailId, headerRow) {
+  var detail = document.getElementById(detailId);
+  if (!detail) return;
+  var open = detail.style.display !== "none";
+  detail.style.display = open ? "none" : "table-row";
+  // rotate arrow
+  var idx = detailId.replace("tdrDetail_","");
+  var arrow = document.getElementById("tdrArrow_" + idx);
+  if (arrow) arrow.style.transform = open ? "" : "rotate(90deg)";
+  // highlight row
+  if (headerRow) headerRow.style.background = open ? "" : "#fff5f5";
 }
 // ══ END TDR REPORT ════════════════════════════════════════════════════
 
