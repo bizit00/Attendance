@@ -3087,7 +3087,7 @@ function chkBtn() {
   }
 
   var ci = document.getElementById("ciBtn");
-  if (ci) ci.disabled = !(id && name.trim() && site && emailOk && GPS.in && GPS.in.ok && otpVerified);
+  if (ci) ci.disabled = !(id && name.trim() && site && emailOk && GPS.in && GPS.in.ok && otpVerified && _onbValidated !== false);
   var co = document.getElementById("coBtn");
   if (co) co.disabled = !(GPS.out && GPS.out.ok);
 
@@ -3209,8 +3209,9 @@ function _updateEngIdAutoFillHint(msg) {
 
 // ── Onboarding pre-registration validation ──────────
 function _onbValidateRegistration() {
-  var empId  = getEngId("empId");
-  var email  = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+  var empId = getEngId("empId");
+  var email = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+  var name  = ((document.getElementById("empName") ||{}).value||"").trim();
   var statusEl = document.getElementById("onbValidationStatus");
   if (!statusEl) return;
 
@@ -3220,51 +3221,123 @@ function _onbValidateRegistration() {
     return;
   }
 
+  // Fast path: already registered in local binding cache — skip onboarding gate
+  var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(e){}
+  if (eb[email] && eb[email].empId === empId) {
+    statusEl.style.display = "none";
+    _onbValidated = true;
+    return;
+  }
+
   if (_onbValidateTimer) clearTimeout(_onbValidateTimer);
   _onbValidateTimer = setTimeout(function() {
-    if (!window.db) { _onbValidated = true; return; } // no Firebase = demo mode, allow
+    if (!window.db) { _onbValidated = true; return; } // demo mode — allow
 
-    db.collection("engineerOnboarding").doc(empId).get().then(function(snap) {
-      var elNow = document.getElementById("onbValidationStatus");
-      if (!elNow) return;
-      // Re-check the form hasn't changed while we waited
-      var empIdNow = getEngId("empId");
-      var emailNow = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
-      if (empIdNow !== empId || emailNow !== email) return;
+    // Helper: show a red block message
+    function showBlock(msg) {
+      var el = document.getElementById("onbValidationStatus");
+      if (!el) return;
+      el.style.background  = "#fef2f2";
+      el.style.borderColor = "#fca5a5";
+      el.style.color       = "#dc2626";
+      el.innerHTML = msg;
+      el.style.display = "block";
+      _onbValidated = false;
+      chkBtn();
+    }
 
-      if (!snap.exists) {
-        // No onboarding record — allow (existing engineer or demo)
-        elNow.style.display = "none";
-        _onbValidated = true;
-        chkBtn();
-        return;
-      }
-
-      var data = snap.data();
-      var recordedEmail = (data.email || "").trim().toLowerCase();
-
-      if (recordedEmail && recordedEmail !== email) {
-        // Email mismatch — BLOCK
-        elNow.style.background  = "#fef2f2";
-        elNow.style.borderColor = "#fca5a5";
-        elNow.style.color       = "#dc2626";
-        elNow.innerHTML = "⛔ <strong>Information mismatch.</strong> Please ensure your Engineer ID and Email match the details provided during onboarding. Contact your admin if unsure.";
-        elNow.style.display = "block";
-        _onbValidated = false;
-        chkBtn();
-        return;
-      }
-
-      // Match — show green confirmation
-      elNow.style.background  = "#f0fdf4";
-      elNow.style.borderColor = "#86efac";
-      elNow.style.color       = "#15803d";
-      elNow.innerHTML = "✅ Identity pre-verified against onboarding record. Proceed with email verification.";
-      elNow.style.display = "block";
+    // Helper: show green "all clear"
+    function showOk() {
+      var el = document.getElementById("onbValidationStatus");
+      if (!el) return;
+      el.style.background  = "#f0fdf4";
+      el.style.borderColor = "#86efac";
+      el.style.color       = "#15803d";
+      el.innerHTML = "✅ Identity verified against onboarding record. Proceed with email verification.";
+      el.style.display = "block";
       _onbValidated = true;
       chkBtn();
+    }
+
+    db.collection("engineerOnboarding").doc(empId).get().then(function(snap) {
+      // Stale-guard: re-read form values after the async call
+      var empIdNow = getEngId("empId");
+      var emailNow = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+      var nameNow  = ((document.getElementById("empName") ||{}).value||"").trim();
+      if (empIdNow !== empId || emailNow !== email) return; // form changed while waiting
+
+      if (!snap.exists) {
+        // No onboarding record for this ID.
+        // Before blocking: check Firestore emailBindings — the engineer may have registered
+        // before onboarding was introduced (pre-existing account).
+        db.collection("emailBindings").doc(email).get().then(function(bindSnap) {
+          var empIdNow2 = getEngId("empId");
+          var emailNow2 = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+          if (empIdNow2 !== empId || emailNow2 !== email) return;
+
+          if (bindSnap.exists && (bindSnap.data().empId||"") === empId) {
+            // Already registered — allow without onboarding check
+            var el = document.getElementById("onbValidationStatus");
+            if (el) el.style.display = "none";
+            _onbValidated = true;
+            chkBtn();
+          } else {
+            // Truly new + no onboarding record — block
+            showBlock("⛔ <strong>No onboarding record found for " + empId + ".</strong> "
+              + "Please double-check your Engineer ID. If this is your first registration, "
+              + "your admin must add you in the onboarding form before you can check in. "
+              + "Contact your admin if unsure.");
+          }
+        }).catch(function() {
+          // Can't reach Firestore — warn but allow through
+          var el = document.getElementById("onbValidationStatus");
+          if (el) {
+            el.style.background  = "#fffbeb";
+            el.style.borderColor = "#fde68a";
+            el.style.color       = "#92400e";
+            el.innerHTML = "⚠️ Could not verify your details (network issue). "
+              + "Please ensure your Engineer ID, name and email exactly match what your admin recorded.";
+            el.style.display = "block";
+          }
+          _onbValidated = true;
+          chkBtn();
+        });
+        return;
+      }
+
+      // Onboarding record found — validate name and email against it
+      var data     = snap.data();
+      var recEmail = (data.email || "").trim().toLowerCase();
+      var recName  = (data.name  || "").trim().toLowerCase();
+      var entName  = nameNow.toLowerCase();
+
+      if (recEmail && recEmail !== emailNow) {
+        showBlock("⛔ <strong>Email does not match the onboarding record for " + empId + ".</strong> "
+          + "Please use the email address your admin registered for you.");
+        return;
+      }
+
+      if (recName && entName && recName !== entName) {
+        showBlock("⛔ <strong>Full name does not match the onboarding record for " + empId + ".</strong> "
+          + "Please enter your name exactly as your admin recorded it.");
+        return;
+      }
+
+      // All checks passed
+      showOk();
     }).catch(function() {
-      _onbValidated = true; // if check fails, allow through
+      // Network error — fail open with amber warning
+      var el = document.getElementById("onbValidationStatus");
+      if (el) {
+        el.style.background  = "#fffbeb";
+        el.style.borderColor = "#fde68a";
+        el.style.color       = "#92400e";
+        el.innerHTML = "⚠️ Could not verify onboarding record (check your connection). "
+          + "Ensure your Engineer ID, name and email exactly match what your admin provided.";
+        el.style.display = "block";
+      }
+      _onbValidated = true;
+      chkBtn();
     });
   }, 700);
 }
