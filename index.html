@@ -152,6 +152,36 @@ input,select{font-family:var(--body);outline:none}
 .gps-net-note-icon{font-size:1rem;flex-shrink:0;line-height:1.4}
 .gps-net-note strong{color:#78350f}
 
+/* ── SPOT CHECK ── */
+.sc-banner{
+  background:#fffbeb;border:1px solid #fde68a;border-left:4px solid var(--orange);
+  border-radius:var(--r);padding:12px 16px;margin-bottom:10px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  font-size:.85rem;color:#92400e;
+}
+.sc-banner-msg{flex:1;line-height:1.5;min-width:180px}
+.sc-card-wrap{
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:24px 20px;
+  background:linear-gradient(145deg,#0d1117 0%,#1a2233 60%,#0d1117 100%);
+}
+.sc-inner-card{
+  background:#fff;border-radius:20px;padding:32px 28px;max-width:420px;width:100%;
+  box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center;
+}
+.sc-big-icon{font-size:3rem;margin-bottom:12px}
+.sc-card-title{font-size:1.2rem;font-weight:700;color:var(--ink);margin-bottom:6px}
+.sc-card-sub{font-size:.88rem;color:var(--ink3);line-height:1.6;margin-bottom:20px}
+.sc-timer{
+  font-family:var(--mono);font-size:1.6rem;font-weight:700;color:var(--orange);
+  background:#fff8e6;border-radius:10px;padding:10px 20px;margin-bottom:20px;
+  display:inline-block;letter-spacing:2px;
+}
+.sc-timer.urgent{color:var(--red);background:#fff0f0}
+.sc-log-table th,.sc-log-table td{font-size:.78rem;padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+.sc-log-table th{background:#f7f6f3;font-weight:700;color:var(--ink2)}
+.sc-log-table{width:100%;border-collapse:collapse}
+
 /* ── PILLS ── */
 .pill{display:inline-flex;align-items:center;gap:6px;border-radius:30px;padding:7px 14px;font-size:.82rem;font-weight:600;margin-top:10px;width:100%;justify-content:center}
 .pill-info{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
@@ -1239,6 +1269,30 @@ tr.on-leave-row td{background:#f0f9ff!important}
   </div>
 </div>
 
+<!-- ══ SPOT CHECK RESPONSE SCREEN ══════════════════ -->
+<div id="screen-spotcheck" class="screen" style="display:none">
+  <div class="sc-card-wrap">
+    <div class="sc-inner-card">
+      <div id="sc-big-icon" class="sc-big-icon">📍</div>
+      <div id="sc-card-title" class="sc-card-title">Location Verification</div>
+      <div id="sc-card-sub" class="sc-card-sub">Loading request…</div>
+      <div id="sc-timer" class="sc-timer" style="display:none">30:00</div>
+      <div id="sc-gps-wrap" style="display:none">
+        <div class="gps-net-note">
+          <span class="gps-net-note-icon">📱</span>
+          <div><strong>Use mobile data or personal hotspot</strong> — not shared WiFi.</div>
+        </div>
+        <button type="button" class="gps-btn" id="sc-gps-btn" onclick="doSpotCheckVerify()">
+          <span id="sc-gps-icon">🔍</span>
+          <span id="sc-gps-txt">Tap to Verify My Location</span>
+        </button>
+        <div id="sc-gps-status"></div>
+      </div>
+      <div id="sc-result" style="margin-top:16px;font-size:.9rem;line-height:1.6"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════════════════════════════════
      DASHBOARD
 ══════════════════════════════════════════ -->
@@ -1279,6 +1333,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     <!-- LIVE TAB -->
     <div id="dTab-live">
+      <div id="spotCheckRemindersWrap" style="margin-bottom:4px"></div>
       <div class="toolbar">
         <input type="text" id="fSearch" placeholder="Search name / ID…" oninput="renderTable()"/>
         <select id="fSite" onchange="renderTable()"><option value="">All Sites</option></select>
@@ -1301,7 +1356,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
             <thead><tr>
               <th>Engineer</th><th>Site</th><th>Status</th>
               <th>Check-In</th><th>Check-Out</th><th>Duration</th>
-              <th>GPS In</th><th>GPS Out</th><th>Device</th><th>Date</th>
+              <th>GPS In</th><th>GPS Out</th><th>Device</th><th>Date</th><th>Spot Check</th>
             </tr></thead>
             <tbody id="tblBody"></tbody>
           </table>
@@ -1687,6 +1742,9 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
       <!-- Historical suspicious flags (same device, different engineers) -->
       <div id="deviceFlagsWrap" style="margin-bottom:18px"></div>
+
+      <!-- Spot Check Log for today -->
+      <div id="spotCheckLogWrap" style="margin-bottom:18px"></div>
 
       <!-- All device bindings table -->
       <div class="tbl-wrap">
@@ -2139,6 +2197,19 @@ service cloud.firestore {
     match /buddyPunchAlerts/{doc} {
       allow create: if true;
       allow read, update: if request.auth != null;
+    }
+    // ── 6. Spot-check requests ───────────────────────
+    match /spotCheckRequests/{token} {
+      // Anyone with the token URL can read (engineer response page)
+      allow read: if true;
+      // Only authenticated admin can create a spot-check request
+      allow create: if request.auth != null;
+      // Engineer (unauthenticated) can write result fields only while token is still pending and not expired
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['status','responseAt','responseLat','responseLng','responseDist','responseAcc'])
+                    && resource.data.expiresAt > request.time.toMillis()
+                    && resource.data.status == 'pending'
+                    && request.resource.data.status in ['verified', 'failed', 'expired'];
     }
   }
 }</pre>
@@ -2718,7 +2789,7 @@ function showScreen(id) {
   var el = document.getElementById("screen-" + id);
   if (!el) return;
   // Screens that need flex layout
-  var flexScreens = ["landing","admin-login"];
+  var flexScreens = ["landing","admin-login","spotcheck"];
   el.classList.add("active");
   if (flexScreens.indexOf(id) >= 0) {
     el.classList.add("flex-screen");
@@ -3035,6 +3106,14 @@ function getEngId(inputId) {
 
 // Focus styling for the Eng prefix input wrapper
 document.addEventListener("DOMContentLoaded", function(){
+  // ── Spot-check deep link detection ──
+  var _scParam = new URLSearchParams(window.location.search).get('spotcheck');
+  if (_scParam) {
+    scCurrentToken = _scParam;
+    showScreen('spotcheck');
+    _waitForDbThenLoadSpotCheck(_scParam);
+  }
+
   ["engIdWrap","leaveEngIdWrap"].forEach(function(wrapId){
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
@@ -4006,6 +4085,280 @@ function _reportBuddyPunchAlert(empId, empName, myDevId, conflictRec) {
   }
 }
 
+// ── Spot-Check globals ──────────────────────────────
+var spotCheckCache      = {};  // attendanceId -> array of request docs for today
+var scCurrentToken      = null; // token being verified on the spot-check screen
+var scCurrentData       = null; // loaded spotCheckRequests doc
+var scTimerInterval     = null; // countdown interval handle
+var scUnsubscribe       = null; // Firestore listener unsub for spotCheckRequests
+var _scResultsWritten   = {};  // token -> true; prevents duplicate attendance writes
+
+// ── Token generator ────────────────────────────────
+function generateSpotCheckToken() {
+  var arr = new Uint8Array(24);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, function(b) {
+    return b.toString(16).padStart(2, '0');
+  }).join('');
+}
+
+// ── Create a spot-check request document in Firestore ──
+// callback(token) on success, callback(null) on failure
+function createSpotCheckRequest(attendanceId, empId, empName, empEmail, site, triggeredBy, callback) {
+  if (!fbOk || !db) { callback(null); return; }
+  var token = generateSpotCheckToken();
+  var now   = Date.now();
+  var siteData = WORK_SITES.find(function(s) { return s.name === site; }) || {};
+  var doc = {
+    token:          token,
+    attendanceId:   attendanceId,
+    empId:          empId,
+    empEmail:       empEmail,
+    empName:        empName,
+    site:           site,
+    siteLat:        siteData.lat  || 0,
+    siteLng:        siteData.lng  || 0,
+    siteRadius:     GEOFENCE_M,
+    triggeredBy:    triggeredBy,
+    triggeredAt:    now,
+    expiresAt:      now + 30 * 60 * 1000,
+    status:         'pending',
+    responseAt:     null,
+    responseLat:    null,
+    responseLng:    null,
+    responseDist:   null,
+    responseAcc:    null
+  };
+  db.collection('spotCheckRequests').doc(token).set(doc)
+    .then(function()  { callback(token); })
+    .catch(function(e){ console.error('[SpotCheck] Firestore write failed:', e); callback(null); });
+}
+
+// ── Wait for Firestore to be ready, then load the spot-check token ──
+function _waitForDbThenLoadSpotCheck(token, attempts) {
+  attempts = attempts || 0;
+  if (fbOk && db) { _loadSpotCheckToken(token); return; }
+  if (attempts >= 12) {
+    _showScScreen('error', '⚠️ Connection Error',
+      'Could not connect to the server. Please check your internet connection and try again.');
+    return;
+  }
+  setTimeout(function() { _waitForDbThenLoadSpotCheck(token, attempts + 1); }, 500);
+}
+
+function _loadSpotCheckToken(token) {
+  db.collection('spotCheckRequests').doc(token).get()
+    .then(function(snap) {
+      if (!snap.exists) {
+        _showScScreen('error', '❌ Invalid Link', 'This verification link is invalid or has already been used.');
+        return;
+      }
+      scCurrentData = snap.data();
+      var now = Date.now();
+      if (scCurrentData.status !== 'pending') {
+        if (scCurrentData.status === 'verified') {
+          _showScScreen('done-ok', '✅ Already Verified', 'This location was already confirmed. Thank you!');
+        } else {
+          _showScScreen('error', '⚠️ Link Expired or Used', 'This verification link has already been used or expired.');
+        }
+        return;
+      }
+      if (now >= scCurrentData.expiresAt) {
+        db.collection('spotCheckRequests').doc(token)
+          .update({ status: 'expired' })
+          .catch(function(){});
+        _showScScreen('error', '⏱ Link Expired',
+          'This verification link has expired. Contact your admin to send a new one.');
+        return;
+      }
+      // Valid pending token — show the GPS screen
+      document.getElementById('sc-card-title').textContent = '📍 Location Verification';
+      document.getElementById('sc-card-sub').textContent   =
+        'Hi ' + (scCurrentData.empName.split(' ')[0] || scCurrentData.empName) +
+        ', please confirm you are at ' + scCurrentData.site + ' right now.';
+      document.getElementById('sc-gps-wrap').style.display = 'block';
+      document.getElementById('sc-result').innerHTML = '';
+      document.getElementById('sc-big-icon').textContent = '📍';
+      var remaining = Math.floor((scCurrentData.expiresAt - now) / 1000);
+      _startScTimer(remaining);
+    })
+    .catch(function(e) {
+      console.error('[SpotCheck] load failed:', e);
+      _showScScreen('error', '⚠️ Error', 'Failed to load verification request. Please try again.');
+    });
+}
+
+function _showScScreen(type, title, msg) {
+  var iconEl  = document.getElementById('sc-big-icon');
+  var titleEl = document.getElementById('sc-card-title');
+  var subEl   = document.getElementById('sc-card-sub');
+  var timerEl = document.getElementById('sc-timer');
+  var gpsWrap = document.getElementById('sc-gps-wrap');
+  var resultEl= document.getElementById('sc-result');
+  if (timerEl)  timerEl.style.display  = 'none';
+  if (gpsWrap)  gpsWrap.style.display  = 'none';
+  if (resultEl) resultEl.innerHTML = '';
+  if (iconEl)   iconEl.textContent  = type === 'done-ok' ? '✅' : '⚠️';
+  if (titleEl)  titleEl.textContent = title;
+  if (subEl)    subEl.textContent   = msg;
+  if (scTimerInterval) { clearInterval(scTimerInterval); scTimerInterval = null; }
+}
+
+function _startScTimer(seconds) {
+  var timerEl = document.getElementById('sc-timer');
+  if (!timerEl) return;
+  timerEl.style.display = 'inline-block';
+  function updateTimer() {
+    if (seconds <= 0) {
+      clearInterval(scTimerInterval);
+      _showScScreen('error', 'Time\'s Up',
+        'The 30-minute window has passed. Your attendance has been flagged. Contact your admin.');
+      if (fbOk && db && scCurrentToken) {
+        db.collection('spotCheckRequests').doc(scCurrentToken)
+          .update({ status: 'expired' })
+          .catch(function(){});
+      }
+      return;
+    }
+    var m = Math.floor(seconds / 60);
+    var s = seconds % 60;
+    timerEl.textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+    timerEl.className = 'sc-timer' + (seconds <= 120 ? ' urgent' : '');
+    seconds--;
+  }
+  updateTimer();
+  scTimerInterval = setInterval(updateTimer, 1000);
+}
+
+// ── Engineer taps "Verify My Location" on spot-check screen ──
+function doSpotCheckVerify() {
+  if (!scCurrentData) return;
+  var btn     = document.getElementById('sc-gps-btn');
+  var iconEl  = document.getElementById('sc-gps-icon');
+  var txtEl   = document.getElementById('sc-gps-txt');
+  var statusEl= document.getElementById('sc-gps-status');
+  btn.disabled = true;
+  iconEl.textContent = '⏳';
+  txtEl.textContent  = 'Getting your location…';
+  statusEl.innerHTML = '';
+  if (!navigator.geolocation) {
+    iconEl.textContent = '❌'; txtEl.textContent = 'Geolocation not supported.';
+    btn.disabled = false; return;
+  }
+  var best = null;
+  var finished = false;
+  var goodEnough = 60;
+  var watchId = navigator.geolocation.watchPosition(
+    function(pos) {
+      if (!best || pos.coords.accuracy < best.coords.accuracy) best = pos;
+      if (pos.coords.accuracy > goodEnough) return;
+      if (finished) return; finished = true;
+      navigator.geolocation.clearWatch(watchId);
+      _finishSpotCheckGps(best, btn, iconEl, txtEl, statusEl);
+    },
+    function(err) {
+      if (finished) return; finished = true;
+      navigator.geolocation.clearWatch(watchId);
+      iconEl.textContent = '❌';
+      txtEl.textContent  = 'Location error: ' + (err.message || 'unknown');
+      btn.disabled = false;
+    },
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+  );
+  setTimeout(function() {
+    if (finished) return; finished = true;
+    navigator.geolocation.clearWatch(watchId);
+    if (best) {
+      _finishSpotCheckGps(best, btn, iconEl, txtEl, statusEl);
+    } else {
+      iconEl.textContent = '❌'; txtEl.textContent = 'Could not get GPS fix. Try outdoors.';
+      btn.disabled = false;
+    }
+  }, 15000);
+}
+
+function _finishSpotCheckGps(pos, btn, iconEl, txtEl, statusEl) {
+  var lat  = pos.coords.latitude;
+  var lng  = pos.coords.longitude;
+  var acc  = Math.round(pos.coords.accuracy);
+  var dist = haversine(lat, lng, scCurrentData.siteLat, scCurrentData.siteLng);
+  var ok   = dist <= GEOFENCE_M;
+  var status = ok ? 'verified' : 'failed';
+  iconEl.textContent = ok ? '✅' : '❌';
+  txtEl.textContent  = ok
+    ? 'Within range · ' + dist + 'm from ' + scCurrentData.site
+    : 'Out of range · ' + dist + 'm from ' + scCurrentData.site + ' (max ' + GEOFENCE_M + 'm)';
+  var resultEl = document.getElementById('sc-result');
+  if (resultEl) {
+    resultEl.innerHTML = ok
+      ? '<div class="pill pill-ok">✅ Location confirmed — you\'re all good!</div>'
+      : '<div class="pill pill-bad">❌ You appear to be outside ' + _esc(scCurrentData.site) + '. This has been flagged for admin review.</div>';
+  }
+  if (scTimerInterval) { clearInterval(scTimerInterval); scTimerInterval = null; }
+  document.getElementById('sc-timer').style.display = 'none';
+  btn.style.display = 'none';
+  if (fbOk && db && scCurrentToken) {
+    var now = Date.now();
+    db.collection('spotCheckRequests').doc(scCurrentToken).update({
+      status:      status,
+      responseAt:  now,
+      responseLat: lat,
+      responseLng: lng,
+      responseDist:dist,
+      responseAcc: acc
+    }).catch(function(e){ console.warn('[SpotCheck] result save failed:', e); });
+  }
+}
+
+// ── Build the worst-result badge HTML from an array of spot-check docs ──
+function getSpotCheckBadge(requests) {
+  if (!requests || !requests.length) return '<span style="color:var(--ink3);font-size:.75rem">—</span>';
+  var hasVerified = false, hasFailed = false, hasExpired = false, hasPending = false;
+  requests.forEach(function(r) {
+    if (r.status === 'verified') hasVerified = true;
+    if (r.status === 'failed')   hasFailed   = true;
+    if (r.status === 'expired')  hasExpired  = true;
+    if (r.status === 'pending')  hasPending  = true;
+  });
+  if (hasFailed)   return '<span style="color:#b91c1c;font-size:.78rem;font-weight:600">❌ Wrong Location</span>';
+  if (hasExpired)  return '<span style="color:#d97706;font-size:.78rem;font-weight:600">⚠️ No Response</span>';
+  if (hasPending)  return '<span style="color:#d97706;font-size:.78rem;font-weight:600">⏳ Pending</span>';
+  if (hasVerified) {
+    var latest = requests.filter(function(r){ return r.status==='verified'; })
+                         .sort(function(a,b){ return b.responseAt-a.responseAt; })[0];
+    var t = latest.responseAt ? new Date(latest.responseAt).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'}) : '';
+    return '<span style="color:#15803d;font-size:.78rem;font-weight:600">✅ Verified ' + t + '</span>';
+  }
+  return '<span style="color:var(--ink3);font-size:.75rem">—</span>';
+}
+
+// ── Admin triggers a spot-check (manually or via auto-reminder) ──
+function triggerSpotCheck(attendanceId, empId, empName, empEmail, site, triggeredBy) {
+  if (!fbOk || !db) { toast('Firestore not available', 't-err'); return; }
+  triggeredBy = triggeredBy || 'admin';
+  createSpotCheckRequest(attendanceId, empId, empName, empEmail, site, triggeredBy, function(token) {
+    if (!token) { toast('❌ Could not create spot-check request', 't-err'); return; }
+    db.collection('attendance').doc(attendanceId)
+      .update({ autoSpotCheckSent: true })
+      .catch(function(e){ console.warn('[SpotCheck] flag update failed:', e); });
+    var localRec = allRecs.find(function(r){ return r.id === attendanceId; });
+    if (localRec) localRec.autoSpotCheckSent = true;
+    checkSpotCheckReminders();
+    var link    = window.location.origin + window.location.pathname + '?spotcheck=' + token;
+    var subject = '⚠️ Location Verification Required — Please Respond Within 30 Minutes';
+    var body    = 'Dear ' + empName + ',\n\n'
+      + 'Your attendance is being verified for today\'s shift at ' + site + '.\n\n'
+      + 'Please tap the link below to confirm your location:\n\n'
+      + link + '\n\n'
+      + 'You have 30 minutes to respond. After that, the link expires and\n'
+      + 'your attendance may be flagged for admin review.\n\n'
+      + 'If you believe this is an error, please contact your admin.\n\n'
+      + '— Attendance System';
+    showEmailFallback(empEmail, subject, body);
+    toast('📧 Spot-check email ready — send from your inbox', 't-ok');
+  });
+}
+
 // ── Check-in ───────────────────────────────────────
 function doCheckin() {
   // Build full Engineer ID with "Eng" prefix
@@ -4108,7 +4461,9 @@ function _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn) {
         deviceId: devId,
         hwId: getHwId(),
         emailConflict: false,
-        _source: "web", _userAgent: navigator.userAgent.slice(0, 100)
+        _source: "web", _userAgent: navigator.userAgent.slice(0, 100),
+        autoSpotCheckReminderAfter: Math.floor(Math.random() * (18000000 - 7200000 + 1)) + 7200000,
+        autoSpotCheckSent: false
       };
 
       function onSaved(docId) {
@@ -4317,6 +4672,7 @@ function initDash() {
         allRecs = snap.docs.map(function(d){ return Object.assign({id:d.id},d.data()); });
         renderAll();
       });
+    initSpotCheckListener();
     // Pre-load leave pending count for badge
     db.collection("leaveApplications").where("status","==","pending")
       .onSnapshot(function(snap){
@@ -4335,7 +4691,49 @@ function initDash() {
   }
 }
 
-function renderAll() { renderTable(); renderFeed(); updateStats(); updateDeviceBadge(); renderAnalytics(); }
+function renderAll() { renderTable(); renderFeed(); updateStats(); updateDeviceBadge(); renderAnalytics(); checkSpotCheckReminders(); }
+
+function initSpotCheckListener() {
+  if (!fbOk || !db) return;
+  if (scUnsubscribe) scUnsubscribe();
+  var todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  scUnsubscribe = db.collection('spotCheckRequests')
+    .where('triggeredAt', '>=', todayStart.getTime())
+    .onSnapshot(function(snap) {
+      var newCache = {};
+      snap.docs.forEach(function(d) {
+        var data = d.data();
+        var aid  = data.attendanceId;
+        if (!aid) return;
+        if (!newCache[aid]) newCache[aid] = [];
+        newCache[aid].push(data);
+        // Write result summary to attendance doc the first time a terminal state is observed.
+        // Runs under admin auth — no unauthenticated write rule needed.
+        if (['verified','failed','expired'].indexOf(data.status) !== -1
+            && data.token && !_scResultsWritten[data.token]) {
+          _scResultsWritten[data.token] = true;
+          db.collection('attendance').doc(aid).update({
+            spotCheckResults: firebase.firestore.FieldValue.arrayUnion({
+              token:        data.token,
+              triggeredBy:  data.triggeredBy || 'admin',
+              status:       data.status,
+              responseAt:   data.responseAt   || null,
+              responseDist: data.responseDist || null
+            })
+          }).catch(function(e){ console.warn('[SpotCheck] attendance update failed:', e); });
+        }
+      });
+      spotCheckCache = newCache;
+      renderTable();
+      renderSpotCheckLog();
+    }, function(e) { console.warn('[SpotCheck] listener error:', e); });
+}
+
+setInterval(function() {
+  if (document.getElementById('dTab-live') && document.getElementById('dTab-live').style.display !== 'none') {
+    checkSpotCheckReminders();
+  }
+}, 120000);
 
 function updateDeviceBadge() {
   // Quick pass to see if any suspicious devices exist — updates the tab badge without full render.
@@ -4374,6 +4772,100 @@ function filtered() {
   });
 }
 
+function checkSpotCheckReminders() {
+  var wrap = document.getElementById('spotCheckRemindersWrap');
+  if (!wrap) return;
+  var now   = Date.now();
+  var today = new Date().toLocaleDateString('en-SG');
+  var due   = allRecs.filter(function(r) {
+    return r.status === 'in'
+      && r.checkinDate === today
+      && !r.autoSpotCheckSent
+      && r.autoSpotCheckReminderAfter
+      && (r.checkinTimestamp + r.autoSpotCheckReminderAfter) <= now;
+  });
+  if (!due.length) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = due.map(function(r) {
+    var elapsed = Math.floor((now - r.checkinTimestamp) / 3600000);
+    var mins    = Math.floor(((now - r.checkinTimestamp) % 3600000) / 60000);
+    var empNameEsc  = _esc(r.empName||'').replace(/'/g, "\\'");
+    var empEmailEsc = _esc(r.empEmail||'').replace(/'/g, "\\'");
+    var siteEsc     = _esc(r.site||'').replace(/'/g, "\\'");
+    var idEsc       = _esc(r.id||'').replace(/'/g, "\\'");
+    var empIdEsc    = _esc(r.empId||'').replace(/'/g, "\\'");
+    return '<div class="sc-banner">'
+      + '<div class="sc-banner-msg">⏰ <strong>' + _esc(r.empName||r.empId) + '</strong> has been on-site '
+      + elapsed + 'h ' + mins + 'm with no spot-check.</div>'
+      + '<button type="button" class="tb-btn tb-pri" style="font-size:.8rem;white-space:nowrap" '
+      + 'onclick="triggerSpotCheck(\'' + idEsc + '\',\'' + empIdEsc + '\',\''
+      + empNameEsc + '\',\'' + empEmailEsc + '\',\'' + siteEsc + '\',\'auto\')">'
+      + '📍 Send Spot-Check</button>'
+      + '</div>';
+  }).join('');
+}
+
+function renderSpotCheckLog() {
+  var wrap = document.getElementById('spotCheckLogWrap');
+  if (!wrap) return;
+  var all = [];
+  Object.keys(spotCheckCache).forEach(function(aid) {
+    (spotCheckCache[aid] || []).forEach(function(req) { all.push(req); });
+  });
+  if (!all.length) { wrap.innerHTML = ''; return; }
+  all.sort(function(a,b){ return b.triggeredAt - a.triggeredAt; });
+  var rows = all.map(function(req) {
+    var sentTime = new Date(req.triggeredAt).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'});
+    var respTime = req.responseAt
+      ? new Date(req.responseAt).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'})
+      : '—';
+    var statusHtml = {
+      pending:  '<span style="color:#d97706;font-weight:600">⏳ Pending</span>',
+      verified: '<span style="color:#15803d;font-weight:600">✅ Verified</span>',
+      failed:   '<span style="color:#b91c1c;font-weight:600">❌ Wrong Location</span>',
+      expired:  '<span style="color:#d97706;font-weight:600">⚠️ No Response</span>'
+    }[req.status] || _esc(req.status);
+    var distHtml = req.responseDist != null ? Number(req.responseDist).toFixed(1) + 'm' : '—';
+    var byHtml   = req.triggeredBy === 'auto'
+      ? '<span class="bdg" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:.7rem">Auto</span>'
+      : '<span class="bdg" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.7rem">Admin</span>';
+    return '<tr>'
+      + '<td>' + _esc(req.empName||'—') + ' <span style="font-size:.72rem;color:var(--ink3)">(' + _esc(req.empId||'') + ')</span></td>'
+      + '<td style="font-size:.78rem">' + _esc(req.site||'—') + '</td>'
+      + '<td>' + byHtml + '</td>'
+      + '<td style="font-family:var(--mono);font-size:.75rem">' + sentTime + '</td>'
+      + '<td>' + statusHtml + '</td>'
+      + '<td style="font-size:.75rem;color:var(--ink3)">' + respTime + '</td>'
+      + '<td style="font-size:.75rem">' + distHtml + '</td>'
+      + '</tr>';
+  }).join('');
+  wrap.innerHTML = '<div class="tbl-wrap" style="margin-bottom:0">'
+    + '<div class="tbl-hdr"><span class="tbl-hdr-t">📍 Spot Check Log — Today</span>'
+    + '<span class="tbl-count">' + all.length + ' request' + (all.length!==1?'s':'') + '</span></div>'
+    + '<div style="overflow-x:auto"><table class="sc-log-table"><thead><tr>'
+    + '<th>Engineer</th><th>Site</th><th>Triggered By</th>'
+    + '<th>Sent At</th><th>Status</th><th>Response Time</th><th>Distance</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+function _buildSpotCheckCell(r) {
+  var aid      = r.id;
+  var requests = spotCheckCache[aid] || [];
+  var badge    = getSpotCheckBadge(requests);
+  if (r.status === 'in' && aid) {
+    var empNameEsc  = _esc(r.empName||'').replace(/'/g, "\\'");
+    var empEmailEsc = _esc(r.empEmail||'').replace(/'/g, "\\'");
+    var siteEsc     = _esc(r.site||'').replace(/'/g, "\\'");
+    var aidEsc      = _esc(aid||'').replace(/'/g, "\\'");
+    var empIdEsc    = _esc(r.empId||'').replace(/'/g, "\\'");
+    var btn = '<button type="button" class="tb-btn" style="font-size:.72rem;padding:4px 9px;margin-right:4px" '
+            + 'onclick="triggerSpotCheck(\''+ aidEsc +'\',\''+ empIdEsc +'\',\''
+            + empNameEsc +'\',\''+ empEmailEsc +'\',\''+ siteEsc +'\',\'admin\')">'
+            + '📍 Spot Check</button>';
+    return btn + (requests.length ? badge : '');
+  }
+  return requests.length ? badge : '<span style="color:var(--ink3);font-size:.75rem">—</span>';
+}
+
 function renderTable() {
   var rows = filtered();
   var body = document.getElementById("tblBody");
@@ -4409,6 +4901,7 @@ function renderTable() {
       +'<td>'+mapOut+'</td>'
       +'<td>'+devCell+'</td>'
       +'<td style="font-size:.78rem;color:var(--ink3)">'+(r.checkinDate||"—")+'</td>'
+      +'<td style="white-space:nowrap">' + _buildSpotCheckCell(r) + '</td>'
       +'</tr>';
   }).join("");
 }
@@ -4539,6 +5032,7 @@ function dTab(id, el) {
     if (!leaveRecs.length && db) { loadLeaves(); }
     renderCalendar();
   }
+  if (id === 'device') renderSpotCheckLog();
 }
 
 // ── Team tab sub-navigation ────────────────────────────────────────────
