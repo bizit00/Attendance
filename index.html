@@ -1833,7 +1833,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <!-- Toolbar -->
       <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:18px">
         <div style="font-weight:700;font-size:1rem;color:var(--ink);flex:1">🖥️ TDR Report</div>
-        <button class="tb-btn tb-out" onclick="tdrOdConnectShow()" id="tdrOdConnectBtn" style="display:inline-flex;align-items:center;gap:6px">🔗 Connect OneDrive Folder</button>
+        <button class="tb-btn tb-out" onclick="tdrOdConnectShow()" id="tdrOdConnectBtn" style="display:inline-flex;align-items:center;gap:6px">🔗 Connect OneDrive Files</button>
         <label for="tdrFileInput" class="tb-btn tb-pri" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">📂 Add Site Report</label>
         <input type="file" id="tdrFileInput" accept=".xlsx,.xls" multiple style="display:none" onchange="tdrLoadFiles(this)"/>
         <button class="tb-btn tb-out" onclick="tdrClearAll()" id="tdrClearBtn" style="display:none">🗑 Clear All</button>
@@ -1867,7 +1867,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div id="tdrEmpty" class="empty">
         <div class="empty-icon">📊</div>
         <div class="empty-t">No TDR files uploaded yet</div>
-        <div>Click "📂 Add Site Report" to load one or more TDR Excel files <strong>or</strong> "🔗 Connect OneDrive Folder" to auto-sync from a shared folder.<br>Each file = one site. Reads <strong>Col B</strong> (Workstation), <strong>Col H</strong> (Status), <strong>Col J</strong> (Error Code), <strong>Col K</strong> (Details).</div>
+        <div>Click "📂 Add Site Report" to load one or more TDR Excel files <strong>or</strong> "🔗 Connect OneDrive Files" to auto-sync from share links.<br>Each file = one site. Reads <strong>Col B</strong> (Workstation), <strong>Col H</strong> (Status), <strong>Col J</strong> (Error Code), <strong>Col K</strong> (Details).</div>
       </div>
 
       <!-- Comparison overview (shown when ≥2 sites) -->
@@ -1883,36 +1883,36 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     <!-- v6.8 — Connect OneDrive Folder modal -->
     <div id="tdrOdModal" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.7);z-index:8600;align-items:center;justify-content:center" onclick="if(event.target===this)tdrOdConnectHide()">
-      <div style="background:#fff;border-radius:16px;padding:24px 26px;max-width:520px;width:94%;box-shadow:0 8px 40px rgba(0,0,0,.22)">
+      <div style="background:#fff;border-radius:16px;padding:24px 26px;max-width:600px;width:94%;box-shadow:0 8px 40px rgba(0,0,0,.22)">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
           <div style="width:38px;height:38px;border-radius:10px;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:1.25rem">☁️</div>
           <div>
-            <div style="font-size:1rem;font-weight:700;color:var(--ink)">Connect OneDrive Folder</div>
-            <div style="font-size:.78rem;color:var(--ink3)">Auto-sync TDR files from a shared OneDrive folder</div>
+            <div style="font-size:1rem;font-weight:700;color:var(--ink)">Connect OneDrive Files</div>
+            <div style="font-size:.78rem;color:var(--ink3)">Paste a share link for each TDR Excel file (one per line)</div>
           </div>
           <button onclick="tdrOdConnectHide()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--ink3);line-height:1">✕</button>
         </div>
 
         <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:.78rem;color:#92400e;line-height:1.55">
-          <b>Setup steps (one-time):</b><br>
-          1. In OneDrive, right-click the TDR folder → <b>Share</b><br>
+          <b>Setup steps (one-time per file):</b><br>
+          1. In OneDrive, right-click the TDR Excel file → <b>Share</b><br>
           2. Set permission to <b>"Anyone with the link can view"</b><br>
-          3. Click <b>Copy link</b> and paste it below
+          3. Click <b>Copy link</b> and paste below (one link per line)
         </div>
 
-        <label style="display:block;font-size:.82rem;font-weight:600;color:var(--ink2);margin-bottom:4px">OneDrive Folder Share Link</label>
-        <input id="tdrOdLinkInput" type="url" placeholder="https://...sharepoint.com/:f:/g/personal/..."
-          style="width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:8px;padding:9px 12px;font-size:.85rem;color:var(--ink);margin-bottom:6px;outline:none"/>
+        <label style="display:block;font-size:.82rem;font-weight:600;color:var(--ink2);margin-bottom:4px">OneDrive File Share Links (one per line)</label>
+        <textarea id="tdrOdLinkInput" rows="7" placeholder="https://1drv.ms/x/c/...&#10;https://1drv.ms/x/c/...&#10;https://...sharepoint.com/:x:/g/personal/..."
+          style="width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:8px;padding:9px 12px;font-size:.82rem;color:var(--ink);margin-bottom:6px;outline:none;font-family:'SF Mono','Menlo','Consolas',monospace;resize:vertical"></textarea>
 
-        <div id="tdrOdLinkError" style="font-size:.78rem;color:#dc2626;min-height:18px;margin-bottom:10px"></div>
+        <div id="tdrOdLinkError" style="font-size:.78rem;color:#dc2626;min-height:18px;margin-bottom:10px;white-space:pre-line"></div>
 
         <div style="display:flex;gap:10px;justify-content:flex-end">
           <button onclick="tdrOdConnectHide()" style="background:#f1f5f9;color:var(--ink2);border:none;border-radius:8px;padding:9px 18px;font-size:.87rem;font-weight:600;cursor:pointer">Cancel</button>
-          <button id="tdrOdConnectGoBtn" onclick="tdrOdConnectGo()" style="background:#0ea5e9;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:.87rem;font-weight:700;cursor:pointer">🔗 Connect</button>
+          <button id="tdrOdConnectGoBtn" onclick="tdrOdConnectGo()" style="background:#0ea5e9;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-size:.87rem;font-weight:700;cursor:pointer">🔗 Connect &amp; Test</button>
         </div>
       </div>
     </div>
-    <!-- END Connect OneDrive Folder modal -->
+    <!-- END Connect OneDrive Files modal -->
 
     <!-- Accounts content — hidden here, moved into teamPane-accounts by teamSubTab() -->
     <div id="_accContentWrap" style="display:none">
@@ -11738,114 +11738,125 @@ function _esc(str) {
   return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-// ══ v6.8 — TDR ONEDRIVE FOLDER AUTO-SYNC ══════════════════════════════
-// Uses Microsoft's anonymous Shares API:
-//   https://api.onedrive.com/v1.0/shares/u!{base64url}/root/children
-// No login token required. Share link must be "Anyone with the link can view".
-// Folder URL is mirrored to Firestore (appConfig/tdrOneDrive) AND localStorage
-// so any admin on any device auto-picks it up.
+// ══ v6.9 — TDR ONEDRIVE INDIVIDUAL FILE LINKS ══════════════════════════
+// Per-file share links (not folder). Each link is rewritten to a direct
+// download URL using the ?download=1 trick, which works across both
+// 1drv.ms short links and SharePoint long links. Direct download routes
+// to a CDN that sends CORS headers, so browser fetch() succeeds.
 var _tdrOd = {
-  url:         null,
-  intervalMs:  300000,   // default 5 min
+  urls:        [],       // array of OneDrive share links (one per file)
+  intervalMs:  300000,
   timer:       null,
-  fileMap:     {},       // itemId -> lastModified — skip unchanged files on refresh
+  fileMeta:    {},       // url -> { fileName, lastSyncTs, ok }
   lastSyncTs:  0,
   syncing:     false
 };
 
-function tdrOdEncodeShareUrl(url) {
-  // Microsoft's encoding: "u!" + base64url(url) with no padding
-  var b64 = btoa(unescape(encodeURIComponent(url)))
-    .replace(/=+$/,"").replace(/\//g,"_").replace(/\+/g,"-");
-  return "u!" + b64;
+// Convert any OneDrive share URL to its direct-download form.
+//  - 1drv.ms/x/... and onedrive.live.com/...        → append ?download=1
+//  - sharepoint.com/:x:/g/personal/...              → replace :x: with download URL
+function tdrOdToDirectUrl(url) {
+  url = (url || "").trim();
+  if (!url) return "";
+  // SharePoint personal/business: change segment ":x:" / ":b:" → direct download
+  // Easiest universal trick is just appending ?download=1
+  if (url.indexOf("?") >= 0) {
+    if (/[?&]download=1\b/.test(url)) return url;
+    return url + "&download=1";
+  }
+  return url + "?download=1";
 }
 
 function tdrOdConnectShow() {
   var m = document.getElementById("tdrOdModal");
   m.style.display = "flex";
-  document.getElementById("tdrOdLinkInput").value = _tdrOd.url || "";
+  document.getElementById("tdrOdLinkInput").value = (_tdrOd.urls || []).join("\n");
   document.getElementById("tdrOdLinkError").textContent = "";
 }
-function tdrOdConnectHide() {
-  document.getElementById("tdrOdModal").style.display = "none";
-}
+function tdrOdConnectHide() { document.getElementById("tdrOdModal").style.display = "none"; }
 
 function tdrOdConnectGo() {
-  var input = document.getElementById("tdrOdLinkInput");
-  var err   = document.getElementById("tdrOdLinkError");
-  var url   = (input.value || "").trim();
+  var ta  = document.getElementById("tdrOdLinkInput");
+  var err = document.getElementById("tdrOdLinkError");
   err.textContent = "";
-  if (!url || !/^https?:\/\//i.test(url)) { err.textContent = "Please paste a valid OneDrive share URL."; return; }
+
+  var raw   = (ta.value || "").split(/\r?\n/);
+  var urls  = [];
+  raw.forEach(function(line) {
+    var u = line.trim();
+    if (u && /^https?:\/\//i.test(u)) urls.push(u);
+  });
+  if (!urls.length) { err.textContent = "Please paste at least one OneDrive file share URL."; return; }
 
   var goBtn = document.getElementById("tdrOdConnectGoBtn");
   goBtn.disabled = true; goBtn.textContent = "Testing…";
 
-  // Test the link by attempting to list children
-  tdrOdListChildren(url).then(function(items) {
-    if (!items || !items.length) {
-      err.textContent = "Folder is empty or no .xlsx files found.";
-      goBtn.disabled = false; goBtn.textContent = "🔗 Connect"; return;
+  // Try downloading each link once (HEAD-style — we just need to know they're reachable)
+  var ok = [], fails = [];
+  var p = Promise.resolve();
+  urls.forEach(function(u, i) {
+    p = p.then(function() {
+      return tdrOdFetchAsBuffer(u).then(function() { ok.push(u); })
+        .catch(function(e){ fails.push((i+1)+". "+(e && e.message || e)); });
+    });
+  });
+  p.then(function() {
+    if (!ok.length) {
+      err.textContent = "❌ None of the links could be downloaded:\n" + fails.join("\n") +
+        "\n\nMake sure each link is set to 'Anyone with the link can view'.";
+      goBtn.disabled = false; goBtn.textContent = "🔗 Connect & Test"; return;
     }
-    _tdrOd.url = url;
-    _tdrOd.fileMap = {};
+    _tdrOd.urls = ok;
+    _tdrOd.fileMeta = {};
     _tdrOd.lastSyncTs = 0;
     tdrOdSaveConfig();
     tdrOdConnectHide();
     tdrOdUpdateUI();
-    toast("✅ OneDrive folder connected — " + items.length + " file(s) found.", "t-ok");
+    var msg = "✅ " + ok.length + " file(s) connected." + (fails.length ? " " + fails.length + " failed." : "");
+    toast(msg, fails.length ? "t-warn" : "t-ok");
     tdrOdRefreshNow();
-  }).catch(function(e) {
-    var msg = (e && e.message) || String(e);
-    err.textContent = "❌ " + msg;
-    goBtn.disabled = false; goBtn.textContent = "🔗 Connect";
   });
 }
 
 function tdrOdDisconnect() {
-  if (!confirm("Disconnect OneDrive folder? Loaded reports will remain, but auto-sync will stop.")) return;
-  _tdrOd.url = null;
-  _tdrOd.fileMap = {};
+  if (!confirm("Disconnect all OneDrive file links? Loaded reports will remain, but auto-sync will stop.")) return;
+  _tdrOd.urls = [];
+  _tdrOd.fileMeta = {};
   _tdrOd.lastSyncTs = 0;
   tdrOdStopTimer();
   tdrOdSaveConfig();
   tdrOdUpdateUI();
-  toast("OneDrive folder disconnected.", "t-warn");
+  toast("OneDrive disconnected.", "t-warn");
 }
 
-// List folder children via anonymous Shares API
-function tdrOdListChildren(shareUrl) {
-  var encoded = tdrOdEncodeShareUrl(shareUrl);
-  var api = "https://api.onedrive.com/v1.0/shares/" + encoded + "/root/children?$select=id,name,size,lastModifiedDateTime,@content.downloadUrl,file";
-  return fetch(api).then(function(r) {
-    if (r.status === 404) throw new Error("Folder not found — check the share link.");
-    if (r.status === 403) throw new Error("Access denied — link must be 'Anyone with the link can view'.");
-    if (!r.ok) throw new Error("OneDrive error " + r.status);
-    return r.json();
-  }).then(function(data) {
-    var items = (data.value || []).filter(function(it) {
-      return it.file && /\.(xlsx|xls)$/i.test(it.name);
-    });
-    return items;
-  });
-}
-
-// Download a single shared file as ArrayBuffer
-function tdrOdDownloadItem(item) {
-  var dl = item["@content.downloadUrl"] || item["@microsoft.graph.downloadUrl"];
-  if (!dl) return Promise.reject(new Error("No download URL for " + item.name));
-  return fetch(dl).then(function(r) {
-    if (!r.ok) throw new Error("Download failed for " + item.name + " (" + r.status + ")");
+// Fetch a OneDrive share URL as ArrayBuffer using the ?download=1 trick
+function tdrOdFetchAsBuffer(shareUrl) {
+  var directUrl = tdrOdToDirectUrl(shareUrl);
+  return fetch(directUrl, { redirect: "follow" }).then(function(r) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
     return r.arrayBuffer();
   });
 }
 
-// Parse an ArrayBuffer using the same logic as tdrParseFile()
+// Pick a friendly file name from the share URL (best-effort)
+function tdrOdGuessFileName(url) {
+  try {
+    var u = new URL(url);
+    // 1drv.ms short links don't expose filename, use last path segment fallback
+    var segs = u.pathname.split("/").filter(Boolean);
+    var last = segs[segs.length - 1] || ("file_" + Math.abs(hashCode(url)).toString(36));
+    // Strip query/fragment from name
+    return last.replace(/[^A-Za-z0-9_.\-]/g, "_").slice(0, 60);
+  } catch(e) { return "file_" + Math.abs(hashCode(url)).toString(36); }
+}
+function hashCode(s) { var h = 0; for (var i=0; i<s.length; i++) h = ((h<<5)-h) + s.charCodeAt(i) | 0; return h; }
+
+// Parse ArrayBuffer with same logic as tdrParseFile()
 function tdrOdParseBuffer(buf) {
   var wb = XLSX.read(new Uint8Array(buf), { type: "array" });
   var sheetName = wb.SheetNames[0];
   wb.SheetNames.forEach(function(n) { if (/tdr|status/i.test(n)) sheetName = n; });
   var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "" });
-
   var startRow = 1;
   for (var i = 0; i < Math.min(rows.length, 5); i++) {
     var cellB = String(rows[i][1] || "").trim();
@@ -11872,61 +11883,61 @@ function tdrOdParseBuffer(buf) {
            errorTypes:errorTypes, errorDetails:errorDetails };
 }
 
-// Pull everything from the connected folder
 function tdrOdRefreshNow() {
-  if (!_tdrOd.url) return Promise.resolve();
+  if (!_tdrOd.urls || !_tdrOd.urls.length) return Promise.resolve();
   if (_tdrOd.syncing) return Promise.resolve();
   _tdrOd.syncing = true;
   tdrOdUpdateUI("syncing");
 
-  return tdrOdListChildren(_tdrOd.url).then(function(items) {
-    var seenIds = {};
-    var changed = 0, added = 0, total = items.length;
+  var ok = 0, fail = 0;
+  var p = Promise.resolve();
 
-    // Process each file sequentially to avoid hammering the API
-    var chain = Promise.resolve();
-    items.forEach(function(item) {
-      seenIds[item.id] = true;
-      var prev = _tdrOd.fileMap[item.id];
-      // Skip if file hasn't been modified since last sync AND already loaded
-      if (prev && prev === item.lastModifiedDateTime) return;
+  _tdrOd.urls.forEach(function(shareUrl) {
+    p = p.then(function() {
+      return tdrOdFetchAsBuffer(shareUrl).then(function(buf) {
+        try {
+          var data = tdrOdParseBuffer(buf);
+          // Use the previously remembered filename or guess one
+          var existing = _tdrOd.fileMeta[shareUrl];
+          var fileName = (existing && existing.fileName) || tdrOdGuessFileName(shareUrl);
+          if (!/\.(xlsx|xls)$/i.test(fileName)) fileName = fileName + ".xlsx";
+          var siteName = fileName.replace(/\.[^.]+$/, "");
 
-      chain = chain.then(function() {
-        return tdrOdDownloadItem(item).then(function(buf) {
-          try {
-            var data = tdrOdParseBuffer(buf);
-            var siteName = item.name.replace(/\.[^.]+$/, "");
-            var existingIdx = -1;
-            for (var i=0; i<_tdrSites.length; i++) {
-              if (_tdrSites[i].fileName === item.name) { existingIdx = i; break; }
-            }
-            if (existingIdx >= 0) {
-              tdrRemoveSite(existingIdx);
-              tdrAddSite(siteName, item.name, data);
-              changed++;
-            } else {
-              tdrAddSite(siteName, item.name, data);
-              added++;
-            }
-            _tdrOd.fileMap[item.id] = item.lastModifiedDateTime;
-          } catch(e) {
-            console.warn("[TDR-OD] parse failed:", item.name, e);
+          // Replace existing site for this URL/fileName, else add
+          var existingIdx = -1;
+          for (var i=0; i<_tdrSites.length; i++) {
+            if (_tdrSites[i].fileName === fileName) { existingIdx = i; break; }
           }
-        }).catch(function(e){ console.warn("[TDR-OD] download failed:", item.name, e); });
+          if (existingIdx >= 0) {
+            tdrRemoveSite(existingIdx);
+            tdrAddSite(siteName, fileName, data);
+          } else {
+            tdrAddSite(siteName, fileName, data);
+          }
+          _tdrOd.fileMeta[shareUrl] = { fileName: fileName, lastSyncTs: Date.now(), ok: true };
+          ok++;
+        } catch(e) {
+          console.warn("[TDR-OD] parse failed for", shareUrl, e);
+          _tdrOd.fileMeta[shareUrl] = { fileName: (_tdrOd.fileMeta[shareUrl] && _tdrOd.fileMeta[shareUrl].fileName) || tdrOdGuessFileName(shareUrl), lastSyncTs: Date.now(), ok: false, err: String(e && e.message || e) };
+          fail++;
+        }
+      }).catch(function(e) {
+        console.warn("[TDR-OD] download failed for", shareUrl, e);
+        _tdrOd.fileMeta[shareUrl] = { fileName: (_tdrOd.fileMeta[shareUrl] && _tdrOd.fileMeta[shareUrl].fileName) || tdrOdGuessFileName(shareUrl), lastSyncTs: Date.now(), ok: false, err: String(e && e.message || e) };
+        fail++;
       });
     });
+  });
 
-    return chain.then(function() {
-      _tdrOd.lastSyncTs = Date.now();
-      _tdrOd.syncing = false;
-      tdrOdSaveConfig();
-      tdrOdUpdateUI();
-      if (added || changed) toast("☁️ OneDrive sync: " + (added?(added+" new "):"") + (changed?(changed+" updated"):"") + " · " + total + " total", "t-ok");
-    });
-  }).catch(function(e) {
+  return p.then(function() {
+    _tdrOd.lastSyncTs = Date.now();
     _tdrOd.syncing = false;
-    tdrOdUpdateUI("error", e && e.message);
-    toast("❌ OneDrive sync failed: " + ((e && e.message) || e), "t-err");
+    tdrOdSaveConfig();
+    tdrOdUpdateUI();
+    if (ok || fail) {
+      var cls = fail && !ok ? "t-err" : (fail ? "t-warn" : "t-ok");
+      toast("☁️ Sync done · " + ok + " ok" + (fail ? " · " + fail + " failed" : ""), cls);
+    }
   });
 }
 
@@ -11934,23 +11945,17 @@ function tdrOdSetInterval(ms) {
   _tdrOd.intervalMs = parseInt(ms, 10) || 0;
   tdrOdSaveConfig();
   tdrOdStopTimer();
-  if (_tdrOd.url && _tdrOd.intervalMs > 0 && _tdrOdTabVisible()) tdrOdStartTimer();
+  if (_tdrOd.urls.length && _tdrOd.intervalMs > 0 && _tdrOdTabVisible()) tdrOdStartTimer();
 }
-
 function tdrOdStartTimer() {
   tdrOdStopTimer();
-  if (!_tdrOd.url || !_tdrOd.intervalMs) return;
+  if (!_tdrOd.urls.length || !_tdrOd.intervalMs) return;
   _tdrOd.timer = setInterval(function() {
     if (_tdrOdTabVisible() && !document.hidden) tdrOdRefreshNow();
   }, _tdrOd.intervalMs);
 }
-function tdrOdStopTimer() {
-  if (_tdrOd.timer) { clearInterval(_tdrOd.timer); _tdrOd.timer = null; }
-}
-function _tdrOdTabVisible() {
-  var t = document.getElementById("dTab-tdr");
-  return t && t.style.display !== "none";
-}
+function tdrOdStopTimer() { if (_tdrOd.timer) { clearInterval(_tdrOd.timer); _tdrOd.timer = null; } }
+function _tdrOdTabVisible() { var t = document.getElementById("dTab-tdr"); return t && t.style.display !== "none"; }
 
 function tdrOdUpdateUI(stateOverride, errMsg) {
   var bar  = document.getElementById("tdrOdStatusBar");
@@ -11960,26 +11965,30 @@ function tdrOdUpdateUI(stateOverride, errMsg) {
   var btn  = document.getElementById("tdrOdConnectBtn");
   if (!bar) return;
 
-  if (!_tdrOd.url) {
+  var hasLinks = _tdrOd.urls && _tdrOd.urls.length;
+  if (!hasLinks) {
     bar.style.display = "none";
-    if (btn) { btn.textContent = "🔗 Connect OneDrive Folder"; btn.style.display = ""; }
+    if (btn) { btn.textContent = "🔗 Connect OneDrive Files"; btn.style.display = ""; }
     return;
   }
   bar.style.display = "flex";
   if (btn) btn.style.display = "none";
 
   if (stateOverride === "syncing") {
-    icon.textContent = "🔄"; txt.textContent = "Syncing from OneDrive…";
-    meta.textContent = "Folder: " + _tdrOd.url.substring(0, 60) + "…";
+    icon.textContent = "🔄"; txt.textContent = "Syncing " + _tdrOd.urls.length + " file(s) from OneDrive…";
+    meta.textContent = "";
     return;
   }
   if (stateOverride === "error") {
     icon.textContent = "⚠️"; txt.textContent = "Sync error";
-    meta.textContent = errMsg || "Check the share link.";
+    meta.textContent = errMsg || "Some files could not be fetched.";
     return;
   }
-  icon.textContent = "☁️";
-  txt.textContent = "OneDrive folder connected — " + Object.keys(_tdrOd.fileMap).length + " file(s) tracked";
+
+  var okCount = 0, failCount = 0;
+  _tdrOd.urls.forEach(function(u){ var m=_tdrOd.fileMeta[u]; if (m && m.ok) okCount++; else if (m && !m.ok) failCount++; });
+  icon.textContent = failCount ? "⚠️" : "☁️";
+  txt.textContent = "OneDrive: " + okCount + " ok" + (failCount ? " · " + failCount + " failed" : "") + " of " + _tdrOd.urls.length + " link(s)";
   var ago = _tdrOd.lastSyncTs ? Math.round((Date.now() - _tdrOd.lastSyncTs) / 1000) : 0;
   var agoTxt = ago < 60 ? (ago + "s ago") : (Math.round(ago/60) + " min ago");
   meta.textContent = _tdrOd.lastSyncTs ? ("Last synced " + agoTxt) : "Not synced yet";
@@ -11989,11 +11998,11 @@ function tdrOdUpdateUI(stateOverride, errMsg) {
 }
 
 function tdrOdSaveConfig() {
-  var cfg = { url: _tdrOd.url, intervalMs: _tdrOd.intervalMs, lastSyncTs: _tdrOd.lastSyncTs, fileMap: _tdrOd.fileMap };
+  var cfg = { urls: _tdrOd.urls, intervalMs: _tdrOd.intervalMs, lastSyncTs: _tdrOd.lastSyncTs, fileMeta: _tdrOd.fileMeta };
   try { localStorage.setItem("at_tdrOd", JSON.stringify(cfg)); } catch(e) {}
   if (fbOk && db) {
     db.collection("appConfig").doc("tdrOneDrive").set({
-      url: _tdrOd.url, intervalMs: _tdrOd.intervalMs, updatedAt: Date.now()
+      urls: _tdrOd.urls, intervalMs: _tdrOd.intervalMs, updatedAt: Date.now()
     }, { merge: true }).catch(function(e){ console.warn("[TDR-OD] firestore save failed:", e); });
   }
 }
@@ -12002,10 +12011,10 @@ function tdrOdLoadConfig() {
     var raw = localStorage.getItem("at_tdrOd");
     if (raw) {
       var c = JSON.parse(raw);
-      if (c && c.url) {
-        _tdrOd.url = c.url;
+      if (c) {
+        _tdrOd.urls = Array.isArray(c.urls) ? c.urls : (c.url ? [c.url] : []);
         _tdrOd.intervalMs = c.intervalMs || 300000;
-        _tdrOd.fileMap = c.fileMap || {};
+        _tdrOd.fileMeta = c.fileMeta || {};
         _tdrOd.lastSyncTs = c.lastSyncTs || 0;
       }
     }
@@ -12016,16 +12025,16 @@ function tdrOdLoadConfig() {
     db.collection("appConfig").doc("tdrOneDrive").get().then(function(snap) {
       if (!snap.exists) return;
       var d = snap.data();
-      if (d && d.url && d.url !== _tdrOd.url) {
-        _tdrOd.url = d.url;
+      var remoteUrls = Array.isArray(d.urls) ? d.urls : (d.url ? [d.url] : []);
+      var changed = JSON.stringify(remoteUrls) !== JSON.stringify(_tdrOd.urls);
+      if (changed) {
+        _tdrOd.urls = remoteUrls;
         _tdrOd.intervalMs = d.intervalMs || _tdrOd.intervalMs;
-        _tdrOd.fileMap = {};
+        _tdrOd.fileMeta = {};
         _tdrOd.lastSyncTs = 0;
-        try { localStorage.setItem("at_tdrOd", JSON.stringify({ url:_tdrOd.url, intervalMs:_tdrOd.intervalMs, lastSyncTs:0, fileMap:{} })); } catch(e) {}
+        try { localStorage.setItem("at_tdrOd", JSON.stringify({ urls:_tdrOd.urls, intervalMs:_tdrOd.intervalMs, lastSyncTs:0, fileMeta:{} })); } catch(e) {}
         tdrOdUpdateUI();
-        if (_tdrOdTabVisible()) tdrOdRefreshNow();
-      } else if (d && !d.url && _tdrOd.url) {
-        _tdrOd.url = null; tdrOdStopTimer(); tdrOdUpdateUI();
+        if (_tdrOdTabVisible() && _tdrOd.urls.length) tdrOdRefreshNow();
       }
     }).catch(function(e){ console.warn("[TDR-OD] firestore load failed:", e); });
   }
@@ -12033,7 +12042,7 @@ function tdrOdLoadConfig() {
 
 function tdrOdOnTabEnter() {
   tdrOdUpdateUI();
-  if (_tdrOd.url) {
+  if (_tdrOd.urls.length) {
     var stale = !_tdrOd.lastSyncTs || (Date.now() - _tdrOd.lastSyncTs) > (_tdrOd.intervalMs || 300000);
     if (stale) tdrOdRefreshNow();
     if (_tdrOd.intervalMs > 0) tdrOdStartTimer();
@@ -12041,7 +12050,7 @@ function tdrOdOnTabEnter() {
 }
 function tdrOdOnTabLeave() { tdrOdStopTimer(); }
 
-setInterval(function(){ if (_tdrOd.url && _tdrOdTabVisible()) tdrOdUpdateUI(); }, 30000);
+setInterval(function(){ if (_tdrOd.urls.length && _tdrOdTabVisible()) tdrOdUpdateUI(); }, 30000);
 
 (function _tdrOdInit() {
   var tries = 0;
@@ -12053,7 +12062,7 @@ setInterval(function(){ if (_tdrOd.url && _tdrOdTabVisible()) tdrOdUpdateUI(); }
     }
   }, 250);
 })();
-// ══ END v6.8 TDR ONEDRIVE FOLDER AUTO-SYNC ════════════════════════════════
+// ══ END v6.9 TDR ONEDRIVE INDIVIDUAL FILE LINKS ════════════════════════════
 // ══ END TDR REPORT (MULTI-SITE) ═══════════════════════════════════════
 
 // ══ ADMIN FORCE CHECK-OUT ═════════════════════════════════════════════
