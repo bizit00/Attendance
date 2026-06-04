@@ -2865,17 +2865,23 @@ function verifyGps(dir) {
     if (!site) { setGpsUI(dir,"error","Session site not found.",null); return; }
   }
 
-  // Use watchPosition — the first fix is often a low-accuracy cached/WiFi reading;
-  // subsequent fixes typically improve as the GPS chip warms up. We keep the best
-  // (lowest accuracy number) seen, and finish early if we get a good fix.
-  var bestFix    = null;
-  var watcherId  = null;
-  var maxWaitMs  = 12000;   // give the GPS chip time to converge
-  var goodEnough = 60;      // accuracy ≤ 60m → finish immediately, use this fix
-  var startTs    = Date.now();
-  var finished   = false;
+  // v6.7 — Anti-WiFi-Spoof GPS:
+  // The first fix is often a cached/WiFi reading that reports a misleadingly
+  // "good" accuracy (e.g. ±81m) but is actually kilometres off. We watch for
+  // longer, collect multiple samples, and reject if positions jump wildly
+  // (a tell-tale sign of WiFi/IP-based geolocation) or if the best fix is
+  // still implausibly far from site while accuracy looks deceptively tight.
+  var bestFix      = null;
+  var watcherId    = null;
+  var maxWaitMs    = 20000;   // extended convergence window (was 12s)
+  var goodEnough   = 30;      // tightened threshold (was 60m) → force real GPS
+  var startTs      = Date.now();
+  var finished     = false;
+  var samples      = [];      // all readings collected — used for spoof detection
+  var SPOOF_JUMP_M     = 2000;   // sample-to-sample jump that screams "WiFi"
+  var IMPLAUSIBLE_M    = 5000;   // distance from site that looks like WiFi-IP location
 
-  function finish(pos) {
+  function finish(pos, forceSpoof) {
     if (finished) return; finished = true;
     if (watcherId != null) { try { navigator.geolocation.clearWatch(watcherId); } catch(_){} }
     clearTimeout(timeoutTimer);
@@ -2887,9 +2893,7 @@ function verifyGps(dir) {
     var lat=pos.coords.latitude, lng=pos.coords.longitude, acc=Math.round(pos.coords.accuracy);
     var dist = haversine(lat,lng,site.lat,site.lng);
 
-    // Reject readings worse than the geofence — they're mathematically useless.
-    // Example: accuracy=10000m means your real position could be anywhere in a 10km
-    // radius, so the distance reading from the site centre is meaningless.
+    // Reject readings worse than the geofence — mathematically useless.
     if (acc > GEOFENCE_M) {
       GPS[dir] = null;
       setGpsUI(dir, "lowacc", site.name, dist, acc);
@@ -2897,7 +2901,28 @@ function verifyGps(dir) {
       return;
     }
 
-    var ok = dist <= GEOFENCE_M;
+    // Spoof detection: positions jumped by >2km between samples, OR
+    // best fix is >5km from site with a deceptively tight accuracy (<200m).
+    // Both patterns are classic WiFi/IP-based geolocation tells.
+    var maxJump = 0;
+    for (var i=1; i<samples.length; i++) {
+      var j = haversine(samples[i-1].lat, samples[i-1].lng, samples[i].lat, samples[i].lng);
+      if (j > maxJump) maxJump = j;
+    }
+    var looksLikeWifi = forceSpoof
+      || maxJump > SPOOF_JUMP_M
+      || (dist > IMPLAUSIBLE_M && acc < 200);
+    if (looksLikeWifi) {
+      GPS[dir] = null;
+      setGpsUI(dir, "wifispoof", site.name, dist, acc);
+      chkBtn();
+      return;
+    }
+
+    // Accuracy-margin range check — borderline cases pass if the
+    // GPS error circle overlaps the geofence.
+    var effectiveDist = Math.max(0, dist - acc);
+    var ok = effectiveDist <= GEOFENCE_M;
     GPS[dir] = { lat:lat, lng:lng, accuracy:acc, dist:dist, ok:ok };
     setGpsUI(dir, ok?"ok":"fail", site.name, dist, acc);
     chkBtn();
@@ -2909,13 +2934,22 @@ function verifyGps(dir) {
     watcherId = navigator.geolocation.watchPosition(
       function(pos) {
         var acc = pos.coords.accuracy;
+        samples.push({ lat:pos.coords.latitude, lng:pos.coords.longitude, acc:acc, ts:Date.now() });
         if (!bestFix || acc < bestFix.coords.accuracy) bestFix = pos;
+
+        // Early WiFi-spoof detection — if 2+ samples already jumped >2km, bail now
+        if (samples.length >= 2) {
+          var last = samples[samples.length-1], prev = samples[samples.length-2];
+          var jump = haversine(prev.lat, prev.lng, last.lat, last.lng);
+          if (jump > SPOOF_JUMP_M) { finish(bestFix, true); return; }
+        }
+
         if (acc <= goodEnough || (Date.now() - startTs) > maxWaitMs - 1000) {
           finish(bestFix);
         } else {
-          // Show progress text so user knows we're still trying
+          // Show live sample counter + best accuracy so user sees progress
           var tx = document.getElementById(txtId);
-          if (tx) tx.textContent = "Improving accuracy… ±" + Math.round(acc) + "m";
+          if (tx) tx.textContent = "Sample " + samples.length + " · best ±" + Math.round(bestFix.coords.accuracy) + "m";
         }
       },
       function(err) {
@@ -2928,6 +2962,13 @@ function verifyGps(dir) {
   } catch(e) {
     finish(null);
   }
+}
+
+// v6.7 — "Refresh GPS" handler: clears state and re-runs verification.
+// Surfaces a fresh fix without the user having to navigate away.
+function refreshGps(dir) {
+  GPS[dir] = null;
+  verifyGps(dir);
 }
 
 function setGpsUI(dir, state, name, dist, acc) {
@@ -2948,6 +2989,11 @@ function setGpsUI(dir, state, name, dist, acc) {
     accBadge = '<div class="pill ' + accCls + '" style="margin-top:6px;font-size:.72rem">📡 GPS accuracy: ±' + acc + 'm</div>';
   }
 
+  // v6.7 — Reusable "Refresh GPS" button shown on any failure path
+  var refreshBtn = '<button type="button" onclick="refreshGps(\''+dir+'\')" '+
+    'style="margin-top:8px;width:100%;padding:10px 14px;background:#0ea5e9;color:#fff;border:none;'+
+    'border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">🔄 Refresh GPS</button>';
+
   if (state==="ok") {
     btn.className="gps-btn ok";
     ic.textContent="✅"; tx.textContent="Verified — "+dist+"m from "+name;
@@ -2955,7 +3001,23 @@ function setGpsUI(dir, state, name, dist, acc) {
   } else if (state==="fail") {
     btn.className="gps-btn fail";
     ic.textContent="🚫"; tx.textContent="Out of range — "+dist+"m (max "+GEOFENCE_M+"m)";
-    st.innerHTML='<div class="pill pill-bad">🚫 Too far from '+name+' · You are '+dist+'m away. Must be within '+GEOFENCE_M+'m.</div>'+accBadge;
+    st.innerHTML='<div class="pill pill-bad">🚫 Too far from '+name+' · You are '+dist+'m away. Must be within '+GEOFENCE_M+'m.</div>'+accBadge+refreshBtn;
+  } else if (state==="wifispoof") {
+    // v6.7 — Detected WiFi / IP-based geolocation (huge distance with deceptively tight accuracy,
+    // or positions jumping kilometres between samples). Refuse and direct user to fix.
+    btn.className="gps-btn fail";
+    ic.textContent="📡"; tx.textContent="WiFi-based location detected — switch to GPS";
+    st.innerHTML =
+      '<div class="pill pill-bad">📡 Suspicious location · '+dist+'m from '+name+' (claimed ±'+acc+'m). Likely WiFi/IP-based, not real GPS.</div>'+
+      '<div style="margin-top:8px;padding:10px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:.78rem;color:#9a3412;line-height:1.5">'+
+        '<b>Why this happens:</b> Your browser/device returned a network-based position (WiFi router lookup or carrier IP), which can be off by kilometres even when accuracy <i>looks</i> tight.<br><br>'+
+        '<b>How to fix:</b><br>'+
+        '• <b>Turn off WiFi</b> and use mobile data (not just hotspot routed through WiFi)<br>'+
+        '• On Android: set Location Mode to <b>"High accuracy" / "GPS On"</b> (not Battery-saving)<br>'+
+        '• On iPhone: Settings → Privacy → Location Services → Safari/Chrome → <b>While Using + Precise Location ON</b><br>'+
+        '• Move outdoors or near a window for clear sky view<br>'+
+        '• Tap <b>Refresh GPS</b> below after applying the fix'+
+      '</div>'+refreshBtn;
   } else if (state==="lowacc") {
     // GPS reading is too inaccurate to trust — refuse to verify
     btn.className="gps-btn fail";
@@ -2968,12 +3030,12 @@ function setGpsUI(dir, state, name, dist, acc) {
         '• <b>Disconnect from WiFi</b> and use mobile data / hotspot<br>'+
         '• Move outdoors or near a window for clear sky<br>'+
         '• Make sure <b>Location Services</b> are on for your browser<br>'+
-        '• Wait a few seconds and tap "Verify" again — the GPS chip warms up over time'+
-      '</div>';
+        '• Wait a few seconds and tap "Refresh GPS" below — the GPS chip warms up over time'+
+      '</div>'+refreshBtn;
   } else {
     btn.className="gps-btn fail";
     ic.textContent="❌"; tx.textContent="Try again";
-    st.innerHTML='<div class="pill pill-bad">❌ '+name+'</div>';
+    st.innerHTML='<div class="pill pill-bad">❌ '+name+'</div>'+refreshBtn;
   }
 }
 
@@ -4245,16 +4307,39 @@ function doSpotCheckVerify() {
     iconEl.textContent = '❌'; txtEl.textContent = 'Geolocation not supported.';
     btn.disabled = false; return;
   }
+  // v6.7 — Anti-WiFi-Spoof spot-check (mirrors verifyGps logic)
   var best = null;
   var finished = false;
-  var goodEnough = 60;
+  var goodEnough = 30;          // tightened from 60m → forces real GPS
+  var samples = [];
+  var SPOOF_JUMP_M  = 2000;
+  var startTs = Date.now();
+  var maxWaitMs = 20000;        // extended from 15s
   var watchId = navigator.geolocation.watchPosition(
     function(pos) {
-      if (!best || pos.coords.accuracy < best.coords.accuracy) best = pos;
-      if (pos.coords.accuracy > goodEnough) return;
+      var acc = pos.coords.accuracy;
+      samples.push({ lat:pos.coords.latitude, lng:pos.coords.longitude, acc:acc });
+      if (!best || acc < best.coords.accuracy) best = pos;
+
+      // Early WiFi-spoof detection — sample-to-sample jump >2km
+      if (samples.length >= 2) {
+        var last = samples[samples.length-1], prev = samples[samples.length-2];
+        var jump = haversine(prev.lat, prev.lng, last.lat, last.lng);
+        if (jump > SPOOF_JUMP_M) {
+          if (finished) return; finished = true;
+          navigator.geolocation.clearWatch(watchId);
+          _finishSpotCheckGps(best, btn, iconEl, txtEl, statusEl, samples, true);
+          return;
+        }
+      }
+
+      // Live sample counter
+      txtEl.textContent = 'Sample ' + samples.length + ' · best ±' + Math.round(best.coords.accuracy) + 'm';
+
+      if (acc > goodEnough && (Date.now() - startTs) < maxWaitMs - 1000) return;
       if (finished) return; finished = true;
       navigator.geolocation.clearWatch(watchId);
-      _finishSpotCheckGps(best, btn, iconEl, txtEl, statusEl);
+      _finishSpotCheckGps(best, btn, iconEl, txtEl, statusEl, samples, false);
     },
     function(err) {
       if (finished) return; finished = true;
@@ -4263,36 +4348,60 @@ function doSpotCheckVerify() {
       txtEl.textContent  = 'Location error: ' + (err.message || 'unknown');
       btn.disabled = false;
     },
-    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    { enableHighAccuracy: true, timeout: maxWaitMs, maximumAge: 0 }
   );
   setTimeout(function() {
     if (finished) return; finished = true;
     navigator.geolocation.clearWatch(watchId);
     if (best) {
-      _finishSpotCheckGps(best, btn, iconEl, txtEl, statusEl);
+      _finishSpotCheckGps(best, btn, iconEl, txtEl, statusEl, samples, false);
     } else {
       iconEl.textContent = '❌'; txtEl.textContent = 'Could not get GPS fix. Try outdoors.';
       btn.disabled = false;
     }
-  }, 15000);
+  }, maxWaitMs);
 }
 
-function _finishSpotCheckGps(pos, btn, iconEl, txtEl, statusEl) {
+function _finishSpotCheckGps(pos, btn, iconEl, txtEl, statusEl, samples, forceSpoof) {
   var lat  = pos.coords.latitude;
   var lng  = pos.coords.longitude;
   var acc  = Math.round(pos.coords.accuracy);
   var dist = haversine(lat, lng, scCurrentData.siteLat, scCurrentData.siteLng);
-  var ok   = dist <= GEOFENCE_M;
+
+  // v6.7 — WiFi-spoof detection
+  var maxJump = 0;
+  if (samples && samples.length > 1) {
+    for (var i=1; i<samples.length; i++) {
+      var j = haversine(samples[i-1].lat, samples[i-1].lng, samples[i].lat, samples[i].lng);
+      if (j > maxJump) maxJump = j;
+    }
+  }
+  var looksLikeWifi = forceSpoof || maxJump > 2000 || (dist > 5000 && acc < 200);
+
+  // v6.7 — Accuracy-margin range check
+  var effectiveDist = Math.max(0, dist - acc);
+  var ok = !looksLikeWifi && effectiveDist <= GEOFENCE_M;
   var status = ok ? 'verified' : 'failed';
-  iconEl.textContent = ok ? '✅' : '❌';
+
+  iconEl.textContent = ok ? '✅' : (looksLikeWifi ? '📡' : '❌');
   txtEl.textContent  = ok
     ? 'Within range · ' + dist + 'm from ' + scCurrentData.site
-    : 'Out of range · ' + dist + 'm from ' + scCurrentData.site + ' (max ' + GEOFENCE_M + 'm)';
+    : (looksLikeWifi
+        ? 'WiFi-based location detected — switch to GPS'
+        : 'Out of range · ' + dist + 'm from ' + scCurrentData.site + ' (max ' + GEOFENCE_M + 'm)');
   var resultEl = document.getElementById('sc-result');
   if (resultEl) {
-    resultEl.innerHTML = ok
-      ? '<div class="pill pill-ok">✅ Location confirmed — you\'re all good!</div>'
-      : '<div class="pill pill-bad">❌ You appear to be outside ' + _esc(scCurrentData.site) + '. This has been flagged for admin review.</div>';
+    if (ok) {
+      resultEl.innerHTML = '<div class="pill pill-ok">✅ Location confirmed — you\'re all good!</div>';
+    } else if (looksLikeWifi) {
+      resultEl.innerHTML =
+        '<div class="pill pill-bad">📡 Suspicious location · '+dist+'m away (claimed ±'+acc+'m). Likely WiFi/IP-based, not real GPS.</div>'+
+        '<div style="margin-top:8px;padding:10px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:.78rem;color:#9a3412;line-height:1.5">'+
+          '<b>How to fix:</b> Turn off WiFi, use mobile data, set Location Mode to High Accuracy / Precise Location ON, move near a window, then tap Verify again.'+
+        '</div>';
+    } else {
+      resultEl.innerHTML = '<div class="pill pill-bad">❌ You appear to be outside ' + _esc(scCurrentData.site) + '. This has been flagged for admin review.</div>';
+    }
   }
   if (scTimerInterval) { clearInterval(scTimerInterval); scTimerInterval = null; }
   document.getElementById('sc-timer').style.display = 'none';
