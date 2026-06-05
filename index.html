@@ -1870,7 +1870,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div id="tdrEmpty" class="empty">
         <div class="empty-icon">📊</div>
         <div class="empty-t">No TDR files uploaded yet</div>
-        <div>Click "📂 Add Site Report" to load one or more TDR Excel files <strong>or</strong> "☁️ Connect OneDrive" to auto-sync via Microsoft account.<br>Each file = one site. Reads <strong>Col B</strong> (Workstation), <strong>Col H</strong> (Status), <strong>Col J</strong> (Error Code), <strong>Col K</strong> (Details).</div>
+        <div>Click "📂 Add Site Report" to load one or more TDR Excel files <strong>or</strong> "☁️ Connect OneDrive" to auto-sync via Microsoft account.<br>Each file = one site. Reads <strong>Col B</strong> (Workstation), <strong>Col G</strong> (Reported By), <strong>Col H</strong> (Status), <strong>Col J</strong> (Error Code), <strong>Col K</strong> (Details).</div>
       </div>
 
       <!-- Comparison overview (shown when ≥2 sites) -->
@@ -11656,6 +11656,7 @@ function tdrParseFile(file, callback) {
         var wsName = String(row[1]  || "").trim();   // Col B
         if (!wsName) return;
         total++;
+        var reporter  = String(row[6]  || "").trim();               // Col G — Reported By
         var status    = String(row[7]  || "").trim().toUpperCase(); // Col H
         var errorCode = String(row[9]  || "").trim();               // Col J
         var detail    = String(row[10] || "").trim();               // Col K
@@ -11667,7 +11668,7 @@ function tdrParseFile(file, callback) {
           var ec = errorCode || "Unknown";
           errorTypes[ec] = (errorTypes[ec] || 0) + 1;
           if (!errorDetails[ec]) errorDetails[ec] = [];
-          errorDetails[ec].push({ workstation: wsName, detail: detail });
+          errorDetails[ec].push({ workstation: wsName, reporter: reporter, detail: detail });
         } else {
           notAttended++;
         }
@@ -11844,7 +11845,10 @@ function tdrBuildErrorTable(idx) {
       return '<tr style="background:#fafafa">'
         + '<td style="padding:5px 12px 5px 32px;border-bottom:1px solid #f1f5f9;'
         +      'font-family:var(--mono);font-size:.78rem;color:var(--ink2)">📟 ' + _esc(r.workstation) + '</td>'
-        + '<td colspan="2" style="padding:5px 12px;border-bottom:1px solid #f1f5f9;font-size:.78rem;color:var(--ink3)">'
+        + '<td style="padding:5px 12px;border-bottom:1px solid #f1f5f9;font-size:.78rem;color:var(--ink2);white-space:nowrap">'
+        +   (r.reporter ? '👤 ' + _esc(r.reporter) : '<span style="color:#cbd5e1;font-style:italic">—</span>')
+        + '</td>'
+        + '<td style="padding:5px 12px;border-bottom:1px solid #f1f5f9;font-size:.78rem;color:var(--ink3)">'
         +   (r.detail ? _esc(r.detail) : '<span style="color:#cbd5e1;font-style:italic">No detail recorded</span>')
         + '</td></tr>';
     }).join("");
@@ -11865,7 +11869,7 @@ function tdrBuildErrorTable(idx) {
       + '<td style="padding:9px 12px;border-bottom:1px solid #f1f5f9;text-align:center;'
       +      'color:var(--ink2)">' + pct + '%</td>'
       + '</tr>'
-      + '<tr id="' + detailId + '" style="display:none"><td colspan="3" style="padding:0">'
+      + '<tr id="' + detailId + '" style="display:none"><td colspan="4" style="padding:0">'
       +   '<table style="width:100%;border-collapse:collapse">' + detailRows + '</table>'
       + '</td></tr>';
   }).join("");
@@ -11877,6 +11881,7 @@ function tdrBuildErrorTable(idx) {
     +     '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e2e8f0">Error Code</th>'
     +     '<th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e2e8f0">Count</th>'
     +     '<th style="padding:8px 12px;text-align:center;border-bottom:2px solid #e2e8f0">% of Failed</th>'
+    +     '<th style="padding:8px 12px;text-align:left;border-bottom:2px solid #e2e8f0;font-size:.72rem;color:var(--ink3)">Reported By (expand to view)</th>'
     +   '</tr></thead>'
     +   '<tbody>' + rows + '</tbody>'
     + '</table></div>';
@@ -12229,16 +12234,17 @@ function _tdrOdParseBuffer(buf) {
   rows.slice(startRow).forEach(function(row) {
     var wsName = String(row[1]||"").trim(); if (!wsName) return;
     total++;
-    var status = String(row[7]||"").trim().toUpperCase();
+    var reporter  = String(row[6]||"").trim();
+    var status    = String(row[7]||"").trim().toUpperCase();
     var errorCode = String(row[9]||"").trim();
-    var detail = String(row[10]||"").trim();
+    var detail    = String(row[10]||"").trim();
     if (status === "PASSED") passed++;
     else if (status === "FAILED") {
       failed++;
       var ec = errorCode || "Unknown";
       errorTypes[ec] = (errorTypes[ec]||0) + 1;
       if (!errorDetails[ec]) errorDetails[ec] = [];
-      errorDetails[ec].push({ workstation: wsName, detail: detail });
+      errorDetails[ec].push({ workstation: wsName, reporter: reporter, detail: detail });
     } else notAttended++;
   });
   return { total:total, passed:passed, failed:failed, notAttended:notAttended,
