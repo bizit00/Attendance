@@ -3522,22 +3522,56 @@ function _maybeAutoFillEngId(name, email, emailOk) {
   if (_autoFillTimer) clearTimeout(_autoFillTimer);
   _autoFillTimer = setTimeout(function() {
     if (!fbOk || !db) return;
+    // First try emailBindings (engineers who have checked in before)
     db.collection("emailBindings").doc(emailKey).get().then(function(snap) {
-      if (!snap.exists) return;
-      var d = snap.data();
-      // Re-check the form hasn't changed while we waited
       var nameNow  = ((document.getElementById("empName") ||{}).value||"").trim().toLowerCase();
       var emailNow = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
       if (nameNow !== nameTrim || emailNow !== emailKey) return;
-      // Name must match what's stored
-      var storedName = (d.empName || "").trim().toLowerCase();
-      if (!storedName || storedName !== nameTrim) return;
-      // ID field must still be empty or still showing our previous auto-fill
       var idNow = getEngId("empId");
       if (idNow && idNow !== _autoFilledEmpId) return;
-      _doEngIdAutoFill(d.empId);
-    }).catch(function(){});
+
+      if (snap.exists) {
+        var d = snap.data();
+        var storedName = (d.empName || "").trim().toLowerCase();
+        // Exact, or substring either way (handles full-name vs nickname)
+        if (storedName && (storedName === nameTrim || storedName.indexOf(nameTrim) >= 0 || nameTrim.indexOf(storedName) >= 0)) {
+          _doEngIdAutoFill(d.empId);
+          return;
+        }
+      }
+      // Fallback: query engineerOnboarding for admin-pre-registered engineers
+      // who haven't checked in yet (so emailBindings has nothing for them).
+      _tryAutoFillFromOnboarding(emailKey, nameTrim);
+    }).catch(function(){
+      _tryAutoFillFromOnboarding(emailKey, nameTrim);
+    });
   }, 600);
+}
+
+// Look up an admin-pre-registered engineer by email in engineerOnboarding
+// and auto-fill the assigned engId if the name matches (exact or partial).
+function _tryAutoFillFromOnboarding(emailKey, nameTrim) {
+  if (!fbOk || !db) return;
+  db.collection("engineerOnboarding").where("email", "==", emailKey).limit(1).get()
+    .then(function(qs) {
+      if (qs.empty) return;
+      var nameNow  = ((document.getElementById("empName") ||{}).value||"").trim().toLowerCase();
+      var emailNow = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
+      if (nameNow !== nameTrim || emailNow !== emailKey) return;
+      var idNow = getEngId("empId");
+      if (idNow && idNow !== _autoFilledEmpId) return;
+
+      var d = qs.docs[0].data();
+      var storedName = (d.name || "").trim().toLowerCase();
+      var nameOk = storedName && (
+        storedName === nameTrim ||
+        storedName.indexOf(nameTrim) >= 0 ||
+        nameTrim.indexOf(storedName) >= 0
+      );
+      if (!nameOk) return;
+      if (d.engId) _doEngIdAutoFill(d.engId);
+    })
+    .catch(function(e){ console.warn("[v6.14] onboarding lookup failed:", e); });
 }
 
 function _doEngIdAutoFill(fullEmpId) {
