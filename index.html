@@ -11615,6 +11615,22 @@ var _tdrCharts      = {};   // keyed by "siteIdx_status" / "siteIdx_error"
 var _tdrCompareChart = null;
 var _TDR_COLORS     = ["#dc2626","#f59e0b","#7c3aed","#0369a1","#059669","#d97706","#6d28d9","#0891b2"];
 
+// Converts a Col I cell value to a readable date string.
+// With cellDates:true, SheetJS returns JS Date objects for date-formatted cells.
+// Numeric serial fallback handles files read without cellDates:true.
+function _tdrFmtDate(val) {
+  if (!val && val !== 0) return "";
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? "" : val.toLocaleDateString("en-SG");
+  }
+  if (typeof val === "number") {
+    // Excel serial date — convert manually as a safety net
+    var d = new Date(Math.round((val - 25569) * 86400 * 1000));
+    return isNaN(d.getTime()) ? String(val) : d.toLocaleDateString("en-SG");
+  }
+  return String(val).trim();
+}
+
 // ── File loading ─────────────────────────────────────────────────────
 function tdrLoadFiles(input) {
   var files = Array.prototype.slice.call(input.files || []);
@@ -11632,7 +11648,7 @@ function tdrParseFile(file, callback) {
   var reader = new FileReader();
   reader.onload = function(ev) {
     try {
-      var wb = XLSX.read(new Uint8Array(ev.target.result), { type: "array" });
+      var wb = XLSX.read(new Uint8Array(ev.target.result), { type: "array", cellDates: true });
 
       // Prefer a sheet whose name contains "TDR" or "Status"; else first sheet
       var sheetName = wb.SheetNames[0];
@@ -11658,7 +11674,7 @@ function tdrParseFile(file, callback) {
         total++;
         var reporter       = String(row[6]  || "").trim();               // Col G — Reported By
         var status         = String(row[7]  || "").trim().toUpperCase(); // Col H
-        var validationDate = String(row[8]  || "").trim();               // Col I — Date of Validation
+        var validationDate = _tdrFmtDate(row[8]);                        // Col I — Date of Validation
         var errorCode      = String(row[9]  || "").trim();               // Col J
         var detail         = String(row[10] || "").trim();               // Col K
 
@@ -12262,7 +12278,7 @@ function _tdrOdDownloadItem(itemId) {
 
 // ── SHARED HELPERS ───────────────────────────────────────────────────────
 function _tdrOdParseBuffer(buf) {
-  var wb = XLSX.read(new Uint8Array(buf), { type: "array" });
+  var wb = XLSX.read(new Uint8Array(buf), { type: "array", cellDates: true });
   var sheetName = wb.SheetNames[0];
   wb.SheetNames.forEach(function(n){ if (/tdr|status/i.test(n)) sheetName = n; });
   var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header:1, defval:"" });
@@ -12277,7 +12293,7 @@ function _tdrOdParseBuffer(buf) {
     total++;
     var reporter       = String(row[6]||"").trim();
     var status         = String(row[7]||"").trim().toUpperCase();
-    var validationDate = String(row[8]||"").trim();
+    var validationDate = _tdrFmtDate(row[8]);
     var errorCode      = String(row[9]||"").trim();
     var detail         = String(row[10]||"").trim();
     if (status === "PASSED") passed++;
