@@ -2030,6 +2030,11 @@ service cloud.firestore {
     match /empBindings/{empId} {
       allow read, write: if true;  // Engineers need to read during check-in
     }
+    // Deleted-account tombstones (v6.12) — engineers detect deletion in real time
+    match /deletedAccounts/{empId} {
+      allow read: if true;
+      allow write, delete: if request.auth != null;
+    }
 
     // Leave applications
     match /leaveApplications/{doc} {
@@ -2248,6 +2253,16 @@ service cloud.firestore {
     match /empBindings/{empId} {
       allow read, create, update: if true;
       allow delete: if request.auth != null;
+    }
+
+    // ── 2b. Deleted-account tombstones (v6.12) ───────
+    // When admin deletes an engineer account, a tombstone is written here so
+    // the engineer's app can detect deletion in real time and self-clear caches.
+    match /deletedAccounts/{empId} {
+      // Engineers (no auth) need read so their app can pick up the signal
+      allow read: if true;
+      // Only signed-in admin can write or delete tombstones
+      allow write, delete: if request.auth != null;
     }
 
     // ── 3. Leave applications ────────────────────────
@@ -3162,6 +3177,127 @@ function adminResetSession() {
   document.getElementById("resultCard").style.display= "none";
   toast("✅ Session cleared. You can now check in at your new location.", "t-ok");
 }
+
+// ══ v6.12 — SELF-HEAL STALE ENGINEER CACHE ══════════════════════════════
+// When admin deletes an engineer in "Team > Eng Accounts", their localStorage
+// cache (at_emp_bind_v2 / at_email_bind_v2) on the engineer's device still
+// holds the old empId/email mapping. That cache drives the auto-fill and the
+// "already registered to another person" pill — both stay stuck on the OLD
+// identity until cleared. We fix it three ways:
+//   1) On page load: reconcile cache against Firestore (prune stale entries)
+//   2) Realtime listener on deletedAccounts/{empId} during active session
+//   3) When form-typing flags a possible mismatch, do a Firestore confirm first
+
+var _engDeletedListener = null;  // unsubscribe fn for active-session deletion listener
+
+function _engReconcileCacheAndSession() {
+  if (!fbOk || !db) return;
+
+  var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(e){}
+  var xb = {}; try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(e){}
+
+  // ① Reconcile email cache — drop entries where emailBindings/{email} is gone
+  Object.keys(eb).forEach(function(emailKey) {
+    db.collection("emailBindings").doc(emailKey).get().then(function(snap) {
+      if (!snap.exists) {
+        var fresh = {}; try { fresh = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(e){}
+        delete fresh[emailKey];
+        try { localStorage.setItem("at_email_bind_v2", JSON.stringify(fresh)); } catch(e){}
+        console.log("[v6.12] Pruned stale email cache:", emailKey);
+      }
+    }).catch(function(){});
+  });
+
+  // ② Reconcile empId cache — drop entries where empBindings/{empId} is gone
+  Object.keys(xb).forEach(function(empId) {
+    db.collection("empBindings").doc(empId).get().then(function(snap) {
+      if (!snap.exists) {
+        var fresh = {}; try { fresh = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(e){}
+        delete fresh[empId];
+        try { localStorage.setItem("at_emp_bind_v2", JSON.stringify(fresh)); } catch(e){}
+        console.log("[v6.12] Pruned stale empId cache:", empId);
+      }
+    }).catch(function(){});
+  });
+
+  // ③ Active-session check: if engineer was checked-in but admin deleted them,
+  //    fire the auto-force-checkout flow on page load.
+  var sess = getSess();
+  if (sess && sess.empId) {
+    db.collection("deletedAccounts").doc(sess.empId).get().then(function(snap) {
+      if (snap.exists) {
+        var d = snap.data();
+        var sigTs = d.deletedAt || 0;
+        if (sigTs && sess.checkinTimestamp && sigTs > sess.checkinTimestamp) {
+          _engForceClearForDeletion(sess);
+        }
+      }
+    }).catch(function(){});
+    // Realtime listener so deletion mid-session is detected within seconds
+    _engStartDeletedListener(sess.empId);
+  }
+}
+
+function _engStartDeletedListener(empId) {
+  if (!fbOk || !db || !empId) return;
+  // Avoid stacking duplicates
+  if (_engDeletedListener) { try { _engDeletedListener(); } catch(e){} _engDeletedListener = null; }
+  try {
+    _engDeletedListener = db.collection("deletedAccounts").doc(empId)
+      .onSnapshot(function(snap) {
+        if (!snap.exists) return;
+        var sess = getSess();
+        if (!sess || sess.empId !== empId) return;
+        var d = snap.data();
+        var sigTs = d.deletedAt || 0;
+        if (sigTs && sess.checkinTimestamp && sigTs > sess.checkinTimestamp) {
+          _engForceClearForDeletion(sess);
+        }
+      }, function(err) { console.warn("[v6.12] deletedAccounts listener error:", err); });
+  } catch(e) { console.warn("[v6.12] could not start deletion listener:", e); }
+}
+function _engStopDeletedListener() {
+  if (_engDeletedListener) { try { _engDeletedListener(); } catch(e){} _engDeletedListener = null; }
+}
+
+function _engForceClearForDeletion(sess) {
+  // Clear session + caches and show clean form
+  if (_forceCoListener) { try { _forceCoListener(); } catch(e){} _forceCoListener = null; }
+  _engStopDeletedListener();
+  setSess(null);
+  setSessDocId(null);
+  // Purge this engineer's identity from localStorage so they can re-register clean
+  try {
+    var eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}");
+    var xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}");
+    if (sess && sess.empId) delete xb[sess.empId];
+    if (sess && sess.empEmail) delete eb[(sess.empEmail||"").toLowerCase()];
+    localStorage.setItem("at_email_bind_v2", JSON.stringify(eb));
+    localStorage.setItem("at_emp_bind_v2",   JSON.stringify(xb));
+  } catch(e) {}
+  var ciForm = document.getElementById("ciForm");
+  var coSec  = document.getElementById("coSection");
+  var sBadge = document.getElementById("sessBadge");
+  var rCard  = document.getElementById("resultCard");
+  if (ciForm) ciForm.style.display = "block";
+  if (coSec)  coSec.style.display  = "none";
+  if (sBadge) sBadge.style.display = "none";
+  if (rCard)  rCard.style.display  = "none";
+  toast("⚠️ Your account was removed by admin. Please re-register with admin if needed.", "t-warn");
+}
+
+// Fire reconcile on page load (after Firebase init) — runs in background.
+(function _v612InitEngReconcile() {
+  var tries = 0;
+  var iv = setInterval(function() {
+    tries++;
+    if (typeof fbOk !== "undefined" || tries > 40) {
+      clearInterval(iv);
+      try { _engReconcileCacheAndSession(); } catch(e) { console.warn("[v6.12] reconcile init failed:", e); }
+    }
+  }, 250);
+})();
+// ══ END v6.12 SELF-HEAL ENGINEER CACHE ══════════════════════════════════
 
 // Fallback: check empBindings for a forceCheckoutAt signal written by admin
 // Used when onSnapshot on attendance is blocked by Firestore rules (engineer not authed)
@@ -11136,6 +11272,16 @@ function adminAccConfirmDelete() {
 
   if (fbOk && db) {
     var batch = db.batch();
+    // v6.12 — Write a tombstone FIRST so the engineer's app can detect the
+    // deletion in real time, even if their session is currently active.
+    if (rec && rec.empId) {
+      batch.set(db.collection("deletedAccounts").doc(rec.empId), {
+        empId:     rec.empId,
+        email:     emailKey,
+        empName:   rec.empName || "",
+        deletedAt: Date.now()
+      });
+    }
     batch.delete(db.collection("emailBindings").doc(emailKey));
     if (rec && rec.empId) batch.delete(db.collection("empBindings").doc(rec.empId));
     batch.commit()
