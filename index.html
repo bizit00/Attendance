@@ -3291,7 +3291,7 @@ function _engForceClearForDeletion(sess) {
   var tries = 0;
   var iv = setInterval(function() {
     tries++;
-    if (typeof fbOk !== "undefined" || tries > 40) {
+    if (fbOk === true || tries > 40) {
       clearInterval(iv);
       try { _engReconcileCacheAndSession(); } catch(e) { console.warn("[v6.12] reconcile init failed:", e); }
     }
@@ -3959,10 +3959,10 @@ function confirmOtp() {
     if (input !== data.code) {
       var attempts = (data.attempts || 0) + 1;
       if (attempts >= 3) {
-        sessionStorage.setItem("_at_otp_lock", String(Date.now() + 1 * 60 * 1000));
+        sessionStorage.setItem("_at_otp_lock", String(Date.now() + 2 * 60 * 1000));
         db.collection("otpRequests").doc(reqId).update({ status: "expired", attempts: attempts }).catch(function(){});
         msgEl.className = "otp-msg err";
-        msgEl.textContent = "Too many wrong attempts. Try again in 30 minutes.";
+        msgEl.textContent = "Too many wrong attempts. Try again in 2 minutes.";
         document.getElementById("otpConfirmBtn").disabled = true;
         document.getElementById("otpVerifyBtn").disabled  = true;
       } else {
@@ -4793,7 +4793,7 @@ function _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn) {
   var site   = WORK_SITES[parseInt(siteIdx)];
   var gps    = GPS.in;
   var now    = new Date();
-  var isLate = now.getHours() >= WORK_HOUR_LATE + 1;
+  var isLate = now.getHours() >= WORK_HOUR_LATE;
 
       var rec = {
         empId:empId, empName:empName, empEmail:empEmail, site:site.name,
@@ -4844,6 +4844,7 @@ function doCheckout() {
   var gps  = GPS.out;
   var sess = getSess();
   if (!sess) { toast("No active session found","t-err"); return; }
+  if (!gps || !gps.ok) { toast("Please verify your GPS location before checking out","t-err"); return; }
 
   var now  = new Date();
   var ms   = now.getTime() - sess.checkinTimestamp;
@@ -8364,8 +8365,34 @@ function submitLeave() {
   var now = new Date();
   var year = parseInt(fromDate.slice(0,4), 10) || new Date().getFullYear();
 
+  // ── Date overlap check — block duplicate/overlapping leave applications ──
+  function _checkOverlapThenContinue(cb) {
+    function scanOverlap(recs) {
+      var overlap = recs.find(function(r) {
+        if (r.status === "rejected" || r.status === "cancelled") return false;
+        return r.fromDate <= toDate && r.toDate >= fromDate;
+      });
+      if (overlap) {
+        showLeaveError("⛔ You already have a " + overlap.status + " leave application (" + overlap.leaveType + ") covering " + overlap.fromDate + " → " + overlap.toDate + ". Please cancel it first before applying for overlapping dates.");
+        var btn2 = document.getElementById("leaveSubmitBtn");
+        if (btn2) { btn2.disabled = false; btn2.innerHTML = "📩 Submit Leave Application"; }
+      } else {
+        cb();
+      }
+    }
+    if (fbOk && db) {
+      db.collection("leaveApplications").where("empId", "==", empId).get()
+        .then(function(snap) { scanOverlap(snap.docs.map(function(d){ return d.data(); })); })
+        .catch(function() { cb(); }); // allow through on network error
+    } else {
+      var ll = JSON.parse(localStorage.getItem("at_leaves")||"[]");
+      scanOverlap(ll.filter(function(r){ return r.empId === empId; }));
+    }
+  }
+
   // ── Entitlement check (async) ────────────────────
   // Check quota before writing. If no entitlement set, allow through.
+  _checkOverlapThenContinue(function() {
   _anFetchEntitlement(empId, year, function(entDoc) {
     if (entDoc && entDoc.quotas && entDoc.quotas[leaveType] != null) {
       var quota   = entDoc.quotas[leaveType] || 0;
@@ -8386,12 +8413,13 @@ function submitLeave() {
         db.collection("leaveApplications")
           .where("empId", "==", empId)
           .where("leaveType", "==", leaveType)
-          .where("status", "==", "approved")
           .get()
           .then(function(snap) {
             var used = 0;
             snap.forEach(function(d) {
               var r = d.data();
+              // Count both approved and pending leaves — pending may be approved later
+              if (r.status !== "approved" && r.status !== "pending") return;
               var y = parseInt((r.fromDate || "").slice(0, 4), 10);
               if (y === year) used += (parseInt(r.numDays, 10) || 0);
             });
@@ -8406,7 +8434,8 @@ function submitLeave() {
       // No entitlement configured for this leave type — allow submission
       _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now);
     }
-  });
+  }); // end _anFetchEntitlement
+  }); // end _checkOverlapThenContinue
 }  // end submitLeave — actual write is in _doActualLeaveSubmit below
 
 // ── Actual Firestore write (called after entitlement check passes) ──
