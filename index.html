@@ -1005,6 +1005,61 @@ tr.on-leave-row td{background:#f0f9ff!important}
 .ss-btn.ss-nav { padding: 8px 20px; font-size: 1rem; }
 .ss-btn.ss-exit { background: #450a0a; border-color: #7f1d1d; color: #fca5a5; }
 .ss-btn.ss-exit:hover { background: #7f1d1d; }
+
+/* ─── FORECAST GRID (Feature 2) ─────────────────────────── */
+.an-forecast-card{margin-top:14px}
+.an-forecast-hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.an-forecast-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.an-forecast-tbl{border-collapse:collapse;font-size:.74rem;min-width:100%}
+.an-forecast-tbl th,.an-forecast-tbl td{padding:6px 10px;border:1px solid var(--border);white-space:nowrap;text-align:center}
+.an-forecast-tbl thead th{background:var(--bg);font-weight:700;color:var(--ink);position:sticky;top:0;z-index:1}
+.an-forecast-tbl .fc-site-col{text-align:left;font-weight:700;font-size:.73rem;color:var(--ink);position:sticky;left:0;background:var(--card);z-index:2;min-width:110px}
+.an-forecast-tbl thead th.fc-site-col{background:var(--bg);z-index:3}
+.an-forecast-tbl .fc-today-col{border-left:2.5px solid var(--blue)!important;border-right:2.5px solid var(--blue)!important}
+.an-forecast-tbl thead th.fc-today-col{background:#eff6ff;color:var(--blue)}
+.fc-deficit{background:rgba(255,59,92,.13);color:#c0392b;font-weight:700}
+.fc-surplus{background:rgba(0,200,150,.13);color:#15803d;font-weight:700}
+.fc-ontarget{background:rgba(0,119,255,.1);color:#1d4ed8;font-weight:700}
+.fc-noreq{background:var(--bg);color:var(--ink3)}
+.an-forecast-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.71rem;color:var(--ink2);margin-top:8px;align-items:center}
+.an-forecast-legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0;display:inline-block}
+.an-forecast-loading{text-align:center;padding:24px;color:var(--ink3);font-size:.82rem}
+.an-forecast-days-ctrl{display:flex;align-items:center;gap:6px;font-size:.76rem;color:var(--ink2)}
+.an-forecast-days-ctrl select{padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:.76rem;background:var(--card);color:var(--ink)}
+/* Clickable date header */
+.an-forecast-tbl thead th.fc-date-hdr{cursor:pointer;transition:background .15s}
+.an-forecast-tbl thead th.fc-date-hdr:hover{background:#dbeafe}
+
+/* ─── SNAPSHOT SAVE CONTROLS (Feature 5) ────────────────── */
+.an-snap-save-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding:9px 14px;background:var(--card);border:1px solid var(--border);border-radius:9px}
+.an-snap-save-lbl{font-size:.78rem;color:var(--ink2);flex:1}
+.an-snap-save-lbl b{color:var(--ink)}
+.an-snap-save-btn{padding:6px 15px;border:none;border-radius:7px;background:var(--blue);color:#fff;font-size:.77rem;font-weight:700;cursor:pointer;font-family:var(--body);transition:background .15s;display:flex;align-items:center;gap:5px}
+.an-snap-save-btn:hover{background:#1d4ed8}
+.an-snap-save-btn:disabled{background:#9ca3af;cursor:default}
+.an-snap-status{font-size:.74rem;padding:3px 10px;border-radius:6px;font-weight:600}
+.an-snap-status.ss-saved{background:#dcfce7;color:#15803d}
+.an-snap-status.ss-pending{background:#fef9c3;color:#854d0e}
+.an-snap-status.ss-none{background:#f3f4f6;color:var(--ink3)}
+
+/* ─── HISTORICAL VIEW (Feature 6) ───────────────────────── */
+.an-history-card{margin-top:14px}
+.an-history-chart-wrap{position:relative;height:220px;margin-bottom:14px}
+.an-history-section-lbl{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--ink3);margin-bottom:6px}
+.an-history-tbl{width:100%;border-collapse:collapse;font-size:.74rem}
+.an-history-tbl th,.an-history-tbl td{padding:6px 10px;border:1px solid var(--border);text-align:center;white-space:nowrap}
+.an-history-tbl thead th{background:var(--bg);font-weight:700;color:var(--ink);position:sticky;top:0}
+.an-history-tbl .ht-date{text-align:left;font-weight:700;color:var(--ink);min-width:95px}
+.ht-deficit{color:#c0392b;font-weight:700}
+.ht-surplus{color:#15803d;font-weight:700}
+.ht-ok{color:#1d4ed8}
+.an-history-empty{text-align:center;padding:28px;color:var(--ink3);font-size:.82rem}
+.an-history-tbl-wrap{overflow-x:auto;max-height:320px;overflow-y:auto}
+.an-history-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.an-hist-stat{flex:1;min-width:100px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 14px}
+.an-hist-stat-lbl{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin-bottom:2px}
+.an-hist-stat-val{font-size:1.1rem;font-weight:800;font-family:var(--mono);color:var(--ink)}
+.an-hist-stat-sub{font-size:.68rem;color:var(--ink3)}
 </style>
 </head>
 <body>
@@ -1617,6 +1672,94 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <div id="anGapTblEmpty" style="display:none"></div>
       </div>
 
+      <!-- ── Feature 5: Snapshot Save Controls ─────── -->
+      <div class="chart-card" id="anSnapSaveCard">
+        <div class="chart-card-hdr">
+          <div>
+            <div class="chart-card-title">💾 Daily Manpower Snapshot</div>
+            <div class="chart-card-sub">Save today's gap analysis to history for trend tracking</div>
+          </div>
+          <span id="anSnapSaveStatus" class="an-snap-status ss-none">—</span>
+        </div>
+        <div class="an-snap-save-bar">
+          <div class="an-snap-save-lbl">
+            <b id="anSnapSaveDate">—</b> snapshot
+            <span id="anSnapSaveInfo"> · Auto-save after 17:00</span>
+          </div>
+          <button class="an-snap-save-btn" id="anSnapSaveBtn" onclick="_anSaveSnapshot(true)" title="Save today's gap snapshot to Firestore">
+            💾 Save Snapshot
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Feature 2: 14-Day Forecast Grid ──────── -->
+      <div class="chart-card an-forecast-card">
+        <div class="chart-card-hdr">
+          <div>
+            <div class="chart-card-title">🔭 Manpower Forecast</div>
+            <div class="chart-card-sub">Projected gap across sites — click any date to navigate there</div>
+          </div>
+          <div class="an-forecast-days-ctrl">
+            <span>Days:</span>
+            <select id="anForecastDays" onchange="renderForecastPanel()">
+              <option value="7">7</option>
+              <option value="14" selected>14</option>
+              <option value="21">21</option>
+              <option value="30">30</option>
+            </select>
+          </div>
+        </div>
+        <div id="anForecastBody">
+          <div class="an-forecast-loading">Loading forecast…</div>
+        </div>
+        <div class="an-forecast-legend">
+          <span class="an-forecast-legend-dot" style="background:rgba(255,59,92,.5)"></span><span>Deficit (gap &lt; 0)</span>
+          <span class="an-forecast-legend-dot" style="background:rgba(0,200,150,.5)"></span><span>Surplus (gap &gt; 0)</span>
+          <span class="an-forecast-legend-dot" style="background:rgba(0,119,255,.4)"></span><span>On Target (gap = 0)</span>
+          <span class="an-forecast-legend-dot" style="background:#e5e7eb"></span><span>No requirement set</span>
+        </div>
+      </div>
+
+      <!-- ── Feature 6: Historical View ────────────── -->
+      <div class="chart-card an-history-card" id="anHistoryCard">
+        <div class="chart-card-hdr">
+          <div>
+            <div class="chart-card-title">📈 Historical Trend</div>
+            <div class="chart-card-sub">Net gap over time from saved daily snapshots</div>
+          </div>
+          <span class="tbl-count" id="anHistoryCount">0 snapshots</span>
+        </div>
+        <!-- Statistics row -->
+        <div class="an-history-stats" id="anHistoryStats" style="display:none"></div>
+        <!-- Trend chart -->
+        <div class="an-history-chart-wrap">
+          <canvas id="anHistoryChart" style="display:none"></canvas>
+          <div id="anHistoryChartEmpty" class="an-history-empty">No snapshot data yet — save today's snapshot to begin tracking.</div>
+        </div>
+        <!-- Snapshot table -->
+        <div class="an-history-section-lbl">Saved Snapshots</div>
+        <div class="an-history-tbl-wrap">
+          <table class="an-history-tbl">
+            <thead>
+              <tr>
+                <th class="ht-date">Date</th>
+                <th>Available</th>
+                <th>Required</th>
+                <th>Net Gap</th>
+                <th>Deficit Sites</th>
+                <th>Surplus Sites</th>
+                <th>On Target</th>
+                <th>On Leave</th>
+                <th>Sufficient?</th>
+                <th>Saved By</th>
+              </tr>
+            </thead>
+            <tbody id="anHistoryTblBody"></tbody>
+          </table>
+          <div id="anHistoryTblEmpty" class="an-history-empty">No snapshot history found.</div>
+        </div>
+      </div>
+
       <!-- ── Engineers on Leave ────────────────────── -->
       <div class="chart-card">
         <div class="chart-card-hdr">
@@ -2140,6 +2283,12 @@ service cloud.firestore {
       allow create: if true;
       allow read, update: if request.auth != null;
     }
+
+    // Manpower history snapshots — admin write; authenticated read
+    match /manpowerHistory/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
   }
 }</pre>
         <button onclick="var t=document.getElementById('fsRulesPre');var r=document.createRange();r.selectNode(t);window.getSelection().removeAllRanges();window.getSelection().addRange(r);try{document.execCommand('copy');toast('✅ Rules copied!','t-ok');}catch(e){toast('Select + copy manually','t-err');}" style="margin-top:8px;padding:6px 14px;border-radius:var(--r);background:#0d1117;color:#e6edf3;border:none;font-size:.78rem;font-weight:600;cursor:pointer;font-family:var(--body)">📋 Copy Rules</button>
@@ -2404,6 +2553,13 @@ service cloud.firestore {
                     && resource.data.expiresAt > request.time.toMillis()
                     && resource.data.status == 'pending'
                     && request.resource.data.status in ['verified', 'failed', 'expired'];
+    }
+
+    // ── 7. Manpower history snapshots (v6.19) ────────
+    // Daily gap snapshots saved by admin for trend analysis
+    match /manpowerHistory/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
     }
   }
 }</pre>
@@ -6712,10 +6868,63 @@ function exportAnalyticsXLSX() {
   autoWidth(ws6, reallocSheet.length ? reallocSheet : [{ Note: "x" }]);
   XLSX.utils.book_append_sheet(wb, ws6, "Reallocation Plan");
 
+  // ── Sheet 7: Forecast (14 Days) ──────────────────────────────────
+  var forecastRows = [];
+  try {
+    var fcDays = 14;
+    var fcData = _anForecastSweep(fcDays);
+    fcData.forEach(function(day) {
+      day.sites.forEach(function(s) {
+        forecastRows.push({
+          "Date":      day.isoDate,
+          "Day":       day.dayShort,
+          "Site":      s.site,
+          "Roster":    s.roster    || 0,
+          "On Leave":  s.onLeave   || 0,
+          "Available": s.available || 0,
+          "Required":  s.required  != null ? s.required  : "N/A",
+          "Gap":       s.gap       != null ? s.gap        : "N/A",
+          "Status":    s.status    || "noreq"
+        });
+      });
+    });
+  } catch(e) { console.warn("Forecast export error:", e); }
+  var ws7 = XLSX.utils.json_to_sheet(forecastRows.length ? forecastRows : [{ Note: "No forecast data available." }]);
+  autoWidth(ws7, forecastRows.length ? forecastRows : [{ Note: "x" }]);
+  XLSX.utils.book_append_sheet(wb, ws7, "Forecast (14 Days)");
+
+  // ── Sheet 8: Historical Snapshots ────────────────────────────────
+  var histRows = [];
+  try {
+    var hSnaps = _anHistorySnaps || [];
+    hSnaps.forEach(function(s) {
+      var gs = s.globalSummary || {};
+      var rp = s.reallocationPlan || {};
+      histRows.push({
+        "Date":            s.date || "",
+        "Saved By":        s.savedBy || "",
+        "Total Available": gs.totalAvailable != null ? gs.totalAvailable : "",
+        "Total Required":  gs.totalRequired  != null ? gs.totalRequired  : "",
+        "Net Gap":         gs.netGap         != null ? gs.netGap         : "",
+        "Deficit Sites":   gs.sitesDeficit   != null ? gs.sitesDeficit   : "",
+        "Surplus Sites":   gs.sitesSurplus   != null ? gs.sitesSurplus   : "",
+        "On Target Sites": gs.sitesOnTarget  != null ? gs.sitesOnTarget  : "",
+        "On Leave":        s.leaveCount      != null ? s.leaveCount      : "",
+        "Sufficient":      rp.isSufficient   != null ? (rp.isSufficient ? "Yes" : "No") : "",
+        "Total Surplus":   rp.totalSurplus   != null ? rp.totalSurplus   : "",
+        "Total Deficit":   rp.totalDeficit   != null ? rp.totalDeficit   : ""
+      });
+    });
+  } catch(e) { console.warn("History export error:", e); }
+  var ws8 = XLSX.utils.json_to_sheet(histRows.length ? histRows : [{ Note: "No historical snapshots saved yet." }]);
+  autoWidth(ws8, histRows.length ? histRows : [{ Note: "x" }]);
+  XLSX.utils.book_append_sheet(wb, ws8, "Historical Snapshots");
+
   var stamp = new Date().toISOString().split("T")[0];
   var fname = "attendance_analytics_" + stamp + ".xlsx";
   XLSX.writeFile(wb, fname);
-  toast("📊 Excel exported · " + rows.length + " records · 6 sheets", "t-ok");
+  var sheetCount = 6 + (forecastRows.length ? 1 : 0) + (histRows.length ? 1 : 0);
+  toast("📊 Excel exported · " + rows.length + " records · " + sheetCount + " sheets", "t-ok");
 }
 
 // ── Export Attendance Breakdown — full detail, 4 sheets ──
@@ -8035,6 +8244,472 @@ function _anRenderManpowerLayer() {
   if (el && !el.value) el.value = new Date().toISOString().split("T")[0];
   try { renderManpowerGap(); }
   catch(e) { console.warn("Manpower render error:", e && e.message); }
+  // Feature 2 — render forecast grid
+  try { renderForecastPanel(); }
+  catch(e) { console.warn("Forecast render error:", e && e.message); }
+  // Feature 5 — update snapshot save status
+  try { _anUpdateSnapStatus(); }
+  catch(e) { console.warn("Snap status error:", e && e.message); }
+  // Feature 5+6 — subscribe history (idempotent — only fires once)
+  try { _anSubscribeHistory(); }
+  catch(e) { console.warn("History subscribe error:", e && e.message); }
+  // Feature 5 — auto-snapshot check (after 17:00, if no snapshot today)
+  try { _anAutoSnapshotCheck(); }
+  catch(e) { console.warn("Auto-snapshot error:", e && e.message); }
+}
+// ╚══════════════════════════════════════════════════════╝
+
+// ╔══════════════════════════════════════════════════════╗
+// ║  FEATURE 2 — FUTURE MANPOWER FORECAST                ║
+// ╚══════════════════════════════════════════════════════╝
+
+/**
+ * Compute forecast for the next N days starting from today.
+ * Returns array of { isoDate, humanDate, isToday, sites[] }
+ * where each site: { site, gap, status }
+ */
+function _anForecastSweep(days) {
+  var today = new Date().toISOString().split("T")[0];
+  var result = [];
+  for (var i = 0; i < days; i++) {
+    var d = new Date();
+    d.setDate(d.getDate() + i);
+    var iso = d.toISOString().split("T")[0];
+    var human = d.toLocaleDateString("en-SG", { month:"short", day:"numeric" });
+    var dayShort = d.toLocaleDateString("en-SG", { weekday:"short" });
+    var gaps = _anGapAnalysis(iso);
+    result.push({ isoDate: iso, humanDate: human, dayShort: dayShort, isToday: iso === today, sites: gaps });
+  }
+  return result;
+}
+
+function renderForecastPanel() {
+  var body = document.getElementById("anForecastBody");
+  if (!body) return;
+  var daysEl = document.getElementById("anForecastDays");
+  var days = daysEl ? parseInt(daysEl.value, 10) : 14;
+
+  // Need allRecs loaded
+  if (typeof allRecs === "undefined" || !allRecs || !allRecs.length) {
+    body.innerHTML = '<div class="an-forecast-loading">Waiting for data to load…</div>';
+    return;
+  }
+
+  var forecast = _anForecastSweep(days);
+  if (!forecast.length) {
+    body.innerHTML = '<div class="an-forecast-loading">No forecast available.</div>';
+    return;
+  }
+
+  // Collect all unique site names
+  var siteSet = {};
+  forecast.forEach(function(day) {
+    day.sites.forEach(function(s){ siteSet[s.site] = true; });
+  });
+  var siteNames = Object.keys(siteSet).sort();
+
+  var html = '<div class="an-forecast-scroll"><table class="an-forecast-tbl"><thead><tr>';
+  html += '<th class="fc-site-col">Site</th>';
+  forecast.forEach(function(day) {
+    var todayCls = day.isToday ? " fc-today-col" : "";
+    html += '<th class="fc-date-hdr' + todayCls + '" onclick="_anForecastNavDate(\'' + day.isoDate + '\')" title="Click to set gap analysis to ' + day.isoDate + '">';
+    html += '<div>' + day.dayShort + '</div><div style="font-size:.68rem;font-weight:400">' + day.humanDate + '</div>';
+    html += '</th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  siteNames.forEach(function(site) {
+    html += '<tr><td class="fc-site-col">' + sanitizeHtml(site) + '</td>';
+    forecast.forEach(function(day) {
+      var siteData = null;
+      for (var j = 0; j < day.sites.length; j++) {
+        if (day.sites[j].site === site) { siteData = day.sites[j]; break; }
+      }
+      var todayCls = day.isToday ? " fc-today-col" : "";
+      if (!siteData || siteData.status === "noreq") {
+        html += '<td class="fc-noreq' + todayCls + '">—</td>';
+      } else if (siteData.status === "deficit") {
+        html += '<td class="fc-deficit' + todayCls + '">' + siteData.gap + '</td>';
+      } else if (siteData.status === "surplus") {
+        html += '<td class="fc-surplus' + todayCls + '">+' + siteData.gap + '</td>';
+      } else {
+        html += '<td class="fc-ontarget' + todayCls + '">✓</td>';
+      }
+    });
+    html += '</tr>';
+  });
+
+  // Summary row: how many deficit sites per day
+  html += '<tr style="border-top:2px solid var(--border)">';
+  html += '<td class="fc-site-col" style="font-weight:700;color:var(--ink3);font-size:.69rem">Deficit Sites</td>';
+  forecast.forEach(function(day) {
+    var defCount = day.sites.filter(function(s){ return s.status === "deficit"; }).length;
+    var todayCls = day.isToday ? " fc-today-col" : "";
+    var cls = defCount > 0 ? "fc-deficit" : "fc-ontarget";
+    html += '<td class="' + cls + todayCls + '">' + defCount + '</td>';
+  });
+  html += '</tr></tbody></table></div>';
+
+  body.innerHTML = html;
+}
+
+/** Navigate as-of date picker when a forecast date header is clicked */
+function _anForecastNavDate(isoDate) {
+  var el = document.getElementById("anAsOfDate");
+  if (el) {
+    el.value = isoDate;
+    if (typeof _raDebounced === "function") _raDebounced();
+  }
+  toast("📅 Navigated to " + isoDate, "t-ok");
+}
+
+// ╔══════════════════════════════════════════════════════╗
+// ║  FEATURE 5 — HISTORICAL SNAPSHOT SAVE               ║
+// ╚══════════════════════════════════════════════════════╝
+
+var _anHistoryUnsubscribe = null; // Firestore unsubscribe handle
+var _anHistorySnaps = [];         // cached snapshots from Firestore
+var _anTodaySnapshotExists = false; // whether today already has a snapshot
+
+/** Build the snapshot document for today */
+function _anBuildSnapshotDoc(isoDate) {
+  var gaps = _anGapAnalysis(isoDate);
+  var plan = (typeof _anReallocationPlan === "function") ? _anReallocationPlan(gaps.filter(function(g){ return g.status !== "noreq"; })) : null;
+
+  var totalRequired  = 0;
+  var totalAvailable = 0;
+  var netGap         = 0;
+  var sitesDeficit   = 0;
+  var sitesSurplus   = 0;
+  var sitesOnTarget  = 0;
+  var totalOnLeave   = 0;
+
+  var siteDocs = gaps.map(function(g) {
+    if (g.required != null) {
+      totalRequired  += g.required;
+      totalAvailable += g.available;
+      netGap         += (g.gap || 0);
+      if (g.status === "deficit")  sitesDeficit++;
+      if (g.status === "surplus")  sitesSurplus++;
+      if (g.status === "ontarget") sitesOnTarget++;
+    }
+    totalOnLeave += g.onLeave || 0;
+    return {
+      site:      g.site,
+      roster:    g.roster    || 0,
+      onLeave:   g.onLeave   || 0,
+      available: g.available || 0,
+      required:  g.required  != null ? g.required : null,
+      gap:       g.gap       != null ? g.gap       : null,
+      status:    g.status    || "noreq"
+    };
+  });
+
+  var user = (typeof firebase !== "undefined" && firebase.auth && firebase.auth().currentUser)
+    ? (firebase.auth().currentUser.displayName || firebase.auth().currentUser.email || "unknown")
+    : "system";
+
+  return {
+    date:    isoDate,
+    savedAt: firebase.firestore ? firebase.firestore.FieldValue.serverTimestamp() : new Date().toISOString(),
+    savedBy: user,
+    sites:   siteDocs,
+    globalSummary: {
+      totalRequired:  totalRequired,
+      totalAvailable: totalAvailable,
+      netGap:         netGap,
+      sitesDeficit:   sitesDeficit,
+      sitesSurplus:   sitesSurplus,
+      sitesOnTarget:  sitesOnTarget
+    },
+    reallocationPlan: plan ? {
+      transfers:    plan.transfers    || [],
+      uncovered:    plan.uncovered    || [],
+      totalSurplus: plan.totalSurplus || 0,
+      totalDeficit: plan.totalDeficit || 0,
+      isSufficient: plan.isSufficient || false
+    } : null,
+    leaveCount: totalOnLeave
+  };
+}
+
+/** Save today's snapshot (manual = true shows success toast) */
+function _anSaveSnapshot(manual) {
+  var today = new Date().toISOString().split("T")[0];
+  if (typeof firebase === "undefined" || !firebase.firestore) {
+    if (manual) toast("Firebase not ready", "t-err");
+    return;
+  }
+  var user = firebase.auth && firebase.auth().currentUser;
+  if (!user) {
+    if (manual) toast("Sign in as admin to save snapshots", "t-err");
+    return;
+  }
+
+  var btn = document.getElementById("anSnapSaveBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+
+  var doc = _anBuildSnapshotDoc(today);
+  firebase.firestore().collection("manpowerHistory").doc(today).set(doc)
+    .then(function() {
+      _anTodaySnapshotExists = true;
+      _anUpdateSnapStatus();
+      if (manual) toast("💾 Snapshot saved for " + today, "t-ok");
+    })
+    .catch(function(err) {
+      if (manual) toast("Save failed: " + (err.message || err), "t-err");
+      console.error("Snapshot save error:", err);
+    })
+    .finally(function() {
+      if (btn) { btn.disabled = false; btn.innerHTML = "💾 Save Snapshot"; }
+    });
+}
+
+/** Auto-save if it's past 17:00 and no snapshot exists for today */
+function _anAutoSnapshotCheck() {
+  var now   = new Date();
+  var today = now.toISOString().split("T")[0];
+  if (_anTodaySnapshotExists) return; // already saved
+  if (now.getHours() < 17) return;   // too early
+
+  var user = typeof firebase !== "undefined" && firebase.auth && firebase.auth().currentUser;
+  if (!user) return; // not signed in
+
+  if (typeof firebase === "undefined" || !firebase.firestore) return;
+  // Check Firestore to be sure
+  firebase.firestore().collection("manpowerHistory").doc(today).get()
+    .then(function(snap) {
+      if (!snap.exists) {
+        _anSaveSnapshot(false);
+      } else {
+        _anTodaySnapshotExists = true;
+        _anUpdateSnapStatus();
+      }
+    })
+    .catch(function(e) { console.warn("Auto-snapshot check:", e); });
+}
+
+/** Update the save-controls status chip */
+function _anUpdateSnapStatus() {
+  var today = new Date().toISOString().split("T")[0];
+  setText("anSnapSaveDate", today);
+  var statusEl = document.getElementById("anSnapSaveStatus");
+  if (!statusEl) return;
+  if (_anTodaySnapshotExists) {
+    statusEl.textContent = "✅ Saved";
+    statusEl.className = "an-snap-status ss-saved";
+  } else {
+    var h = new Date().getHours();
+    if (h >= 17) {
+      statusEl.textContent = "⏳ Pending";
+      statusEl.className = "an-snap-status ss-pending";
+    } else {
+      statusEl.textContent = "— Not saved";
+      statusEl.className = "an-snap-status ss-none";
+    }
+  }
+}
+
+// ╔══════════════════════════════════════════════════════╗
+// ║  FEATURE 6 — HISTORICAL ANALYTICS VIEW              ║
+// ╚══════════════════════════════════════════════════════╝
+
+var _anHistoryChart = null; // Chart.js instance
+
+/** Subscribe to manpowerHistory collection in real-time (idempotent) */
+function _anSubscribeHistory() {
+  if (_anHistoryUnsubscribe) return; // already subscribed
+  if (typeof firebase === "undefined" || !firebase.firestore) return;
+
+  _anHistoryUnsubscribe = firebase.firestore()
+    .collection("manpowerHistory")
+    .orderBy("date", "asc")
+    .onSnapshot(function(snapshot) {
+      _anHistorySnaps = [];
+      snapshot.forEach(function(doc) {
+        _anHistorySnaps.push(doc.data());
+      });
+      // Check if today's snapshot exists
+      var today = new Date().toISOString().split("T")[0];
+      _anTodaySnapshotExists = _anHistorySnaps.some(function(s){ return s.date === today; });
+      _anUpdateSnapStatus();
+      renderHistoryPanel();
+    }, function(err) {
+      console.warn("History subscription error:", err);
+    });
+}
+
+/** Render the historical trend chart + table */
+function renderHistoryPanel() {
+  var snaps  = _anHistorySnaps || [];
+  var countEl = document.getElementById("anHistoryCount");
+  if (countEl) countEl.textContent = snaps.length + " snapshot" + (snaps.length !== 1 ? "s" : "");
+
+  var statsEl = document.getElementById("anHistoryStats");
+  var chartEmpty = document.getElementById("anHistoryChartEmpty");
+  var tblBody = document.getElementById("anHistoryTblBody");
+  var tblEmpty = document.getElementById("anHistoryTblEmpty");
+  var chartCanvas = document.getElementById("anHistoryChart");
+
+  if (!snaps.length) {
+    if (statsEl)   { statsEl.style.display = "none"; }
+    if (chartCanvas) chartCanvas.style.display = "none";
+    if (chartEmpty)  chartEmpty.style.display = "";
+    if (tblBody)     tblBody.innerHTML = "";
+    if (tblEmpty)    tblEmpty.style.display = "";
+    return;
+  }
+
+  // ── Statistics ──
+  var netGaps = snaps.map(function(s){ return s.globalSummary ? (s.globalSummary.netGap || 0) : 0; });
+  var avgGap  = netGaps.reduce(function(a,b){ return a+b; }, 0) / netGaps.length;
+  var minGap  = Math.min.apply(null, netGaps);
+  var maxGap  = Math.max.apply(null, netGaps);
+  var deficitDays = snaps.filter(function(s){ return s.globalSummary && s.globalSummary.netGap < 0; }).length;
+
+  if (statsEl) {
+    statsEl.style.display = "flex";
+    statsEl.innerHTML =
+      _anHistStat("Snapshots", snaps.length, "Total saved") +
+      _anHistStat("Avg Net Gap", (avgGap >= 0 ? "+" : "") + avgGap.toFixed(1), "vs requirement") +
+      _anHistStat("Best Day", (maxGap >= 0 ? "+" : "") + maxGap, "highest surplus") +
+      _anHistStat("Worst Day", minGap, "lowest net gap") +
+      _anHistStat("Deficit Days", deficitDays, "of " + snaps.length + " days");
+  }
+
+  // ── Chart ──
+  if (chartCanvas && typeof Chart !== "undefined") {
+    chartCanvas.style.display = "";
+    if (chartEmpty) chartEmpty.style.display = "none";
+
+    var labels = snaps.map(function(s){
+      var d = new Date(s.date + "T00:00:00");
+      return d.toLocaleDateString("en-SG", { month:"short", day:"numeric" });
+    });
+    var netGapData = snaps.map(function(s){ return s.globalSummary ? (s.globalSummary.netGap || 0) : 0; });
+    var availData  = snaps.map(function(s){ return s.globalSummary ? (s.globalSummary.totalAvailable || 0) : 0; });
+    var reqData    = snaps.map(function(s){ return s.globalSummary ? (s.globalSummary.totalRequired || 0) : 0; });
+
+    if (_anHistoryChart) {
+      _anHistoryChart.data.labels = labels;
+      _anHistoryChart.data.datasets[0].data = netGapData;
+      _anHistoryChart.data.datasets[1].data = availData;
+      _anHistoryChart.data.datasets[2].data = reqData;
+      _anHistoryChart.update();
+    } else {
+      _anHistoryChart = new Chart(chartCanvas.getContext("2d"), {
+        type: "line",
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: "Net Gap",
+              data: netGapData,
+              borderColor: "rgba(0,119,255,1)",
+              backgroundColor: "rgba(0,119,255,.12)",
+              fill: true,
+              tension: .35,
+              borderWidth: 2.5,
+              pointRadius: 4,
+              pointHoverRadius: 6,
+              yAxisID: "y"
+            },
+            {
+              label: "Available",
+              data: availData,
+              borderColor: "rgba(0,200,150,.85)",
+              backgroundColor: "transparent",
+              borderWidth: 1.5,
+              borderDash: [4,4],
+              pointRadius: 2,
+              tension: .35,
+              yAxisID: "y2"
+            },
+            {
+              label: "Required",
+              data: reqData,
+              borderColor: "rgba(255,59,92,.7)",
+              backgroundColor: "transparent",
+              borderWidth: 1.5,
+              borderDash: [4,4],
+              pointRadius: 2,
+              tension: .35,
+              yAxisID: "y2"
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: { position: "top", labels: { boxWidth: 12, font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: function(ctx) {
+                  var v = ctx.parsed.y;
+                  if (ctx.datasetIndex === 0) return " Net Gap: " + (v >= 0 ? "+" : "") + v;
+                  if (ctx.datasetIndex === 1) return " Available: " + v;
+                  return " Required: " + v;
+                }
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { font: { size: 10 }, maxRotation: 45 } },
+            y: {
+              position: "left",
+              title: { display: true, text: "Net Gap", font: { size: 10 } },
+              ticks: { font: { size: 10 } },
+              grid: { color: "rgba(0,0,0,.06)" }
+            },
+            y2: {
+              position: "right",
+              title: { display: true, text: "Headcount", font: { size: 10 } },
+              ticks: { font: { size: 10 } },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+  }
+
+  // ── Table ──
+  if (tblBody) {
+    var rows = "";
+    var sortedSnaps = snaps.slice().reverse(); // newest first
+    sortedSnaps.forEach(function(s) {
+      var gs = s.globalSummary || {};
+      var ng = gs.netGap != null ? gs.netGap : "—";
+      var ngCls = ng === "—" ? "" : (ng < 0 ? "ht-deficit" : ng > 0 ? "ht-surplus" : "ht-ok");
+      var ngTxt = ng === "—" ? "—" : (ng >= 0 ? "+" + ng : "" + ng);
+      var isToday = s.date === new Date().toISOString().split("T")[0];
+      rows += '<tr' + (isToday ? ' style="background:#eff6ff"' : "") + '>';
+      rows += '<td class="ht-date">' + sanitizeHtml(s.date) + (isToday ? ' <span style="font-size:.65rem;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 5px">TODAY</span>' : "") + '</td>';
+      rows += '<td>' + (gs.totalAvailable != null ? gs.totalAvailable : "—") + '</td>';
+      rows += '<td>' + (gs.totalRequired  != null ? gs.totalRequired  : "—") + '</td>';
+      rows += '<td class="' + ngCls + '">' + ngTxt + '</td>';
+      rows += '<td class="ht-deficit">' + (gs.sitesDeficit  != null ? gs.sitesDeficit  : "—") + '</td>';
+      rows += '<td class="ht-surplus">' + (gs.sitesSurplus  != null ? gs.sitesSurplus  : "—") + '</td>';
+      rows += '<td class="ht-ok">'     + (gs.sitesOnTarget != null ? gs.sitesOnTarget : "—") + '</td>';
+      rows += '<td>' + (s.leaveCount != null ? s.leaveCount : "—") + '</td>';
+      var rp = s.reallocationPlan;
+      rows += '<td>' + (rp ? (rp.isSufficient ? '<span style="color:#15803d">✅ Yes</span>' : '<span style="color:#c0392b">❌ No</span>') : "—") + '</td>';
+      rows += '<td style="font-size:.7rem;color:var(--ink3)">' + sanitizeHtml(s.savedBy || "—") + '</td>';
+      rows += '</tr>';
+    });
+    tblBody.innerHTML = rows;
+    if (tblEmpty) tblEmpty.style.display = rows ? "none" : "";
+  }
+}
+
+function _anHistStat(label, val, sub) {
+  return '<div class="an-hist-stat">' +
+    '<div class="an-hist-stat-lbl">' + sanitizeHtml(label) + '</div>' +
+    '<div class="an-hist-stat-val">' + sanitizeHtml(String(val)) + '</div>' +
+    '<div class="an-hist-stat-sub">' + sanitizeHtml(sub) + '</div>' +
+    '</div>';
 }
 // ╚══════════════════════════════════════════════════════╝
 
@@ -12740,504 +13415,4 @@ function _tdrOdDownloadItem(itemId) {
       headers: { Authorization: "Bearer " + token }
     }).then(function(r) {
       if (!r.ok) throw new Error("Download failed (HTTP " + r.status + ")");
-      return r.arrayBuffer();
-    });
-  });
-}
-
-// ── SHARED HELPERS ───────────────────────────────────────────────────────
-function _tdrOdParseBuffer(buf) {
-  var wb = XLSX.read(new Uint8Array(buf), { type: "array", cellDates: true });
-  var sheetName = wb.SheetNames[0];
-  wb.SheetNames.forEach(function(n){ if (/tdr|status/i.test(n)) sheetName = n; });
-  var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header:1, defval:"" });
-  var startRow = 1;
-  for (var i = 0; i < Math.min(rows.length, 5); i++) {
-    var cellB = String(rows[i][1] || "").trim();
-    if (cellB && !/workstation|pc|name|hostname/i.test(cellB)) { startRow = i; break; }
-  }
-  var total=0, passed=0, failed=0, notAttended=0, errorTypes={}, errorDetails={};
-  rows.slice(startRow).forEach(function(row) {
-    var wsName = String(row[1]||"").trim(); if (!wsName) return;
-    total++;
-    var reporter       = String(row[6]||"").trim();
-    var status         = String(row[7]||"").trim().toUpperCase();
-    var validationDate = _tdrFmtDate(row[8]);
-    var errorCode      = String(row[9]||"").trim();
-    var detail         = String(row[10]||"").trim();
-    if (status === "PASSED") passed++;
-    else if (status === "FAILED") {
-      failed++;
-      var ec = errorCode || "Unknown";
-      errorTypes[ec] = (errorTypes[ec]||0) + 1;
-      if (!errorDetails[ec]) errorDetails[ec] = [];
-      errorDetails[ec].push({ workstation: wsName, reporter: reporter, validationDate: validationDate, detail: detail });
-    } else notAttended++;
-  });
-  return { total:total, passed:passed, failed:failed, notAttended:notAttended,
-           errorTypes:errorTypes, errorDetails:errorDetails };
-}
-
-function tdrOdDisconnect() {
-  if (!confirm("Disconnect OneDrive? Loaded reports will remain, but auto-sync will stop.")) return;
-  try { if (_tdrOd.mode === "oauth" && _tdrOd.msal && _tdrOd.account) _tdrOd.msal.logoutPopup({ account: _tdrOd.account }).catch(function(){}); } catch(e){}
-  _tdrOd.mode = "";
-  _tdrOd.urls = [];
-  _tdrOd.account = null;
-  _tdrOd.fileMap = {};
-  _tdrOd.lastSyncTs = 0;
-  tdrOdStopTimer();
-  tdrOdSaveConfig();
-  tdrOdUpdateUI();
-  toast("OneDrive disconnected.", "t-warn");
-}
-
-function tdrOdRefreshNow() {
-  if (_tdrOd.mode === "sharelinks") return _tdrOdRefreshSharepoint();
-  if (_tdrOd.mode === "oauth")      return _tdrOdRefreshOauth();
-  return Promise.resolve();
-}
-
-function _tdrOdRefreshSharepoint() {
-  if (!_tdrOd.urls.length) return Promise.resolve();
-  if (_tdrOd.syncing) return Promise.resolve();
-  _tdrOd.syncing = true; tdrOdUpdateUI("syncing");
-
-  var ok = 0, fail = 0;
-  var p = Promise.resolve();
-  _tdrOd.urls.forEach(function(shareUrl) {
-    p = p.then(function() {
-      return _tdrOdFetchSharepoint(shareUrl).then(function(buf) {
-        try {
-          var data = _tdrOdParseBuffer(buf);
-          var existing = _tdrOd.fileMap[shareUrl];
-          var fileName = (existing && existing.fileName) || _tdrOdGuessNameFromUrl(shareUrl);
-          if (!/\.(xlsx|xls)$/i.test(fileName)) fileName = fileName + ".xlsx";
-          var siteName = fileName.replace(/\.[^.]+$/, "");
-          var idx = -1;
-          for (var i=0; i<_tdrSites.length; i++) if (_tdrSites[i].fileName === fileName) { idx = i; break; }
-          if (idx >= 0) { tdrRemoveSite(idx); tdrAddSite(siteName, fileName, data); }
-          else          { tdrAddSite(siteName, fileName, data); }
-          _tdrOd.fileMap[shareUrl] = { fileName: fileName, lastSyncTs: Date.now(), ok: true };
-          ok++;
-        } catch(e) {
-          _tdrOd.fileMap[shareUrl] = { fileName: (_tdrOd.fileMap[shareUrl] && _tdrOd.fileMap[shareUrl].fileName) || _tdrOdGuessNameFromUrl(shareUrl), lastSyncTs: Date.now(), ok: false, err: String(e && e.message || e) };
-          fail++;
-        }
-      }).catch(function(e) {
-        _tdrOd.fileMap[shareUrl] = { fileName: (_tdrOd.fileMap[shareUrl] && _tdrOd.fileMap[shareUrl].fileName) || _tdrOdGuessNameFromUrl(shareUrl), lastSyncTs: Date.now(), ok: false, err: String(e && e.message || e) };
-        fail++;
-      });
-    });
-  });
-  return p.then(function() {
-    _tdrOd.lastSyncTs = Date.now();
-    _tdrOd.syncing = false;
-    tdrOdSaveConfig();
-    tdrOdUpdateUI();
-    if (ok || fail) {
-      var cls = fail && !ok ? "t-err" : (fail ? "t-warn" : "t-ok");
-      toast("☁️ Sync done · " + ok + " ok" + (fail ? " · " + fail + " failed" : ""), cls);
-    }
-  });
-}
-
-function _tdrOdRefreshOauth() {
-  if (!_tdrOd.clientId) return Promise.resolve();
-  _tdrOdMsalInit();
-  if (!_tdrOd.msal || !_tdrOd.msal.getAllAccounts().length) return Promise.resolve();
-  if (_tdrOd.syncing) return Promise.resolve();
-  _tdrOd.syncing = true; tdrOdUpdateUI("syncing");
-
-  return _tdrOdListFolderItems().then(function(items) {
-    var added = 0, changed = 0, total = items.length;
-    var chain = Promise.resolve();
-    items.forEach(function(item) {
-      var prev = _tdrOd.fileMap[item.id];
-      if (prev && prev.lastModified === item.lastModifiedDateTime) return;
-      chain = chain.then(function() {
-        return _tdrOdDownloadItem(item.id).then(function(buf) {
-          try {
-            var data = _tdrOdParseBuffer(buf);
-            var siteName = item.name.replace(/\.[^.]+$/, "");
-            var idx = -1;
-            for (var i=0; i<_tdrSites.length; i++) if (_tdrSites[i].fileName === item.name) { idx = i; break; }
-            if (idx >= 0) { tdrRemoveSite(idx); tdrAddSite(siteName, item.name, data); changed++; }
-            else          { tdrAddSite(siteName, item.name, data); added++; }
-            _tdrOd.fileMap[item.id] = { name: item.name, lastModified: item.lastModifiedDateTime };
-          } catch(e) { console.warn("[TDR-OD] parse failed:", item.name, e); }
-        }).catch(function(e){ console.warn("[TDR-OD] download failed:", item.name, e); });
-      });
-    });
-    return chain.then(function() {
-      _tdrOd.lastSyncTs = Date.now();
-      _tdrOd.syncing = false;
-      tdrOdSaveConfig();
-      tdrOdUpdateUI();
-      if (added || changed) toast("☁️ Sync done · " + (added?(added+" new "):"") + (changed?(changed+" updated"):"") + " · " + total + " total", "t-ok");
-    });
-  }).catch(function(e) {
-    _tdrOd.syncing = false;
-    tdrOdUpdateUI("error", e && e.message);
-    toast("❌ OneDrive sync failed: " + ((e && e.message) || e), "t-err");
-  });
-}
-
-function tdrOdSetInterval(ms) {
-  _tdrOd.intervalMs = parseInt(ms, 10) || 0;
-  tdrOdSaveConfig();
-  tdrOdStopTimer();
-  if (_tdrOd.mode && _tdrOd.intervalMs > 0 && _tdrOdTabVisible()) tdrOdStartTimer();
-}
-function tdrOdStartTimer() {
-  tdrOdStopTimer();
-  if (!_tdrOd.mode || !_tdrOd.intervalMs) return;
-  _tdrOd.timer = setInterval(function() {
-    if (_tdrOdTabVisible() && !document.hidden) tdrOdRefreshNow();
-  }, _tdrOd.intervalMs);
-}
-function tdrOdStopTimer() { if (_tdrOd.timer) { clearInterval(_tdrOd.timer); _tdrOd.timer = null; } }
-function _tdrOdTabVisible() { var t = document.getElementById("dTab-tdr"); return t && t.style.display !== "none"; }
-
-function tdrOdUpdateUI(stateOverride, errMsg) {
-  var bar  = document.getElementById("tdrOdStatusBar");
-  var icon = document.getElementById("tdrOdStatusIcon");
-  var txt  = document.getElementById("tdrOdStatusText");
-  var meta = document.getElementById("tdrOdStatusMeta");
-  var btn  = document.getElementById("tdrOdConnectBtn");
-  if (!bar) return;
-
-  if (!_tdrOd.mode) {
-    bar.style.display = "none";
-    if (btn) { btn.textContent = "☁️ Connect OneDrive"; btn.style.display = ""; }
-    return;
-  }
-  bar.style.display = "flex";
-  if (btn) btn.style.display = "none";
-
-  if (stateOverride === "syncing") {
-    icon.textContent = "🔄"; txt.textContent = "Syncing from OneDrive…";
-    meta.textContent = _tdrOd.mode === "oauth" ? _tdrOd.folderPath : (_tdrOd.urls.length + " link(s)");
-    return;
-  }
-  if (stateOverride === "error") {
-    icon.textContent = "⚠️"; txt.textContent = "Sync error";
-    meta.textContent = errMsg || "Check the configuration.";
-    return;
-  }
-  icon.textContent = "☁️";
-  if (_tdrOd.mode === "oauth") {
-    txt.textContent = "OneDrive (OAuth): " + Object.keys(_tdrOd.fileMap).length + " file(s) · " + (_tdrOd.account ? _tdrOd.account.username : "signed in");
-  } else {
-    var okCount = 0, failCount = 0;
-    _tdrOd.urls.forEach(function(u){ var m=_tdrOd.fileMap[u]; if (m && m.ok) okCount++; else if (m && !m.ok) failCount++; });
-    txt.textContent = "SharePoint Links: " + okCount + " ok" + (failCount ? " · " + failCount + " failed" : "") + " of " + _tdrOd.urls.length;
-  }
-  var ago = _tdrOd.lastSyncTs ? Math.round((Date.now() - _tdrOd.lastSyncTs) / 1000) : 0;
-  var agoTxt = ago < 60 ? (ago + "s ago") : (Math.round(ago/60) + " min ago");
-  meta.textContent = (_tdrOd.lastSyncTs ? ("Last synced " + agoTxt) : "Not synced yet") + " · mode: " + _tdrOd.mode;
-
-  var sel = document.getElementById("tdrOdInterval");
-  if (sel) sel.value = String(_tdrOd.intervalMs);
-}
-
-function tdrOdSaveConfig() {
-  var cfg = { mode:_tdrOd.mode, urls:_tdrOd.urls, clientId:_tdrOd.clientId, tenant:_tdrOd.tenant,
-              folderPath:_tdrOd.folderPath, intervalMs:_tdrOd.intervalMs,
-              lastSyncTs:_tdrOd.lastSyncTs, fileMap:_tdrOd.fileMap };
-  try { localStorage.setItem("at_tdrOd", JSON.stringify(cfg)); } catch(e) {}
-  if (fbOk && db) {
-    db.collection("appConfig").doc("tdrOneDrive").set({
-      mode:_tdrOd.mode, urls:_tdrOd.urls, clientId:_tdrOd.clientId, tenant:_tdrOd.tenant,
-      folderPath:_tdrOd.folderPath, intervalMs:_tdrOd.intervalMs, updatedAt: Date.now()
-    }, { merge: true }).catch(function(e){ console.warn("[TDR-OD] firestore save failed:", e); });
-  }
-}
-function tdrOdLoadConfig() {
-  try {
-    var raw = localStorage.getItem("at_tdrOd");
-    if (raw) {
-      var c = JSON.parse(raw);
-      if (c) {
-        _tdrOd.mode       = c.mode       || (Array.isArray(c.urls) && c.urls.length ? "sharelinks" : (c.clientId ? "oauth" : ""));
-        _tdrOd.urls       = Array.isArray(c.urls) ? c.urls : (c.url ? [c.url] : []);
-        _tdrOd.clientId   = c.clientId   || "";
-        _tdrOd.tenant     = c.tenant     || "common";
-        _tdrOd.folderPath = c.folderPath || "/TDR";
-        _tdrOd.intervalMs = c.intervalMs || 300000;
-        _tdrOd.fileMap    = c.fileMap    || {};
-        _tdrOd.lastSyncTs = c.lastSyncTs || 0;
-      }
-    }
-  } catch(e) {}
-  if (_tdrOd.mode === "oauth") _tdrOdMsalInit();
-  tdrOdUpdateUI();
-
-  if (fbOk && db) {
-    db.collection("appConfig").doc("tdrOneDrive").get().then(function(snap) {
-      if (!snap.exists) return;
-      var d = snap.data();
-      var remoteMode = d.mode || (Array.isArray(d.urls) && d.urls.length ? "sharelinks" : (d.clientId ? "oauth" : ""));
-      var changed = remoteMode !== _tdrOd.mode ||
-                    JSON.stringify(d.urls||[])  !== JSON.stringify(_tdrOd.urls||[]) ||
-                    (d.clientId   && d.clientId   !== _tdrOd.clientId) ||
-                    (d.folderPath && d.folderPath !== _tdrOd.folderPath);
-      if (changed) {
-        _tdrOd.mode       = remoteMode;
-        _tdrOd.urls       = Array.isArray(d.urls) ? d.urls : _tdrOd.urls;
-        _tdrOd.clientId   = d.clientId   || _tdrOd.clientId;
-        _tdrOd.tenant     = d.tenant     || _tdrOd.tenant;
-        _tdrOd.folderPath = d.folderPath || _tdrOd.folderPath;
-        _tdrOd.intervalMs = d.intervalMs || _tdrOd.intervalMs;
-        _tdrOd.fileMap    = {};
-        _tdrOd.lastSyncTs = 0;
-        _tdrOd.msal = null;
-        if (_tdrOd.mode === "oauth") _tdrOdMsalInit();
-        tdrOdSaveConfig();
-        tdrOdUpdateUI();
-        if (_tdrOdTabVisible() && _tdrOd.mode) tdrOdRefreshNow();
-      }
-    }).catch(function(e){ console.warn("[TDR-OD] firestore load failed:", e); });
-  }
-}
-
-function tdrOdOnTabEnter() {
-  tdrOdUpdateUI();
-  if (_tdrOd.mode) {
-    var stale = !_tdrOd.lastSyncTs || (Date.now() - _tdrOd.lastSyncTs) > (_tdrOd.intervalMs || 300000);
-    if (stale) tdrOdRefreshNow();
-    if (_tdrOd.intervalMs > 0) tdrOdStartTimer();
-  }
-}
-function tdrOdOnTabLeave() { tdrOdStopTimer(); }
-
-setInterval(function(){ if (_tdrOd.mode && _tdrOdTabVisible()) tdrOdUpdateUI(); }, 30000);
-
-(function _tdrOdInit() {
-  var tries = 0;
-  var iv = setInterval(function() {
-    tries++;
-    if ((typeof fbOk !== "undefined") || tries > 60) {
-      clearInterval(iv);
-      try { tdrOdLoadConfig(); } catch(e) { console.warn("[TDR-OD] init failed:", e); }
-    }
-  }, 250);
-})();
-// ══ END v6.11 TDR ONEDRIVE DUAL MODE ═══════════════════════════════════════
-// ══ END TDR REPORT (MULTI-SITE) ═══════════════════════════════════════
-
-// ══ ADMIN FORCE CHECK-OUT ═════════════════════════════════════════════
-var _fcoDocId = null;
-var _fcoCheckinTs = 0;
-var _fcoEmpName = "";
-var _fcoEmpId = "";
-var _fcoSite = "";
-var _fcoCheckinDate = "";
-var _fcoCheckinTime = "";
-
-function openForceCoModal(docId, checkinTs, empName, empId, site, checkinDate, checkinTime) {
-  _fcoDocId = docId;
-  _fcoCheckinTs = checkinTs;
-  _fcoEmpName = empName;
-  _fcoEmpId = empId;
-  _fcoSite = site;
-  _fcoCheckinDate = checkinDate;
-  _fcoCheckinTime = checkinTime;
-
-  var el = document.getElementById("fcoModal");
-  if (!el) return;
-
-  // Populate info
-  document.getElementById("fcoInfoName").textContent = empName + " (" + empId + ")";
-  document.getElementById("fcoInfoSite").textContent = site;
-  document.getElementById("fcoInfoCheckin").textContent = checkinDate + "  " + checkinTime;
-
-  // Default checkout datetime = now
-  var now = new Date();
-  var localIso = now.getFullYear() + "-"
-    + String(now.getMonth()+1).padStart(2,"0") + "-"
-    + String(now.getDate()).padStart(2,"0") + "T"
-    + String(now.getHours()).padStart(2,"0") + ":"
-    + String(now.getMinutes()).padStart(2,"0");
-  document.getElementById("fcoCoDateTime").value = localIso;
-  document.getElementById("fcoNote").value = "";
-  document.getElementById("fcoError").textContent = "";
-
-  el.style.display = "flex";
-}
-
-function closeForceCoModal() {
-  var el = document.getElementById("fcoModal");
-  if (el) el.style.display = "none";
-}
-
-function confirmForceCheckout() {
-  var coDateTimeVal = (document.getElementById("fcoCoDateTime").value || "").trim();
-  var note = (document.getElementById("fcoNote").value || "").trim();
-  var errEl = document.getElementById("fcoError");
-
-  if (!_fcoDocId) { errEl.textContent = "No record selected."; return; }
-  if (!coDateTimeVal) { errEl.textContent = "Please select a check-out date and time."; return; }
-
-  var coDateTime = new Date(coDateTimeVal);
-  if (isNaN(coDateTime.getTime())) { errEl.textContent = "Invalid date/time."; return; }
-
-  var coTs = coDateTime.getTime();
-  if (_fcoCheckinTs && coTs <= _fcoCheckinTs) {
-    errEl.textContent = "Check-out time must be after check-in time (" + _fcoCheckinTime + ").";
-    return;
-  }
-
-  // Calculate duration
-  var diffMs = coTs - (_fcoCheckinTs || coTs);
-  var diffH  = Math.floor(diffMs / 3600000);
-  var diffM  = Math.floor((diffMs % 3600000) / 60000);
-  var dur    = diffH + "h " + diffM + "m";
-  var isOT   = diffH >= 9;
-
-  var adminUser = (firebase && firebase.auth && firebase.auth().currentUser) || null;
-  var adminEmail = adminUser ? adminUser.email : "Admin";
-
-  var updates = {
-    checkoutTime:      coDateTime.toLocaleTimeString("en-SG", {hour:"2-digit", minute:"2-digit", second:"2-digit"}),
-    checkoutISO:       coDateTime.toISOString(),
-    checkoutTimestamp: coTs,
-    checkoutLat:       null,
-    checkoutLng:       null,
-    checkoutDist:      null,
-    checkoutAcc:       null,
-    status:            "out",
-    duration:          dur,
-    isOvertime:        isOT,
-    adminForced:       true,
-    adminForcedBy:     adminEmail,
-    adminForcedAt:     new Date().toISOString(),
-    adminNote:         note || "Admin force check-out"
-  };
-
-  var confirmBtn = document.getElementById("fcoConfirmBtn");
-  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Processing…"; }
-
-  db.collection("attendance").doc(_fcoDocId).update(updates)
-    .then(function() {
-      closeForceCoModal();
-      // Update local record
-      var rec = allRecs.find(function(r){ return r.id === _fcoDocId; });
-      if (rec) {
-        rec.checkoutTime      = updates.checkoutTime;
-        rec.checkoutISO       = updates.checkoutISO;
-        rec.checkoutTimestamp = updates.checkoutTimestamp;
-        rec.checkoutLat       = null;
-        rec.checkoutLng       = null;
-        rec.checkoutDist      = null;
-        rec.checkoutAcc       = null;
-        rec.status            = "out";
-        rec.duration          = dur;
-        rec.isOvertime        = isOT;
-        rec.adminForced       = true;
-      }
-      // Write a public signal to empBindings so the engineer's phone
-      // can detect the force checkout even if attendance read is blocked by rules.
-      // empBindings is publicly readable — this acts as the notification channel.
-      if (_fcoEmpId) {
-        db.collection("empBindings").doc(_fcoEmpId).set(
-          { forceCheckoutAt: Date.now() },
-          { merge: true }
-        ).catch(function(){});
-      }
-      renderTable();
-      renderFeed();
-      renderStats();
-      toast("✅ Force check-out applied for " + _fcoEmpName + ". Duration: " + dur, "t-ok");
-    })
-    .catch(function(e) {
-      var msg = (e.message || String(e));
-      if (msg.toLowerCase().indexOf("permission") !== -1) {
-        errEl.innerHTML = "⛔ Firestore permission denied. Go to <strong>Setup tab → Firestore Rules</strong> and re-copy the rules into Firebase Console, then try again.";
-      } else {
-        errEl.textContent = "Error: " + msg;
-      }
-    })
-    .finally(function() {
-      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ Confirm Force Check-Out"; }
-    });
-}
-// ══ END ADMIN FORCE CHECK-OUT ═════════════════════════════════════════
-</script>
-<!-- ══ ADMIN FORCE CHECK-OUT MODAL ══════════════════════════════════ -->
-<div id="fcoModal" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.7);z-index:8500;align-items:center;justify-content:center" onclick="if(event.target===this)closeForceCoModal()">
-  <div style="background:#fff;border-radius:16px;padding:28px 28px 24px;max-width:440px;width:94%;box-shadow:0 8px 40px rgba(0,0,0,.22);position:relative">
-    <!-- Header -->
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
-      <div style="width:38px;height:38px;border-radius:10px;background:#fef3c7;display:flex;align-items:center;justify-content:center;font-size:1.25rem">🔓</div>
-      <div>
-        <div style="font-size:1rem;font-weight:700;color:var(--ink)">Admin Force Check-Out</div>
-        <div style="font-size:.78rem;color:var(--ink3)">Manually check out an engineer</div>
-      </div>
-      <button onclick="closeForceCoModal()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--ink3);line-height:1" title="Close">✕</button>
-    </div>
-
-    <!-- Engineer info -->
-    <div style="background:#f8fafc;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:.84rem">
-      <div style="display:grid;grid-template-columns:90px 1fr;row-gap:5px">
-        <span style="color:var(--ink3);font-weight:600">Engineer</span>
-        <span id="fcoInfoName" style="color:var(--ink);font-weight:700"></span>
-        <span style="color:var(--ink3);font-weight:600">Site</span>
-        <span id="fcoInfoSite" style="color:var(--ink)"></span>
-        <span style="color:var(--ink3);font-weight:600">Checked In</span>
-        <span id="fcoInfoCheckin" style="color:var(--ink)"></span>
-      </div>
-    </div>
-
-    <!-- Warning banner -->
-    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:9px 12px;margin-bottom:16px;font-size:.8rem;color:#92400e;display:flex;gap:8px;align-items:flex-start">
-      <span style="font-size:1rem;line-height:1.3">⚠️</span>
-      <span>This action will mark the engineer as <strong>checked out</strong>. No GPS will be recorded. Use only when the engineer genuinely forgot to check out.</span>
-    </div>
-
-    <!-- Check-out datetime -->
-    <label style="display:block;font-size:.82rem;font-weight:600;color:var(--ink2);margin-bottom:4px">Check-Out Date &amp; Time</label>
-    <input id="fcoCoDateTime" type="datetime-local"
-      style="width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 12px;font-size:.9rem;color:var(--ink);margin-bottom:14px;outline:none"/>
-
-    <!-- Admin note -->
-    <label style="display:block;font-size:.82rem;font-weight:600;color:var(--ink2);margin-bottom:4px">Admin Note <span style="font-weight:400;color:var(--ink3)">(optional)</span></label>
-    <textarea id="fcoNote" rows="2" placeholder="e.g. Engineer relocated to Site B next day"
-      style="width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 12px;font-size:.85rem;color:var(--ink);resize:vertical;margin-bottom:6px;outline:none;font-family:inherit"></textarea>
-
-    <!-- Error -->
-    <div id="fcoError" style="font-size:.8rem;color:#dc2626;min-height:18px;margin-bottom:10px"></div>
-
-    <!-- Actions -->
-    <div style="display:flex;gap:10px;justify-content:flex-end">
-      <button onclick="closeForceCoModal()" style="background:#f1f5f9;color:var(--ink2);border:none;border-radius:8px;padding:9px 18px;font-size:.87rem;font-weight:600;cursor:pointer">Cancel</button>
-      <button id="fcoConfirmBtn" onclick="confirmForceCheckout()" style="background:#f59e0b;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:.87rem;font-weight:700;cursor:pointer">✅ Confirm Force Check-Out</button>
-    </div>
-  </div>
-</div>
-<!-- ══ END ADMIN FORCE CHECK-OUT MODAL ══════════════════════════════ -->
-
-<!-- ══ CHART SLIDESHOW OVERLAY ══════════════════════════════════════ -->
-<div id="slideshowOverlay" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.96);z-index:9100;align-items:center;justify-content:center" onclick="ssOverlayClick(event)">
-  <div id="slideshowModal">
-    <div class="ss-progress"><div class="ss-progress-bar" id="ssProgressBar"></div></div>
-    <div class="ss-header">
-      <span class="ss-title" id="ssTitle">—</span>
-      <span class="ss-counter" id="ssCounter">1 / 4</span>
-    </div>
-    <div class="ss-body">
-      <img id="ssChartImg" src="" alt="chart slide" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;display:block"/>
-    </div>
-    <div class="ss-dots" id="ssDots"></div>
-    <div class="ss-footer">
-      <button class="ss-btn ss-nav" onclick="ssPrev()" title="Previous (←)">&#9664;</button>
-      <button class="ss-btn" onclick="ssPlayPause()" id="ssPlayBtn">&#9646;&#9646; Pause</button>
-      <button class="ss-btn ss-nav" onclick="ssNext()" title="Next (→)">&#9654;</button>
-      <div style="width:1px;height:24px;background:#2d3748;margin:0 4px"></div>
-      <button class="ss-btn" onclick="ssToggleMax()" id="ssMaxBtn" title="Maximize">&#x26F6; Maximize</button>
-      <button class="ss-btn ss-exit" onclick="ssExit()" title="Exit (ESC)">&#10005; Exit</button>
-    </div>
-  </div>
-</div>
-</body>
-</html>
+   
