@@ -13416,4 +13416,504 @@ function _tdrOdDownloadItem(itemId) {
       headers: { Authorization: "Bearer " + token }
     }).then(function(r) {
       if (!r.ok) throw new Error("Download failed (HTTP " + r.status + ")");
-   
+         return r.arrayBuffer();
+    });
+  });
+}
+
+// â”€â”€ SHARED HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function _tdrOdParseBuffer(buf) {
+  var wb = XLSX.read(new Uint8Array(buf), { type: "array", cellDates: true });
+  var sheetName = wb.SheetNames[0];
+  wb.SheetNames.forEach(function(n){ if (/tdr|status/i.test(n)) sheetName = n; });
+  var rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header:1, defval:"" });
+  var startRow = 1;
+  for (var i = 0; i < Math.min(rows.length, 5); i++) {
+    var cellB = String(rows[i][1] || "").trim();
+    if (cellB && !/workstation|pc|name|hostname/i.test(cellB)) { startRow = i; break; }
+  }
+  var total=0, passed=0, failed=0, notAttended=0, errorTypes={}, errorDetails={};
+  rows.slice(startRow).forEach(function(row) {
+    var wsName = String(row[1]||"").trim(); if (!wsName) return;
+    total++;
+    var reporter       = String(row[6]||"").trim();
+    var status         = String(row[7]||"").trim().toUpperCase();
+    var validationDate = _tdrFmtDate(row[8]);
+    var errorCode      = String(row[9]||"").trim();
+    var detail         = String(row[10]||"").trim();
+    if (status === "PASSED") passed++;
+    else if (status === "FAILED") {
+      failed++;
+      var ec = errorCode || "Unknown";
+      errorTypes[ec] = (errorTypes[ec]||0) + 1;
+      if (!errorDetails[ec]) errorDetails[ec] = [];
+      errorDetails[ec].push({ workstation: wsName, reporter: reporter, validationDate: validationDate, detail: detail });
+    } else notAttended++;
+  });
+  return { total:total, passed:passed, failed:failed, notAttended:notAttended,
+           errorTypes:errorTypes, errorDetails:errorDetails };
+}
+
+function tdrOdDisconnect() {
+  if (!confirm("Disconnect OneDrive? Loaded reports will remain, but auto-sync will stop.")) return;
+  try { if (_tdrOd.mode === "oauth" && _tdrOd.msal && _tdrOd.account) _tdrOd.msal.logoutPopup({ account: _tdrOd.account }).catch(function(){}); } catch(e){}
+  _tdrOd.mode = "";
+  _tdrOd.urls = [];
+  _tdrOd.account = null;
+  _tdrOd.fileMap = {};
+  _tdrOd.lastSyncTs = 0;
+  tdrOdStopTimer();
+  tdrOdSaveConfig();
+  tdrOdUpdateUI();
+  toast("OneDrive disconnected.", "t-warn");
+}
+
+function tdrOdRefreshNow() {
+  if (_tdrOd.mode === "sharelinks") return _tdrOdRefreshSharepoint();
+  if (_tdrOd.mode === "oauth")      return _tdrOdRefreshOauth();
+  return Promise.resolve();
+}
+
+function _tdrOdRefreshSharepoint() {
+  if (!_tdrOd.urls.length) return Promise.resolve();
+  if (_tdrOd.syncing) return Promise.resolve();
+  _tdrOd.syncing = true; tdrOdUpdateUI("syncing");
+
+  var ok = 0, fail = 0;
+  var p = Promise.resolve();
+  _tdrOd.urls.forEach(function(shareUrl) {
+    p = p.then(function() {
+      return _tdrOdFetchSharepoint(shareUrl).then(function(buf) {
+        try {
+          var data = _tdrOdParseBuffer(buf);
+          var existing = _tdrOd.fileMap[shareUrl];
+          var fileName = (existing && existing.fileName) || _tdrOdGuessNameFromUrl(shareUrl);
+          if (!/\.(xlsx|xls)$/i.test(fileName)) fileName = fileName + ".xlsx";
+          var siteName = fileName.replace(/\.[^.]+$/, "");
+          var idx = -1;
+          for (var i=0; i<_tdrSites.length; i++) if (_tdrSites[i].fileName === fileName) { idx = i; break; }
+          if (idx >= 0) { tdrRemoveSite(idx); tdrAddSite(siteName, fileName, data); }
+          else          { tdrAddSite(siteName, fileName, data); }
+          _tdrOd.fileMap[shareUrl] = { fileName: fileName, lastSyncTs: Date.now(), ok: true };
+          ok++;
+        } catch(e) {
+          _tdrOd.fileMap[shareUrl] = { fileName: (_tdrOd.fileMap[shareUrl] && _tdrOd.fileMap[shareUrl].fileName) || _tdrOdGuessNameFromUrl(shareUrl), lastSyncTs: Date.now(), ok: false, err: String(e && e.message || e) };
+          fail++;
+        }
+      }).catch(function(e) {
+        _tdrOd.fileMap[shareUrl] = { fileName: (_tdrOd.fileMap[shareUrl] && _tdrOd.fileMap[shareUrl].fileName) || _tdrOdGuessNameFromUrl(shareUrl), lastSyncTs: Date.now(), ok: false, err: String(e && e.message || e) };
+        fail++;
+      });
+    });
+  });
+  return p.then(function() {
+    _tdrOd.lastSyncTs = Date.now();
+    _tdrOd.syncing = false;
+    tdrOdSaveConfig();
+    tdrOdUpdateUI();
+    if (ok || fail) {
+      var cls = fail && !ok ? "t-err" : (fail ? "t-warn" : "t-ok");
+      toast("â˜ï¸ Sync done Â· " + ok + " ok" + (fail ? " Â· " + fail + " failed" : ""), cls);
+    }
+  });
+}
+
+function _tdrOdRefreshOauth() {
+  if (!_tdrOd.clientId) return Promise.resolve();
+  _tdrOdMsalInit();
+  if (!_tdrOd.msal || !_tdrOd.msal.getAllAccounts().length) return Promise.resolve();
+  if (_tdrOd.syncing) return Promise.resolve();
+  _tdrOd.syncing = true; tdrOdUpdateUI("syncing");
+
+  return _tdrOdListFolderItems().then(function(items) {
+    var added = 0, changed = 0, total = items.length;
+    var chain = Promise.resolve();
+    items.forEach(function(item) {
+      var prev = _tdrOd.fileMap[item.id];
+      if (prev && prev.lastModified === item.lastModifiedDateTime) return;
+      chain = chain.then(function() {
+        return _tdrOdDownloadItem(item.id).then(function(buf) {
+          try {
+            var data = _tdrOdParseBuffer(buf);
+            var siteName = item.name.replace(/\.[^.]+$/, "");
+            var idx = -1;
+            for (var i=0; i<_tdrSites.length; i++) if (_tdrSites[i].fileName === item.name) { idx = i; break; }
+            if (idx >= 0) { tdrRemoveSite(idx); tdrAddSite(siteName, item.name, data); changed++; }
+            else          { tdrAddSite(siteName, item.name, data); added++; }
+            _tdrOd.fileMap[item.id] = { name: item.name, lastModified: item.lastModifiedDateTime };
+          } catch(e) { console.warn("[TDR-OD] parse failed:", item.name, e); }
+        }).catch(function(e){ console.warn("[TDR-OD] download failed:", item.name, e); });
+      });
+    });
+    return chain.then(function() {
+      _tdrOd.lastSyncTs = Date.now();
+      _tdrOd.syncing = false;
+      tdrOdSaveConfig();
+      tdrOdUpdateUI();
+      if (added || changed) toast("â˜ï¸ Sync done Â· " + (added?(added+" new "):"") + (changed?(changed+" updated"):"") + " Â· " + total + " total", "t-ok");
+    });
+  }).catch(function(e) {
+    _tdrOd.syncing = false;
+    tdrOdUpdateUI("error", e && e.message);
+    toast("âŒ OneDrive sync failed: " + ((e && e.message) || e), "t-err");
+  });
+}
+
+function tdrOdSetInterval(ms) {
+  _tdrOd.intervalMs = parseInt(ms, 10) || 0;
+  tdrOdSaveConfig();
+  tdrOdStopTimer();
+  if (_tdrOd.mode && _tdrOd.intervalMs > 0 && _tdrOdTabVisible()) tdrOdStartTimer();
+}
+function tdrOdStartTimer() {
+  tdrOdStopTimer();
+  if (!_tdrOd.mode || !_tdrOd.intervalMs) return;
+  _tdrOd.timer = setInterval(function() {
+    if (_tdrOdTabVisible() && !document.hidden) tdrOdRefreshNow();
+  }, _tdrOd.intervalMs);
+}
+function tdrOdStopTimer() { if (_tdrOd.timer) { clearInterval(_tdrOd.timer); _tdrOd.timer = null; } }
+function _tdrOdTabVisible() { var t = document.getElementById("dTab-tdr"); return t && t.style.display !== "none"; }
+
+function tdrOdUpdateUI(stateOverride, errMsg) {
+  var bar  = document.getElementById("tdrOdStatusBar");
+  var icon = document.getElementById("tdrOdStatusIcon");
+  var txt  = document.getElementById("tdrOdStatusText");
+  var meta = document.getElementById("tdrOdStatusMeta");
+  var btn  = document.getElementById("tdrOdConnectBtn");
+  if (!bar) return;
+
+  if (!_tdrOd.mode) {
+    bar.style.display = "none";
+    if (btn) { btn.textContent = "â˜ï¸ Connect OneDrive"; btn.style.display = ""; }
+    return;
+  }
+  bar.style.display = "flex";
+  if (btn) btn.style.display = "none";
+
+  if (stateOverride === "syncing") {
+    icon.textContent = "ðŸ”„"; txt.textContent = "Syncing from OneDriveâ€¦";
+    meta.textContent = _tdrOd.mode === "oauth" ? _tdrOd.folderPath : (_tdrOd.urls.length + " link(s)");
+    return;
+  }
+  if (stateOverride === "error") {
+    icon.textContent = "âš ï¸"; txt.textContent = "Sync error";
+    meta.textContent = errMsg || "Check the configuration.";
+    return;
+  }
+  icon.textContent = "â˜ï¸";
+  if (_tdrOd.mode === "oauth") {
+    txt.textContent = "OneDrive (OAuth): " + Object.keys(_tdrOd.fileMap).length + " file(s) Â· " + (_tdrOd.account ? _tdrOd.account.username : "signed in");
+  } else {
+    var okCount = 0, failCount = 0;
+    _tdrOd.urls.forEach(function(u){ var m=_tdrOd.fileMap[u]; if (m && m.ok) okCount++; else if (m && !m.ok) failCount++; });
+    txt.textContent = "SharePoint Links: " + okCount + " ok" + (failCount ? " Â· " + failCount + " failed" : "") + " of " + _tdrOd.urls.length;
+  }
+  var ago = _tdrOd.lastSyncTs ? Math.round((Date.now() - _tdrOd.lastSyncTs) / 1000) : 0;
+  var agoTxt = ago < 60 ? (ago + "s ago") : (Math.round(ago/60) + " min ago");
+  meta.textContent = (_tdrOd.lastSyncTs ? ("Last synced " + agoTxt) : "Not synced yet") + " Â· mode: " + _tdrOd.mode;
+
+  var sel = document.getElementById("tdrOdInterval");
+  if (sel) sel.value = String(_tdrOd.intervalMs);
+}
+
+function tdrOdSaveConfig() {
+  var cfg = { mode:_tdrOd.mode, urls:_tdrOd.urls, clientId:_tdrOd.clientId, tenant:_tdrOd.tenant,
+              folderPath:_tdrOd.folderPath, intervalMs:_tdrOd.intervalMs,
+              lastSyncTs:_tdrOd.lastSyncTs, fileMap:_tdrOd.fileMap };
+  try { localStorage.setItem("at_tdrOd", JSON.stringify(cfg)); } catch(e) {}
+  if (fbOk && db) {
+    db.collection("appConfig").doc("tdrOneDrive").set({
+      mode:_tdrOd.mode, urls:_tdrOd.urls, clientId:_tdrOd.clientId, tenant:_tdrOd.tenant,
+      folderPath:_tdrOd.folderPath, intervalMs:_tdrOd.intervalMs, updatedAt: Date.now()
+    }, { merge: true }).catch(function(e){ console.warn("[TDR-OD] firestore save failed:", e); });
+  }
+}
+function tdrOdLoadConfig() {
+  try {
+    var raw = localStorage.getItem("at_tdrOd");
+    if (raw) {
+      var c = JSON.parse(raw);
+      if (c) {
+        _tdrOd.mode       = c.mode       || (Array.isArray(c.urls) && c.urls.length ? "sharelinks" : (c.clientId ? "oauth" : ""));
+        _tdrOd.urls       = Array.isArray(c.urls) ? c.urls : (c.url ? [c.url] : []);
+        _tdrOd.clientId   = c.clientId   || "";
+        _tdrOd.tenant     = c.tenant     || "common";
+        _tdrOd.folderPath = c.folderPath || "/TDR";
+        _tdrOd.intervalMs = c.intervalMs || 300000;
+        _tdrOd.fileMap    = c.fileMap    || {};
+        _tdrOd.lastSyncTs = c.lastSyncTs || 0;
+      }
+    }
+  } catch(e) {}
+  if (_tdrOd.mode === "oauth") _tdrOdMsalInit();
+  tdrOdUpdateUI();
+
+  if (fbOk && db) {
+    db.collection("appConfig").doc("tdrOneDrive").get().then(function(snap) {
+      if (!snap.exists) return;
+      var d = snap.data();
+      var remoteMode = d.mode || (Array.isArray(d.urls) && d.urls.length ? "sharelinks" : (d.clientId ? "oauth" : ""));
+      var changed = remoteMode !== _tdrOd.mode ||
+                    JSON.stringify(d.urls||[])  !== JSON.stringify(_tdrOd.urls||[]) ||
+                    (d.clientId   && d.clientId   !== _tdrOd.clientId) ||
+                    (d.folderPath && d.folderPath !== _tdrOd.folderPath);
+      if (changed) {
+        _tdrOd.mode       = remoteMode;
+        _tdrOd.urls       = Array.isArray(d.urls) ? d.urls : _tdrOd.urls;
+        _tdrOd.clientId   = d.clientId   || _tdrOd.clientId;
+        _tdrOd.tenant     = d.tenant     || _tdrOd.tenant;
+        _tdrOd.folderPath = d.folderPath || _tdrOd.folderPath;
+        _tdrOd.intervalMs = d.intervalMs || _tdrOd.intervalMs;
+        _tdrOd.fileMap    = {};
+        _tdrOd.lastSyncTs = 0;
+        _tdrOd.msal = null;
+        if (_tdrOd.mode === "oauth") _tdrOdMsalInit();
+        tdrOdSaveConfig();
+        tdrOdUpdateUI();
+        if (_tdrOdTabVisible() && _tdrOd.mode) tdrOdRefreshNow();
+      }
+    }).catch(function(e){ console.warn("[TDR-OD] firestore load failed:", e); });
+  }
+}
+
+function tdrOdOnTabEnter() {
+  tdrOdUpdateUI();
+  if (_tdrOd.mode) {
+    var stale = !_tdrOd.lastSyncTs || (Date.now() - _tdrOd.lastSyncTs) > (_tdrOd.intervalMs || 300000);
+    if (stale) tdrOdRefreshNow();
+    if (_tdrOd.intervalMs > 0) tdrOdStartTimer();
+  }
+}
+function tdrOdOnTabLeave() { tdrOdStopTimer(); }
+
+setInterval(function(){ if (_tdrOd.mode && _tdrOdTabVisible()) tdrOdUpdateUI(); }, 30000);
+
+(function _tdrOdInit() {
+  var tries = 0;
+  var iv = setInterval(function() {
+    tries++;
+    if ((typeof fbOk !== "undefined") || tries > 60) {
+      clearInterval(iv);
+      try { tdrOdLoadConfig(); } catch(e) { console.warn("[TDR-OD] init failed:", e); }
+    }
+  }, 250);
+})();
+// â•â• END v6.11 TDR ONEDRIVE DUAL MODE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// â•â• END TDR REPORT (MULTI-SITE) â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+// â•â• ADMIN FORCE CHECK-OUT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+var _fcoDocId = null;
+var _fcoCheckinTs = 0;
+var _fcoEmpName = "";
+var _fcoEmpId = "";
+var _fcoSite = "";
+var _fcoCheckinDate = "";
+var _fcoCheckinTime = "";
+
+function openForceCoModal(docId, checkinTs, empName, empId, site, checkinDate, checkinTime) {
+  _fcoDocId = docId;
+  _fcoCheckinTs = checkinTs;
+  _fcoEmpName = empName;
+  _fcoEmpId = empId;
+  _fcoSite = site;
+  _fcoCheckinDate = checkinDate;
+  _fcoCheckinTime = checkinTime;
+
+  var el = document.getElementById("fcoModal");
+  if (!el) return;
+
+  // Populate info
+  document.getElementById("fcoInfoName").textContent = empName + " (" + empId + ")";
+  document.getElementById("fcoInfoSite").textContent = site;
+  document.getElementById("fcoInfoCheckin").textContent = checkinDate + "  " + checkinTime;
+
+  // Default checkout datetime = now
+  var now = new Date();
+  var localIso = now.getFullYear() + "-"
+    + String(now.getMonth()+1).padStart(2,"0") + "-"
+    + String(now.getDate()).padStart(2,"0") + "T"
+    + String(now.getHours()).padStart(2,"0") + ":"
+    + String(now.getMinutes()).padStart(2,"0");
+  document.getElementById("fcoCoDateTime").value = localIso;
+  document.getElementById("fcoNote").value = "";
+  document.getElementById("fcoError").textContent = "";
+
+  el.style.display = "flex";
+}
+
+function closeForceCoModal() {
+  var el = document.getElementById("fcoModal");
+  if (el) el.style.display = "none";
+}
+
+function confirmForceCheckout() {
+  var coDateTimeVal = (document.getElementById("fcoCoDateTime").value || "").trim();
+  var note = (document.getElementById("fcoNote").value || "").trim();
+  var errEl = document.getElementById("fcoError");
+
+  if (!_fcoDocId) { errEl.textContent = "No record selected."; return; }
+  if (!coDateTimeVal) { errEl.textContent = "Please select a check-out date and time."; return; }
+
+  var coDateTime = new Date(coDateTimeVal);
+  if (isNaN(coDateTime.getTime())) { errEl.textContent = "Invalid date/time."; return; }
+
+  var coTs = coDateTime.getTime();
+  if (_fcoCheckinTs && coTs <= _fcoCheckinTs) {
+    errEl.textContent = "Check-out time must be after check-in time (" + _fcoCheckinTime + ").";
+    return;
+  }
+
+  // Calculate duration
+  var diffMs = coTs - (_fcoCheckinTs || coTs);
+  var diffH  = Math.floor(diffMs / 3600000);
+  var diffM  = Math.floor((diffMs % 3600000) / 60000);
+  var dur    = diffH + "h " + diffM + "m";
+  var isOT   = diffH >= 9;
+
+  var adminUser = (firebase && firebase.auth && firebase.auth().currentUser) || null;
+  var adminEmail = adminUser ? adminUser.email : "Admin";
+
+  var updates = {
+    checkoutTime:      coDateTime.toLocaleTimeString("en-SG", {hour:"2-digit", minute:"2-digit", second:"2-digit"}),
+    checkoutISO:       coDateTime.toISOString(),
+    checkoutTimestamp: coTs,
+    checkoutLat:       null,
+    checkoutLng:       null,
+    checkoutDist:      null,
+    checkoutAcc:       null,
+    status:            "out",
+    duration:          dur,
+    isOvertime:        isOT,
+    adminForced:       true,
+    adminForcedBy:     adminEmail,
+    adminForcedAt:     new Date().toISOString(),
+    adminNote:         note || "Admin force check-out"
+  };
+
+  var confirmBtn = document.getElementById("fcoConfirmBtn");
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Processingâ€¦"; }
+
+  db.collection("attendance").doc(_fcoDocId).update(updates)
+    .then(function() {
+      closeForceCoModal();
+      // Update local record
+      var rec = allRecs.find(function(r){ return r.id === _fcoDocId; });
+      if (rec) {
+        rec.checkoutTime      = updates.checkoutTime;
+        rec.checkoutISO       = updates.checkoutISO;
+        rec.checkoutTimestamp = updates.checkoutTimestamp;
+        rec.checkoutLat       = null;
+        rec.checkoutLng       = null;
+        rec.checkoutDist      = null;
+        rec.checkoutAcc       = null;
+        rec.status            = "out";
+        rec.duration          = dur;
+        rec.isOvertime        = isOT;
+        rec.adminForced       = true;
+      }
+      // Write a public signal to empBindings so the engineer's phone
+      // can detect the force checkout even if attendance read is blocked by rules.
+      // empBindings is publicly readable â€” this acts as the notification channel.
+      if (_fcoEmpId) {
+        db.collection("empBindings").doc(_fcoEmpId).set(
+          { forceCheckoutAt: Date.now() },
+          { merge: true }
+        ).catch(function(){});
+      }
+      renderTable();
+      renderFeed();
+      renderStats();
+      toast("âœ… Force check-out applied for " + _fcoEmpName + ". Duration: " + dur, "t-ok");
+    })
+    .catch(function(e) {
+      var msg = (e.message || String(e));
+      if (msg.toLowerCase().indexOf("permission") !== -1) {
+        errEl.innerHTML = "â›” Firestore permission denied. Go to <strong>Setup tab â†’ Firestore Rules</strong> and re-copy the rules into Firebase Console, then try again.";
+      } else {
+        errEl.textContent = "Error: " + msg;
+      }
+    })
+    .finally(function() {
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "âœ… Confirm Force Check-Out"; }
+    });
+}
+// â•â• END ADMIN FORCE CHECK-OUT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+</script>
+<!-- â•â• ADMIN FORCE CHECK-OUT MODAL â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<div id="fcoModal" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.7);z-index:8500;align-items:center;justify-content:center" onclick="if(event.target===this)closeForceCoModal()">
+  <div style="background:#fff;border-radius:16px;padding:28px 28px 24px;max-width:440px;width:94%;box-shadow:0 8px 40px rgba(0,0,0,.22);position:relative">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
+      <div style="width:38px;height:38px;border-radius:10px;background:#fef3c7;display:flex;align-items:center;justify-content:center;font-size:1.25rem">ðŸ”“</div>
+      <div>
+        <div style="font-size:1rem;font-weight:700;color:var(--ink)">Admin Force Check-Out</div>
+        <div style="font-size:.78rem;color:var(--ink3)">Manually check out an engineer</div>
+      </div>
+      <button onclick="closeForceCoModal()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--ink3);line-height:1" title="Close">âœ•</button>
+    </div>
+
+    <!-- Engineer info -->
+    <div style="background:#f8fafc;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:.84rem">
+      <div style="display:grid;grid-template-columns:90px 1fr;row-gap:5px">
+        <span style="color:var(--ink3);font-weight:600">Engineer</span>
+        <span id="fcoInfoName" style="color:var(--ink);font-weight:700"></span>
+        <span style="color:var(--ink3);font-weight:600">Site</span>
+        <span id="fcoInfoSite" style="color:var(--ink)"></span>
+        <span style="color:var(--ink3);font-weight:600">Checked In</span>
+        <span id="fcoInfoCheckin" style="color:var(--ink)"></span>
+      </div>
+    </div>
+
+    <!-- Warning banner -->
+    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:9px 12px;margin-bottom:16px;font-size:.8rem;color:#92400e;display:flex;gap:8px;align-items:flex-start">
+      <span style="font-size:1rem;line-height:1.3">âš ï¸</span>
+      <span>This action will mark the engineer as <strong>checked out</strong>. No GPS will be recorded. Use only when the engineer genuinely forgot to check out.</span>
+    </div>
+
+    <!-- Check-out datetime -->
+    <label style="display:block;font-size:.82rem;font-weight:600;color:var(--ink2);margin-bottom:4px">Check-Out Date &amp; Time</label>
+    <input id="fcoCoDateTime" type="datetime-local"
+      style="width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 12px;font-size:.9rem;color:var(--ink);margin-bottom:14px;outline:none"/>
+
+    <!-- Admin note -->
+    <label style="display:block;font-size:.82rem;font-weight:600;color:var(--ink2);margin-bottom:4px">Admin Note <span style="font-weight:400;color:var(--ink3)">(optional)</span></label>
+    <textarea id="fcoNote" rows="2" placeholder="e.g. Engineer relocated to Site B next day"
+      style="width:100%;box-sizing:border-box;border:1.5px solid #e2e8f0;border-radius:8px;padding:8px 12px;font-size:.85rem;color:var(--ink);resize:vertical;margin-bottom:6px;outline:none;font-family:inherit"></textarea>
+
+    <!-- Error -->
+    <div id="fcoError" style="font-size:.8rem;color:#dc2626;min-height:18px;margin-bottom:10px"></div>
+
+    <!-- Actions -->
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="closeForceCoModal()" style="background:#f1f5f9;color:var(--ink2);border:none;border-radius:8px;padding:9px 18px;font-size:.87rem;font-weight:600;cursor:pointer">Cancel</button>
+      <button id="fcoConfirmBtn" onclick="confirmForceCheckout()" style="background:#f59e0b;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:.87rem;font-weight:700;cursor:pointer">âœ… Confirm Force Check-Out</button>
+    </div>
+  </div>
+</div>
+<!-- â•â• END ADMIN FORCE CHECK-OUT MODAL â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+
+<!-- â•â• CHART SLIDESHOW OVERLAY â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<div id="slideshowOverlay" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.96);z-index:9100;align-items:center;justify-content:center" onclick="ssOverlayClick(event)">
+  <div id="slideshowModal">
+    <div class="ss-progress"><div class="ss-progress-bar" id="ssProgressBar"></div></div>
+    <div class="ss-header">
+      <span class="ss-title" id="ssTitle">â€”</span>
+      <span class="ss-counter" id="ssCounter">1 / 4</span>
+    </div>
+    <div class="ss-body">
+      <img id="ssChartImg" src="" alt="chart slide" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;display:block"/>
+    </div>
+    <div class="ss-dots" id="ssDots"></div>
+    <div class="ss-footer">
+      <button class="ss-btn ss-nav" onclick="ssPrev()" title="Previous (â†)">&#9664;</button>
+      <button class="ss-btn" onclick="ssPlayPause()" id="ssPlayBtn">&#9646;&#9646; Pause</button>
+      <button class="ss-btn ss-nav" onclick="ssNext()" title="Next (â†’)">&#9654;</button>
+      <div style="width:1px;height:24px;background:#2d3748;margin:0 4px"></div>
+      <button class="ss-btn" onclick="ssToggleMax()" id="ssMaxBtn" title="Maximize">&#x26F6; Maximize</button>
+      <button class="ss-btn ss-exit" onclick="ssExit()" title="Exit (ESC)">&#10005; Exit</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
