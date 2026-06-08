@@ -8492,7 +8492,8 @@ function _anAutoSnapshotCheck() {
 /** Update the save-controls status chip */
 function _anUpdateSnapStatus() {
   var today = new Date().toISOString().split("T")[0];
-  setText("anSnapSaveDate", today);
+  var dateEl = document.getElementById("anSnapSaveDate");
+  if (dateEl) dateEl.textContent = today;
   var statusEl = document.getElementById("anSnapSaveStatus");
   if (!statusEl) return;
   if (_anTodaySnapshotExists) {
