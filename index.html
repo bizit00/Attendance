@@ -113,11 +113,16 @@ input,select{font-family:var(--body);outline:none}
 .tb-back:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
 /* ── Hamburger nav (shown on small screens) ── */
 .tb-hamburger{
-  display:none;margin-left:auto;align-items:center;justify-content:center;
+  display:none;position:relative;margin-left:auto;align-items:center;justify-content:center;
   background:transparent;border:1.5px solid var(--border);border-radius:8px;
   padding:6px 12px;font-size:1.15rem;line-height:1;color:var(--ink2);cursor:pointer;transition:all .2s;
 }
 .tb-hamburger:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
+/* Red dot when any tab has a pending badge */
+.tb-hamburger.has-pending::after{
+  content:'';position:absolute;top:-4px;right:-4px;width:11px;height:11px;
+  border-radius:50%;background:var(--red);border:2px solid var(--bg,#f7f6f3);
+}
 .nav-menu{
   display:none;position:absolute;top:calc(100% + 6px);right:14px;
   background:var(--card);border:1px solid var(--border);border-radius:12px;
@@ -1474,14 +1479,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
       ⚙️ <strong>Setup needed:</strong> Replace <code>FIREBASE_CONFIG</code> in the script with your Firebase credentials for live data. Click <strong>Setup Guide</strong> tab below for instructions.
     </div>
 
-    <!-- Stats -->
-    <div class="stats-grid">
-      <div class="stat g"><div class="stat-n" id="s-in">0</div><div class="stat-l">Checked In</div></div>
-      <div class="stat r"><div class="stat-n" id="s-out">0</div><div class="stat-l">Checked Out</div></div>
-      <div class="stat o"><div class="stat-n" id="s-today">0</div><div class="stat-l">Today Total</div></div>
-      <div class="stat b"><div class="stat-n" id="s-all">0</div><div class="stat-l">All Records</div></div>
-    </div>
-
     <!-- Tabs -->
     <div class="dash-tabs">
       <div class="dash-tab on" onclick="dTab('live',this)">Live Status</div>
@@ -1591,14 +1588,14 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <div class="an-kpi-icon">👷</div>
           <div class="an-kpi-body">
             <div class="an-kpi-val" id="ans-engineers">—</div>
-            <div class="an-kpi-lbl">Engineers In Today <span style="font-weight:600;color:var(--ink3)">(in / total)</span></div>
+            <div class="an-kpi-lbl">Total Engineers in System</div>
           </div>
         </div>
         <div class="an-kpi-card an-kpi-teal">
-          <div class="an-kpi-icon">⏱️</div>
+          <div class="an-kpi-icon">📤</div>
           <div class="an-kpi-body">
-            <div class="an-kpi-val" id="ans-avgdur" style="font-size:1.2rem">—</div>
-            <div class="an-kpi-lbl">Avg Duration</div>
+            <div class="an-kpi-val" id="ans-checkouts">0</div>
+            <div class="an-kpi-lbl">Checked Out Today</div>
           </div>
         </div>
         <div class="an-kpi-card an-kpi-orange">
@@ -5663,12 +5660,15 @@ function feedClearFilters() {
 }
 
 function updateStats() {
+  // The top dashboard stat cards were removed in v6.21 (their data now lives in the
+  // Analytics KPI row). Kept null-safe in case any cards are reintroduced later.
   var today = new Date().toLocaleDateString("en-SG");
   var tod = allRecs.filter(function(r){ return r.checkinDate===today; });
-  document.getElementById("s-in").textContent    = tod.filter(function(r){ return r.status==="in"; }).length;
-  document.getElementById("s-out").textContent   = tod.filter(function(r){ return r.status==="out"; }).length;
-  document.getElementById("s-today").textContent = tod.length;
-  document.getElementById("s-all").textContent   = allRecs.length;
+  var set = function(id, val){ var el = document.getElementById(id); if (el) el.textContent = val; };
+  set("s-in",    tod.filter(function(r){ return r.status==="in"; }).length);
+  set("s-out",   tod.filter(function(r){ return r.status==="out"; }).length);
+  set("s-today", tod.length);
+  set("s-all",   allRecs.length);
 }
 
 function refreshDash() {
@@ -5811,6 +5811,30 @@ function _syncNavMenuActive() {
     it.classList.toggle("on", !!did && did === activeId);
   });
 }
+
+// Show a red dot on the hamburger whenever any tab badge (leave / OTP / device /
+// buddy-punch) is visible. Watched via MutationObserver so it stays in sync no
+// matter which code path toggles a badge.
+var _HAM_BADGE_IDS = ["leavePendingBadge","otpPendingBadge","suspiciousBadge","buddyPunchBadge"];
+function updateHamburgerPending() {
+  var pending = _HAM_BADGE_IDS.some(function(id){
+    var el = document.getElementById(id);
+    return el && el.style.display !== "none";
+  });
+  var h = document.getElementById("navHamburger");
+  if (h) h.classList.toggle("has-pending", pending);
+}
+function _initHamburgerPendingWatch() {
+  if (typeof MutationObserver === "undefined") { updateHamburgerPending(); return; }
+  var obs = new MutationObserver(updateHamburgerPending);
+  _HAM_BADGE_IDS.forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) obs.observe(el, { attributes:true, attributeFilter:["style"] });
+  });
+  updateHamburgerPending();
+}
+if (document.readyState !== "loading") _initHamburgerPendingWatch();
+else document.addEventListener("DOMContentLoaded", _initHamburgerPendingWatch);
 
 // ── CSV export ─────────────────────────────────────
 function exportCSV() {
@@ -6293,33 +6317,29 @@ function renderAnalytics() {
   var groupBy = (document.getElementById("anGroupBy") || {}).value || "site";
   var agg     = _anAggregate(rows, groupBy);
 
-  var late = 0, totalDur = 0, durCount = 0;
-  rows.forEach(function(r){
-    if (r.isLate) late++;
-    var d = _anParseDuration(r.duration);
-    if (d > 0) { totalDur += d; durCount++; }
-  });
+  var late = 0;
+  rows.forEach(function(r){ if (r.isLate) late++; });
 
   // ── Today-only KPIs (auto-reset when a new day begins) ──────────────
   // "Today's Check-ins"  = check-in events recorded today (independent of the
   //                        date-range filter, but still honours the site filter).
-  // "Engineers In Today" = distinct engineers who checked in today / total in system.
+  // "Checked Out Today"  = today's records that have checked out (status "out").
   var _today   = new Date().toISOString().split("T")[0];
   var _siteSel = (document.getElementById("anSite") || {}).value || "";
-  var _todayEngs = {};
-  var _todayCheckins = 0;
+  var _todayCheckins = 0, _todayCheckouts = 0;
   allRecs.forEach(function(r){
     if (_siteSel && r.site !== _siteSel) return;
     if (_anIsoDate(r) !== _today)        return;
     _todayCheckins++;
-    if (r.empId) _todayEngs[r.empId] = true;
+    if (r.status === "out") _todayCheckouts++;
   });
+  // "Total Engineers in System" = registry count (onboarding), with fallbacks.
   var _engTotal = _anEngineerTotalCount();
 
   var setText = function(id, val){ var el = document.getElementById(id); if (el) el.textContent = val; };
   setText("ans-checkins",  _todayCheckins);
-  setText("ans-engineers", Object.keys(_todayEngs).length + " / " + (_engTotal != null ? _engTotal : "—"));
-  setText("ans-avgdur",    durCount ? _anFmtDuration(totalDur/durCount) : "—");
+  setText("ans-checkouts", _todayCheckouts);
+  setText("ans-engineers", _engTotal != null ? _engTotal : "—");
   setText("ans-late",      rows.length ? Math.round(late/rows.length*100) + "%" : "0%");
 
   // Header text
