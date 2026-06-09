@@ -111,6 +111,29 @@ input,select{font-family:var(--body);outline:none}
   border-radius:8px;padding:7px 14px;font-size:.82rem;font-weight:600;color:var(--ink2);transition:all .2s;
 }
 .tb-back:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
+/* ── Hamburger nav (shown on small screens) ── */
+.tb-hamburger{
+  display:none;margin-left:auto;align-items:center;justify-content:center;
+  background:transparent;border:1.5px solid var(--border);border-radius:8px;
+  padding:6px 12px;font-size:1.15rem;line-height:1;color:var(--ink2);cursor:pointer;transition:all .2s;
+}
+.tb-hamburger:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
+.nav-menu{
+  display:none;position:absolute;top:calc(100% + 6px);right:14px;
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 16px 44px rgba(0,0,0,.20);padding:6px;min-width:220px;max-height:80vh;overflow-y:auto;
+  z-index:200;flex-direction:column;gap:2px;
+}
+.nav-menu-item{
+  display:flex;align-items:center;gap:10px;text-align:left;width:100%;
+  background:transparent;border:none;border-radius:8px;padding:10px 14px;
+  font-size:.88rem;font-weight:600;color:var(--ink2);cursor:pointer;font-family:var(--body);transition:all .15s;
+}
+.nav-menu-item:hover{background:var(--bg2,#f3f4f6)}
+.nav-menu-item.on{background:var(--ink);color:#fff}
+.nav-menu-sep{height:1px;background:var(--border);margin:6px 6px}
+.nav-menu-signout{color:var(--red)}
+.nav-menu-signout:hover{background:#fef2f2;color:var(--red)}
 .live-dot{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;color:var(--green)}
 .live-dot::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.5s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}}
@@ -788,15 +811,17 @@ tr.on-leave-row td{background:#f0f9ff!important}
 }
 @media(max-width:768px){
   .topbar{padding:10px 14px;gap:8px}
-  .tb-title{font-size:.88rem}
+  .tb-title{font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
   .tb-back{padding:6px 10px;font-size:.75rem}
   .live-dot{font-size:.7rem}
   .stats-grid{gap:8px}
   .stat{padding:12px 14px}
   .stat-n{font-size:1.5rem}
-  .dash-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:3px}
-  .dash-tabs::-webkit-scrollbar{display:none}
-  .dash-tab{white-space:nowrap;flex-shrink:0}
+  /* Collapse the tab row + Sign Out into the hamburger menu */
+  .tb-hamburger{display:inline-flex}
+  .nav-menu.open{display:flex}
+  .topbar .tb-back{display:none}
+  .dash-tabs{display:none}
   .leave-act-btn{padding:4px 8px;font-size:.72rem}
   .modal-box{padding:18px 14px;border-radius:14px}
   .modal-actions{flex-direction:column}
@@ -1428,6 +1453,20 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <span class="live-dot" style="margin-left:4px">LIVE</span>
     <button class="tb-analytics-btn" id="topbarAnalyticsBtn" onclick="dTabFromTopbar('analytics')" title="Open Analytics dashboard">📊 Analytics</button>
     <button class="tb-back" onclick="doSignOut()" style="margin-left:auto">Sign Out</button>
+    <button class="tb-hamburger" id="navHamburger" onclick="toggleNavMenu(event)" aria-label="Open menu" aria-expanded="false" title="Menu">☰</button>
+    <div class="nav-menu" id="navMenu">
+      <button class="nav-menu-item" data-tab="live"     onclick="navMenuSelect('live')">📋 Live Status</button>
+      <button class="nav-menu-item" data-tab="feed"     onclick="navMenuSelect('feed')">📰 Activity Feed</button>
+      <button class="nav-menu-item" data-tab="calendar" onclick="navMenuSelect('calendar')">📅 Calendar</button>
+      <button class="nav-menu-item" data-tab="leave"    onclick="navMenuSelect('leave')">🏖️ Leave Mgmt</button>
+      <button class="nav-menu-item" data-tab="otp"      onclick="navMenuSelect('otp')">🔑 OTP Requests</button>
+      <button class="nav-menu-item" data-tab="device"   onclick="navMenuSelect('device')">🖥️ Device Audit</button>
+      <button class="nav-menu-item" data-tab="team"     onclick="navMenuSelect('team')">👥 Team</button>
+      <button class="nav-menu-item" data-tab="tdr"      onclick="navMenuSelect('tdr')">📄 TDR Report</button>
+      <button class="nav-menu-item" data-tab="setup"    onclick="navMenuSelect('setup')">⚙️ Setup Guide</button>
+      <div class="nav-menu-sep"></div>
+      <button class="nav-menu-item nav-menu-signout" onclick="doSignOut()">⎋ Sign Out</button>
+    </div>
   </div>
   <div class="dash-wrap">
 
@@ -5711,6 +5750,66 @@ function dTabFromTopbar(id) {
   // Highlight the topbar button
   var topBtn = document.getElementById("topbarAnalyticsBtn");
   if (topBtn) topBtn.classList.add("active");
+}
+
+// ── Hamburger nav menu (small screens) ─────────────────────────────────
+function toggleNavMenu(e) {
+  if (e) e.stopPropagation();
+  var menu = document.getElementById("navMenu");
+  var btn  = document.getElementById("navHamburger");
+  if (!menu) return;
+  var open = menu.classList.toggle("open");
+  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    _syncNavMenuActive();
+    // Defer so this same click doesn't immediately close it
+    setTimeout(function(){ document.addEventListener("click", _navMenuOutside); }, 0);
+  } else {
+    document.removeEventListener("click", _navMenuOutside);
+  }
+}
+
+function _navMenuOutside(e) {
+  var menu = document.getElementById("navMenu");
+  var btn  = document.getElementById("navHamburger");
+  if (!menu) return;
+  if (menu.contains(e.target) || (btn && btn.contains(e.target))) return;
+  menu.classList.remove("open");
+  if (btn) btn.setAttribute("aria-expanded", "false");
+  document.removeEventListener("click", _navMenuOutside);
+}
+
+function navMenuSelect(id) {
+  // Find the matching desktop tab so its active ("on") state stays in sync
+  var tabEl = null;
+  document.querySelectorAll(".dash-tab").forEach(function(el) {
+    var oc = el.getAttribute("onclick") || "";
+    if (oc.indexOf("'" + id + "'") !== -1) tabEl = el;
+  });
+  dTab(id, tabEl);
+  var menu = document.getElementById("navMenu");
+  var btn  = document.getElementById("navHamburger");
+  if (menu) menu.classList.remove("open");
+  if (btn) btn.setAttribute("aria-expanded", "false");
+  document.removeEventListener("click", _navMenuOutside);
+  _syncNavMenuActive();
+}
+
+// Highlight the menu item for whichever tab is currently active
+function _syncNavMenuActive() {
+  var activeId = null;
+  document.querySelectorAll(".dash-tab").forEach(function(el) {
+    if (el.classList.contains("on")) {
+      var m = (el.getAttribute("onclick") || "").match(/dTab\('([^']+)'/);
+      if (m) activeId = m[1];
+    }
+  });
+  var topBtn = document.getElementById("topbarAnalyticsBtn");
+  if (topBtn && topBtn.classList.contains("active")) activeId = "analytics";
+  document.querySelectorAll("#navMenu .nav-menu-item").forEach(function(it) {
+    var did = it.getAttribute("data-tab");
+    it.classList.toggle("on", !!did && did === activeId);
+  });
 }
 
 // ── CSV export ─────────────────────────────────────
