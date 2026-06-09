@@ -420,7 +420,7 @@ tr:hover td{background:#fafdf8}
 .mp-realloc-empty{font-size:.8rem;color:var(--ink3);padding:12px 0;text-align:center}
 
 /* ── GAP CHART ENHANCED ── */
-.an-gap-chart-wrap{position:relative;height:260px;margin-bottom:12px}
+.an-gap-chart-wrap{position:relative;height:260px;min-height:200px;margin-bottom:12px}
 .an-gap-legend-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:.72rem;color:var(--ink2);align-items:center}
 .an-gap-legend-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
 
@@ -918,11 +918,26 @@ tr.on-leave-row td{background:#f0f9ff!important}
   transition: width .25s, height .25s, border-radius .25s;
   position: relative;
 }
-#slideshowModal.ss-maximized {
+/* True fullscreen: the overlay becomes the fullscreen element — fill it edge to edge */
+#slideshowOverlay:fullscreen { background: #0d1117; }
+#slideshowOverlay:fullscreen #slideshowModal,
+#slideshowOverlay:-webkit-full-screen #slideshowModal {
   width: 100vw !important;
   height: 100vh !important;
-  border-radius: 0 !important;
   max-width: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+/* White stage so the light-themed charts read clearly on the dark modal */
+.ss-canvas-wrap {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px;
+  box-sizing: border-box;
+  position: relative;
 }
 .ss-progress { height: 3px; background: #1e2530; flex-shrink: 0; }
 .ss-progress-bar { height: 100%; background: #3b82f6; width: 0%; }
@@ -953,11 +968,10 @@ tr.on-leave-row td{background:#f0f9ff!important}
 .ss-body {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 22px 28px;
+  padding: 18px 22px;
   overflow: hidden;
   background: #0d1117;
+  min-height: 0;
 }
 .ss-dots {
   display: flex;
@@ -1531,14 +1545,14 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <div class="an-kpi-icon">📥</div>
           <div class="an-kpi-body">
             <div class="an-kpi-val" id="ans-checkins">—</div>
-            <div class="an-kpi-lbl">Total Check-ins</div>
+            <div class="an-kpi-lbl">Today's Check-ins</div>
           </div>
         </div>
         <div class="an-kpi-card an-kpi-green">
           <div class="an-kpi-icon">👷</div>
           <div class="an-kpi-body">
             <div class="an-kpi-val" id="ans-engineers">—</div>
-            <div class="an-kpi-lbl">Unique Engineers</div>
+            <div class="an-kpi-lbl">Engineers In Today <span style="font-weight:600;color:var(--ink3)">(in / total)</span></div>
           </div>
         </div>
         <div class="an-kpi-card an-kpi-teal">
@@ -1643,16 +1657,17 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <!-- Insufficient Workforce Alert (sites that cannot be covered) -->
         <div id="anInsufficientAlert" style="display:none"></div>
 
-        <!-- Bar Chart: Available vs Required per site -->
+        <!-- Horizontal bars: Available vs Required per site -->
+        <div class="an-gap-legend-row" id="anGapLegendRow">
+          <span class="an-gap-legend-dot" style="background:rgba(0,200,150,.78)"></span><span>Surplus</span>
+          <span class="an-gap-legend-dot" style="background:rgba(0,119,255,.78)"></span><span>On Target</span>
+          <span class="an-gap-legend-dot" style="background:rgba(255,59,92,.78)"></span><span>Deficit</span>
+          <span class="an-gap-legend-dot" style="background:rgba(148,163,184,.45);border:1.5px solid rgba(71,85,105,.85)"></span><span>Required target</span>
+          <span style="margin-left:auto;color:var(--ink3);font-size:.7rem">Bar = available engineers · number after bar = gap</span>
+        </div>
         <div class="an-gap-chart-wrap">
-          <div class="an-gap-legend-row" id="anGapLegendRow">
-            <span class="an-gap-legend-dot" style="background:rgba(255,59,92,.75)"></span><span>Deficit</span>
-            <span class="an-gap-legend-dot" style="background:rgba(0,200,150,.75)"></span><span>Surplus</span>
-            <span class="an-gap-legend-dot" style="background:rgba(0,119,255,.75)"></span><span>On Target</span>
-            <span class="an-gap-legend-dot" style="background:rgba(13,17,23,.85)"></span><span>Required</span>
-          </div>
           <canvas id="anGapChart" style="display:none"></canvas>
-          <div id="anGapEmpty" class="chart-empty" style="display:none;position:absolute;inset:0;top:30px">
+          <div id="anGapEmpty" class="chart-empty" style="display:none;position:absolute;inset:0">
             <div class="chart-empty-icon">⚖️</div>
             <div id="anGapEmptyMsg">Set required manpower per site to see gap analysis</div>
           </div>
@@ -6124,10 +6139,49 @@ function _raDebounced() {
   _anDbTimer = setTimeout(renderAnalytics, 180);
 }
 
+// ── Total engineers registered in the system (for the "in / total" ratio) ──
+// Source of truth is the engineerOnboarding registry. We cache the count so the
+// Analytics KPI can show e.g. "20 / 35" without the Onboarding tab being open.
+var _anEngineerTotal        = null;  // cached registry count (null = not loaded yet)
+var _anEngineerTotalLoading = false;
+
+function _anEngineerTotalCount() {
+  // Prefer the live onboarding cache (freshest, updated when the tab is viewed),
+  // then the independently-loaded registry count, then a fallback of distinct
+  // engineers ever seen in attendance so the denominator is never below the numerator.
+  if (Array.isArray(_onbRecords) && _onbRecords.length) return _onbRecords.length;
+  if (_anEngineerTotal != null) return _anEngineerTotal;
+  var ids = {};
+  allRecs.forEach(function(r){ if (r.empId) ids[r.empId] = true; });
+  var n = Object.keys(ids).length;
+  return n || null;
+}
+
+function _anLoadEngineerTotal() {
+  // Fetch once per session; the success callback re-renders, which calls this
+  // again but returns early because _anEngineerTotal is now set (no loop).
+  if (_anEngineerTotal != null || _anEngineerTotalLoading) return;
+  if (typeof fbOk === "undefined" || !fbOk || !db) return;
+  _anEngineerTotalLoading = true;
+  db.collection("engineerOnboarding").get()
+    .then(function(snap){
+      _anEngineerTotal = snap.size;
+      _anEngineerTotalLoading = false;
+      if (document.getElementById("ans-engineers")) renderAnalytics();
+    })
+    .catch(function(e){
+      _anEngineerTotalLoading = false;
+      console.warn("[v6.21] engineer total load failed:", e && e.message);
+    });
+}
+
 // ── Main render — called by renderAll() (live) + on filter change ──
 function renderAnalytics() {
   var panel = document.getElementById("dTab-analytics");
   if (!panel) return; // tab not in DOM yet
+
+  // Kick off (once) the registry count load used by the "Engineers In Today" ratio
+  _anLoadEngineerTotal();
 
   // Render the manpower & leave layer FIRST so its KPI cards are up to date
   // even if Chart.js hasn't loaded yet.
@@ -6138,16 +6192,32 @@ function renderAnalytics() {
   var groupBy = (document.getElementById("anGroupBy") || {}).value || "site";
   var agg     = _anAggregate(rows, groupBy);
 
-  var uniq = {}, late = 0, totalDur = 0, durCount = 0;
+  var late = 0, totalDur = 0, durCount = 0;
   rows.forEach(function(r){
-    if (r.empId) uniq[r.empId] = true;
     if (r.isLate) late++;
     var d = _anParseDuration(r.duration);
     if (d > 0) { totalDur += d; durCount++; }
   });
+
+  // ── Today-only KPIs (auto-reset when a new day begins) ──────────────
+  // "Today's Check-ins"  = check-in events recorded today (independent of the
+  //                        date-range filter, but still honours the site filter).
+  // "Engineers In Today" = distinct engineers who checked in today / total in system.
+  var _today   = new Date().toISOString().split("T")[0];
+  var _siteSel = (document.getElementById("anSite") || {}).value || "";
+  var _todayEngs = {};
+  var _todayCheckins = 0;
+  allRecs.forEach(function(r){
+    if (_siteSel && r.site !== _siteSel) return;
+    if (_anIsoDate(r) !== _today)        return;
+    _todayCheckins++;
+    if (r.empId) _todayEngs[r.empId] = true;
+  });
+  var _engTotal = _anEngineerTotalCount();
+
   var setText = function(id, val){ var el = document.getElementById(id); if (el) el.textContent = val; };
-  setText("ans-checkins",  rows.length);
-  setText("ans-engineers", Object.keys(uniq).length);
+  setText("ans-checkins",  _todayCheckins);
+  setText("ans-engineers", Object.keys(_todayEngs).length + " / " + (_engTotal != null ? _engTotal : "—"));
   setText("ans-avgdur",    durCount ? _anFmtDuration(totalDur/durCount) : "—");
   setText("ans-late",      rows.length ? Math.round(late/rows.length*100) + "%" : "0%");
 
@@ -7425,6 +7495,7 @@ function _anRenderGapChart(gaps) {
     }
     canvas.style.display = "none";
     if (legendEl) legendEl.style.display = "none";
+    if (canvas.parentElement) canvas.parentElement.style.height = "260px";
     return;
   }
   if (emptyEl) emptyEl.style.display = "none";
@@ -7433,38 +7504,69 @@ function _anRenderGapChart(gaps) {
 
   if (typeof Chart === "undefined") return;
 
-  // Multi-line labels: site name + gap annotation below
+  // One horizontal row per site — site names read cleanly with no rotation,
+  // and the layout scales to any number of sites.
   var labels = configured.map(function(g){
-    var gapStr = g.gap > 0 ? ("+" + g.gap + " surplus") : (g.gap < 0 ? (g.gap + " deficit") : "on target");
-    // Trim site name
-    var name = g.site.length > 18 ? g.site.slice(0,16) + "…" : g.site;
-    return [name, gapStr];
+    return g.site.length > 24 ? g.site.slice(0,22) + "…" : g.site;
   });
   var availArr = configured.map(function(g){ return g.available; });
   var reqArr   = configured.map(function(g){ return g.required;  });
-  var onLeaveArr = configured.map(function(g){ return g.onLeave; });
-  var rosterArr  = configured.map(function(g){ return g.roster;  });
 
-  // Color available bars by status; required bar always dark
-  var availColors     = configured.map(function(g){
-    if (g.status === "deficit")  return "rgba(255,59,92,.80)";
-    if (g.status === "surplus")  return "rgba(0,200,150,.80)";
-    if (g.status === "ontarget") return "rgba(0,119,255,.80)";
+  // Available bar coloured by status; Required shown as a light "target" track.
+  var availColors = configured.map(function(g){
+    if (g.status === "deficit")  return "rgba(255,59,92,.82)";
+    if (g.status === "surplus")  return "rgba(0,200,150,.82)";
+    if (g.status === "ontarget") return "rgba(0,119,255,.82)";
     return "rgba(107,114,128,.55)";
   });
   var availBorderColors = configured.map(function(g){
-    if (g.status === "deficit")  return "rgba(185,28,28,.9)";
-    if (g.status === "surplus")  return "rgba(21,128,61,.9)";
-    if (g.status === "ontarget") return "rgba(29,78,216,.9)";
-    return "rgba(107,114,128,.8)";
+    if (g.status === "deficit")  return "rgba(185,28,28,1)";
+    if (g.status === "surplus")  return "rgba(21,128,61,1)";
+    if (g.status === "ontarget") return "rgba(29,78,216,1)";
+    return "rgba(107,114,128,1)";
   });
 
-  // Gap annotation bars — positive (surplus) shown as green extension, negative (deficit) as red extension
-  var gapColors = configured.map(function(g){
-    if (g.gap > 0) return "rgba(0,200,150,.30)";
-    if (g.gap < 0) return "rgba(255,59,92,.20)";
-    return "transparent";
-  });
+  // Grow the canvas height with the number of sites so bars stay readable.
+  var wrap = canvas.parentElement;
+  if (wrap) wrap.style.height = Math.max(200, configured.length * 48 + 56) + "px";
+
+  // Inline plugin: print the worker count at each bar end + a coloured gap chip per site.
+  var gapBarLabels = {
+    id: "gapBarLabels",
+    afterDatasetsDraw: function(chart){
+      var ctx = chart.ctx, area = chart.chartArea;
+      chart.data.datasets.forEach(function(ds, di){
+        var meta = chart.getDatasetMeta(di);
+        if (meta.hidden) return;
+        meta.data.forEach(function(bar, i){
+          var val = ds.data[i];
+          if (val == null) return;
+          ctx.save();
+          ctx.font = (di === 0 ? "700" : "600") + " 11px 'DM Sans',sans-serif";
+          ctx.fillStyle = di === 0 ? "#111827" : "#64748b";
+          ctx.textBaseline = "middle";
+          ctx.textAlign = "left";
+          ctx.fillText(String(val), bar.x + 6, bar.y);
+          ctx.restore();
+        });
+      });
+      // Gap chip at the far-right gutter, aligned to each site's Available bar.
+      var meta0 = chart.getDatasetMeta(0);
+      configured.forEach(function(g, i){
+        var bar = meta0.data[i];
+        if (!bar || g.gap == null) return;
+        var gapStr = (g.gap > 0 ? "+" : "") + g.gap;
+        var color  = g.gap < 0 ? "#dc2626" : (g.gap > 0 ? "#15803d" : "#2563eb");
+        ctx.save();
+        ctx.font = "700 12px 'DM Sans',sans-serif";
+        ctx.fillStyle = color;
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "right";
+        ctx.fillText(gapStr, area.right + 42, bar.y);
+        ctx.restore();
+      });
+    }
+  };
 
   _anGapChart = new Chart(canvas, {
     type: "bar",
@@ -7478,28 +7580,35 @@ function _anRenderGapChart(gaps) {
           borderColor: availBorderColors,
           borderWidth: 1.5,
           borderRadius: 5,
+          borderSkipped: false,
           order: 2,
-          barPercentage: 0.65
+          categoryPercentage: 0.72,
+          barPercentage: 0.92
         },
         {
           label: "Required Target",
           data: reqArr,
-          backgroundColor: "rgba(13,17,23,.80)",
-          borderColor: "#0d1117",
-          borderWidth: 1,
+          backgroundColor: "rgba(148,163,184,.30)",
+          borderColor: "rgba(71,85,105,.85)",
+          borderWidth: 1.5,
           borderRadius: 5,
+          borderSkipped: false,
           order: 1,
-          barPercentage: 0.65
+          categoryPercentage: 0.72,
+          barPercentage: 0.92
         }
       ]
     },
+    plugins: [gapBarLabels],
     options: {
+      indexAxis: "y",
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 500, easing: "easeOutQuart" },
+      layout: { padding: { right: 50, left: 2 } },
       plugins: {
         legend: {
-          display: false  // we use custom legend row above
+          display: false  // we use the custom legend row above
         },
         tooltip: {
           backgroundColor: "rgba(13,17,23,.95)",
@@ -7549,26 +7658,11 @@ function _anRenderGapChart(gaps) {
       },
       scales: {
         x: {
-          grid: { display: false },
-          ticks: {
-            font: { size: 10, family: "'DM Sans',sans-serif" },
-            maxRotation: 30,
-            minRotation: 0,
-            color: function(ctx){
-              var g = configured[ctx.index];
-              if (!g) return "#6b7280";
-              if (g.status === "deficit")  return "#b91c1c";
-              if (g.status === "surplus")  return "#15803d";
-              if (g.status === "ontarget") return "#1d4ed8";
-              return "#6b7280";
-            }
-          }
-        },
-        y: {
-          grid: { color: "#f3f4f6" },
           beginAtZero: true,
+          grid: { color: "#f3f4f6", drawBorder: false },
           ticks: {
-            font: { size: 10, family: "'DM Sans',sans-serif" },
+            font: { size: 11, family: "'DM Sans',sans-serif" },
+            color: "#6b7280",
             precision: 0,
             callback: function(v){ return Number.isInteger(v) ? v : ""; }
           },
@@ -7577,6 +7671,21 @@ function _anRenderGapChart(gaps) {
             text: "Number of Workers",
             font: { size: 10, family: "'DM Sans',sans-serif" },
             color: "#9ca3af"
+          }
+        },
+        y: {
+          grid: { display: false },
+          ticks: {
+            autoSkip: false,
+            font: { size: 11, weight: "600", family: "'DM Sans',sans-serif" },
+            color: function(ctx){
+              var g = configured[ctx.index];
+              if (!g) return "#374151";
+              if (g.status === "deficit")  return "#b91c1c";
+              if (g.status === "surplus")  return "#15803d";
+              if (g.status === "ontarget") return "#1d4ed8";
+              return "#6b7280";
+            }
           }
         }
       }
@@ -12574,32 +12683,49 @@ initFirebase();
 initEmailJS();
 
 // ══ CHART SLIDESHOW ═══════════════════════════════════════════════════
-var SS_SLIDES = [
-  { title: "👥 Attendance Status by Site",  canvasId: "anBreakdownChart"   },
-  { title: "🌴 Leave by Period",             canvasId: "anLeaveStatusChart" },
+// Each slide re-renders the source chart LIVE into a large canvas (crisp at any
+// size, unlike a scaled-up PNG) and the overlay enters true fullscreen (F11-like)
+// via the Fullscreen API. Only charts that currently exist become slides.
+var SS_SLIDE_DEFS = [
+  { title: "👥 Attendance Status by Site",      chartVar: "_anBreakdownChart"   },
+  { title: "🌴 Leave by Period",                 chartVar: "_anLeaveStatusChart" },
+  { title: "⚖️ Manpower Gap — Site Breakdown",   chartVar: "_anGapChart"         },
+  { title: "📈 Manpower Historical Trend",       chartVar: "_anHistoryChart"     }
 ];
+var SS_SLIDES    = [];   // active subset (charts that are currently rendered)
 var _ssIdx       = 0;
 var _ssPlaying   = true;
 var _ssTimer     = null;
-var _ssMaximized = false;
-var _SS_INTERVAL = 6000; // ms per slide
+var _ssBigChart  = null; // live Chart.js instance shown on the slide
+var _SS_INTERVAL = 7000; // ms per slide
 
 function startSlideshow() {
-  // Ensure analytics data is rendered first
+  // Ensure analytics data is rendered first so the source charts exist
   if (typeof renderAnalytics === "function") renderAnalytics();
 
-  _ssIdx       = 0;
-  _ssPlaying   = true;
-  _ssMaximized = false;
+  // Build the active slide list from charts that are actually live right now
+  SS_SLIDES = SS_SLIDE_DEFS.filter(function(s){
+    var c = window[s.chartVar];
+    return c && typeof c.update === "function";
+  });
+  if (!SS_SLIDES.length) {
+    alert("No charts are available to present yet. Open the Analytics tab and let the charts load first.");
+    return;
+  }
+
+  _ssIdx     = 0;
+  _ssPlaying = true;
 
   var overlay = document.getElementById("slideshowOverlay");
   overlay.style.display = "flex";
 
-  // Reset maximize state
-  var modal = document.getElementById("slideshowModal");
-  if (modal) modal.classList.remove("ss-maximized");
-  var maxBtn = document.getElementById("ssMaxBtn");
-  if (maxBtn) maxBtn.innerHTML = "&#x26F6; Maximize";
+  // Enter real fullscreen (requires the user-gesture from the button click).
+  // If the browser blocks it, the fixed inset:0 overlay still fills the viewport.
+  if (overlay.requestFullscreen) {
+    overlay.requestFullscreen().catch(function(){});
+  } else if (overlay.webkitRequestFullscreen) {
+    overlay.webkitRequestFullscreen();
+  }
 
   // Build dot indicators
   var dotsEl = document.getElementById("ssDots");
@@ -12618,6 +12744,49 @@ function startSlideshow() {
   _ssScheduleNext();
 
   document.addEventListener("keydown", _ssKeyHandler);
+  document.addEventListener("fullscreenchange", _ssFsHandler);
+}
+
+// Deep-clone a chart's config, stripping functions (tooltip callbacks, onClick…)
+// which cannot be cloned and are not needed in a passive presentation view.
+function _ssStripFns(obj) {
+  return JSON.parse(JSON.stringify(obj || {}, function(k, v){
+    return typeof v === "function" ? undefined : v;
+  }));
+}
+
+function _ssRenderLiveChart(slide) {
+  var canvas = document.getElementById("ssChartCanvas");
+  if (!canvas || typeof Chart === "undefined") return;
+  if (_ssBigChart) { _ssBigChart.destroy(); _ssBigChart = null; }
+
+  var src = window[slide.chartVar];
+  if (!src || !src.config) return;
+
+  var data = JSON.parse(JSON.stringify(src.config.data || {})); // data is JSON-safe
+  var opts = _ssStripFns(src.config.options);
+
+  opts.responsive          = true;
+  opts.maintainAspectRatio = false;
+  opts.animation           = { duration: 450, easing: "easeOutQuart" };
+
+  // Scale fonts up for presentation legibility
+  opts.plugins = opts.plugins || {};
+  opts.plugins.legend = opts.plugins.legend || {};
+  if (opts.plugins.legend.display !== false) {
+    opts.plugins.legend.labels = Object.assign({}, opts.plugins.legend.labels, {
+      font: { size: 16, family: "'DM Sans',sans-serif" }, padding: 18, boxWidth: 16, usePointStyle: true
+    });
+  }
+  if (opts.scales) {
+    Object.keys(opts.scales).forEach(function(ax){
+      var sc = opts.scales[ax] || {};
+      sc.ticks = Object.assign({}, sc.ticks, { font: { size: 15, family: "'DM Sans',sans-serif" } });
+      opts.scales[ax] = sc;
+    });
+  }
+
+  _ssBigChart = new Chart(canvas, { type: src.config.type, data: data, options: opts });
 }
 
 function ssShowSlide(idx) {
@@ -12635,26 +12804,8 @@ function ssShowSlide(idx) {
     d.classList.toggle("ss-dot-active", i === _ssIdx);
   });
 
-  // Capture chart canvas as PNG image
-  var canvas = document.getElementById(slide.canvasId);
-  var img    = document.getElementById("ssChartImg");
-  if (img) {
-    if (canvas && typeof canvas.toDataURL === "function") {
-      // Render on a white background so chart is visible on dark modal
-      var tmp = document.createElement("canvas");
-      tmp.width  = canvas.width;
-      tmp.height = canvas.height;
-      var ctx = tmp.getContext("2d");
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, tmp.width, tmp.height);
-      ctx.drawImage(canvas, 0, 0);
-      img.src = tmp.toDataURL("image/png");
-      img.style.display = "block";
-    } else {
-      img.src = "";
-      img.style.display = "none";
-    }
-  }
+  // Render the live chart large
+  _ssRenderLiveChart(slide);
 
   // Restart progress bar animation
   _ssRestartProgress();
@@ -12718,39 +12869,37 @@ function ssPlayPause() {
   }
 }
 
-function ssToggleMax() {
-  _ssMaximized = !_ssMaximized;
-  var modal  = document.getElementById("slideshowModal");
-  var maxBtn = document.getElementById("ssMaxBtn");
-  if (_ssMaximized) {
-    if (modal)  modal.classList.add("ss-maximized");
-    if (maxBtn) maxBtn.innerHTML = "&#x229F; Minimize";
-  } else {
-    if (modal)  modal.classList.remove("ss-maximized");
-    if (maxBtn) maxBtn.innerHTML = "&#x26F6; Maximize";
-  }
-}
-
 function ssOverlayClick(e) {
   if (e.target === document.getElementById("slideshowOverlay")) ssExit();
 }
 
 function _ssKeyHandler(e) {
-  if (e.key === "Escape")      { ssExit(); return; }
+  if (e.key === "Escape")      { ssExit(); return; } // also fires via fullscreenchange
   if (e.key === "ArrowRight")  { ssNext(); }
   if (e.key === "ArrowLeft")   { ssPrev(); }
   if (e.key === " ")           { ssPlayPause(); e.preventDefault(); }
 }
 
+// If the user leaves fullscreen (Esc / F11) while the slideshow is open, close it.
+function _ssFsHandler() {
+  var overlay = document.getElementById("slideshowOverlay");
+  if (!document.fullscreenElement && overlay && overlay.style.display !== "none") {
+    ssExit();
+  }
+}
+
 function ssExit() {
   clearTimeout(_ssTimer);
   document.removeEventListener("keydown", _ssKeyHandler);
-  _ssPlaying   = true;
-  _ssMaximized = false;
+  document.removeEventListener("fullscreenchange", _ssFsHandler);
+  _ssPlaying = true;
+  if (_ssBigChart) { _ssBigChart.destroy(); _ssBigChart = null; }
   var overlay = document.getElementById("slideshowOverlay");
   if (overlay) overlay.style.display = "none";
-  var modal = document.getElementById("slideshowModal");
-  if (modal) modal.classList.remove("ss-maximized");
+  // Leave fullscreen if we are still in it
+  if (document.fullscreenElement && document.exitFullscreen) {
+    document.exitFullscreen().catch(function(){});
+  }
 }
 // ══ END SLIDESHOW ═════════════════════════════════════════════════════
 
@@ -13902,7 +14051,7 @@ function confirmForceCheckout() {
       <span class="ss-counter" id="ssCounter">1 / 4</span>
     </div>
     <div class="ss-body">
-      <img id="ssChartImg" src="" alt="chart slide" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;display:block"/>
+      <div class="ss-canvas-wrap"><canvas id="ssChartCanvas"></canvas></div>
     </div>
     <div class="ss-dots" id="ssDots"></div>
     <div class="ss-footer">
@@ -13910,7 +14059,6 @@ function confirmForceCheckout() {
       <button class="ss-btn" onclick="ssPlayPause()" id="ssPlayBtn">&#9646;&#9646; Pause</button>
       <button class="ss-btn ss-nav" onclick="ssNext()" title="Next (â†’)">&#9654;</button>
       <div style="width:1px;height:24px;background:#2d3748;margin:0 4px"></div>
-      <button class="ss-btn" onclick="ssToggleMax()" id="ssMaxBtn" title="Maximize">&#x26F6; Maximize</button>
       <button class="ss-btn ss-exit" onclick="ssExit()" title="Exit (ESC)">&#10005; Exit</button>
     </div>
   </div>
