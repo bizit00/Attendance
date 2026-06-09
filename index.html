@@ -7453,15 +7453,19 @@ function _anRenderGlobalSufficiencyBanner(configured, plan) {
     desc = "Even after moving all surplus workers, " + plan.uncovered.length + " site" + (plan.uncovered.length > 1 ? "s remain" : " remains") + " understaffed. Additional recruitment or overtime is required.";
   }
 
+  // Total Available is colour-coded vs Total Required:
+  //   red  = shortfall (available < required), green = surplus (available > required)
+  var availColor = netGap < 0 ? "var(--red)" : (netGap > 0 ? "var(--green)" : "");
   var statsHtml = [
-    { val: totalAvailable, lbl: "Total Available" },
+    { val: totalAvailable, lbl: "Total Available", color: availColor },
     { val: totalRequired,  lbl: "Total Required" },
-    { val: (netGap >= 0 ? "+" : "") + netGap, lbl: "Net Gap" },
+    { val: (netGap >= 0 ? "+" : "") + netGap, lbl: "Net Gap", color: availColor },
     { val: configured.filter(function(g){ return g.gap < 0; }).length, lbl: "Sites Deficit" },
     { val: configured.filter(function(g){ return g.gap > 0; }).length, lbl: "Sites Surplus" },
     { val: configured.filter(function(g){ return g.gap === 0; }).length, lbl: "On Target" }
   ].map(function(s){
-    return '<div class="mp-global-stat"><div class="mp-global-stat-val">' + s.val + '</div><div class="mp-global-stat-lbl">' + s.lbl + '</div></div>';
+    var style = s.color ? ' style="color:' + s.color + '"' : '';
+    return '<div class="mp-global-stat"><div class="mp-global-stat-val"' + style + '>' + s.val + '</div><div class="mp-global-stat-lbl">' + s.lbl + '</div></div>';
   }).join("");
 
   el.innerHTML =
