@@ -1648,7 +1648,10 @@ tr.on-leave-row td{background:#f0f9ff!important}
             <div class="chart-card-title">⚖️ Manpower Gap — Site Breakdown</div>
             <div class="chart-card-sub" id="anGapSub">Available vs Required — as of today</div>
           </div>
-          <span class="an-live-badge">LIVE</span>
+          <div style="display:flex;align-items:center;gap:10px">
+            <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()" title="Set required manpower per site" style="font-size:.78rem;padding:6px 12px">⚙️ Configure Manpower</button>
+            <span class="an-live-badge">LIVE</span>
+          </div>
         </div>
 
         <!-- Global Sufficiency Summary Banner -->
@@ -1836,7 +1839,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <button class="an-snap-btn an-snap-nav" onclick="anAsOfShift(-1)" title="Previous day">◀</button>
           <button class="an-snap-btn an-snap-nav" onclick="anAsOfShift(1)"  title="Next day">▶</button>
         </div>
-        <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()">⚙️ Configure Manpower</button>
       </div>
       <div class="cal-grid" id="calGrid"></div>
     </div>
