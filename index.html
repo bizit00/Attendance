@@ -1712,9 +1712,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
           </div>
         </div>
 
-        <!-- Compact site rows -->
-        <div id="anGapSiteCards"></div>
-
         <!-- Reallocation Recommendation Panel -->
         <div id="anReallocPanel" class="mp-realloc-panel" style="display:none">
           <div class="mp-realloc-header">🔄 <span>Reallocation Recommendations</span></div>
@@ -7029,7 +7026,7 @@ function exportAnalyticsXLSX() {
           "From Site": t.from,
           "To Site": t.to,
           "Workers to Transfer": t.count,
-          "Note": "Move " + t.count + " worker" + (t.count > 1 ? "s" : "") + " from " + t.from + " to " + t.to
+          "Note": "Move " + t.count + " engineer" + (t.count > 1 ? "s" : "") + " from " + t.from + " to " + t.to
         });
       });
     } else {
@@ -7044,7 +7041,7 @@ function exportAnalyticsXLSX() {
           "From Site": "",
           "To Site": u.site,
           "Workers to Transfer": "",
-          "Note": u.site + " still short " + u.shortfall + " worker" + (u.shortfall > 1 ? "s" : "") + " — additional recruitment needed"
+          "Note": u.site + " still short " + u.shortfall + " engineer" + (u.shortfall > 1 ? "s" : "") + " — additional recruitment needed"
         });
       });
     }
@@ -7444,13 +7441,13 @@ function _anRenderGlobalSufficiencyBanner(configured, plan) {
     icon = "🔄"; cls = "gb-warn";
     title = "Reallocation Can Cover All Deficits";
     desc = plan.uncovered.length === 0
-      ? "Surplus workers from " + plan.transfers.map(function(t){ return t.from; }).filter(function(v,i,a){ return a.indexOf(v)===i; }).length + " site(s) can fully cover all deficits. See recommendations below."
+      ? "Surplus engineers from " + plan.transfers.map(function(t){ return t.from; }).filter(function(v,i,a){ return a.indexOf(v)===i; }).length + " site(s) can fully cover all deficits. See recommendations below."
       : "Partial reallocation available. Some sites still require attention.";
   } else {
     // Absolute shortage — redistribution cannot fully cover deficits
     icon = "🚨"; cls = "gb-crit";
     title = "Absolute Workforce Shortage — Cannot Be Covered by Reallocation";
-    desc = "Even after moving all surplus workers, " + plan.uncovered.length + " site" + (plan.uncovered.length > 1 ? "s remain" : " remains") + " understaffed. Additional recruitment or overtime is required.";
+    desc = "Even after moving all surplus engineers, " + plan.uncovered.length + " site" + (plan.uncovered.length > 1 ? "s remain" : " remains") + " understaffed. Additional recruitment or overtime is required.";
   }
 
   // Total Available is colour-coded vs Total Required:
@@ -7492,7 +7489,7 @@ function _anRenderInsufficientAlert(plan) {
   var rows = plan.uncovered.map(function(u){
     return '<div class="mp-insuff-alert-row">' +
       '<span class="mp-insuff-alert-site">📍 ' + sanitizeHtml(u.site) + '</span>' +
-      '<span class="mp-insuff-alert-val">-' + u.shortfall + ' worker' + (u.shortfall > 1 ? 's' : '') + ' still needed</span>' +
+      '<span class="mp-insuff-alert-val">-' + u.shortfall + ' engineer' + (u.shortfall > 1 ? 's' : '') + ' still needed</span>' +
     '</div>';
   }).join("");
 
@@ -7528,7 +7525,7 @@ function _anRenderReallocPanel(plan) {
       '</div>' +
       '<div class="mp-realloc-count">' +
         '<div class="mp-realloc-count-val">' + t.count + '</div>' +
-        '<div class="mp-realloc-count-lbl">worker' + (t.count > 1 ? 's' : '') + '</div>' +
+        '<div class="mp-realloc-count-lbl">engineer' + (t.count > 1 ? 's' : '') + '</div>' +
       '</div>' +
     '</div>';
   }).join("");
@@ -7759,8 +7756,8 @@ function _anRenderGapChart(gaps) {
               }
               // Required bar
               var gapStr = g.gap == null ? "—"
-                : (g.gap > 0 ? "+" + g.gap + " surplus (can share " + g.gap + " worker" + (g.gap > 1 ? "s" : "") + ")"
-                : g.gap < 0 ? g.gap + " deficit (need " + (-g.gap) + " more worker" + (-g.gap > 1 ? "s" : "") + ")"
+                : (g.gap > 0 ? "+" + g.gap + " surplus (can share " + g.gap + " engineer" + (g.gap > 1 ? "s" : "") + ")"
+                : g.gap < 0 ? g.gap + " deficit (need " + (-g.gap) + " more engineer" + (-g.gap > 1 ? "s" : "") + ")"
                 : "✔ Exactly on target");
               return [
                 "  Required:      " + g.required,
@@ -7771,10 +7768,10 @@ function _anRenderGapChart(gaps) {
               if (!ctx[0]) return [];
               var g = configured[ctx[0].dataIndex];
               if (g.status === "deficit") {
-                return ["", "  ⚠ This site needs " + (-g.gap) + " more worker" + (-g.gap > 1 ? "s" : "") + "."];
+                return ["", "  ⚠ This site needs " + (-g.gap) + " more engineer" + (-g.gap > 1 ? "s" : "") + "."];
               }
               if (g.status === "surplus") {
-                return ["", "  ✔ This site can share " + g.gap + " worker" + (g.gap > 1 ? "s" : "") + "."];
+                return ["", "  ✔ This site can share " + g.gap + " engineer" + (g.gap > 1 ? "s" : "") + "."];
               }
               return [];
             }
@@ -7793,7 +7790,7 @@ function _anRenderGapChart(gaps) {
           },
           title: {
             display: true,
-            text: "Number of Workers",
+            text: "Number of Engineers",
             font: { size: 10, family: "'DM Sans',sans-serif" },
             color: "#9ca3af"
           }
