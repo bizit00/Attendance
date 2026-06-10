@@ -1902,7 +1902,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div style="overflow-x:auto">
         <table id="onbTable">
           <thead><tr>
-            <th>Eng ID</th><th>Name</th><th>Gender</th><th>NRIC</th>
+            <th>Eng ID</th><th>Name</th><th>Gender</th><th>Default Site</th><th>NRIC</th>
             <th>Phone</th><th>Email</th><th>Status</th><th>Actions</th>
           </tr></thead>
           <tbody id="onbTbody"></tbody>
@@ -2950,6 +2950,10 @@ service cloud.firestore {
           <option value="Female">Female</option>
           <option value="Prefer not to say">Prefer not to say</option>
         </select>
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label>Default Site <span style="color:var(--red)">*</span></label>
+        <select id="onbDefaultSite"></select>
       </div>
 
       <div class="field">
@@ -5112,8 +5116,12 @@ function _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn) {
   var now    = new Date();
   var isLate = now.getHours() >= WORK_HOUR_LATE;
 
+  // Resolve the engineer's assigned default site (snapshot onto the record).
+  function _buildAndSave(defaultSite) {
+      var siteMismatch = !!defaultSite && site.name !== defaultSite;
       var rec = {
         empId:empId, empName:empName, empEmail:empEmail, site:site.name,
+        defaultSite: defaultSite || null, siteMismatch: siteMismatch,
         checkinTime:now.toLocaleTimeString("en-SG"),
         checkinDate:now.toLocaleDateString("en-SG"),
         checkinISO:now.toISOString(),
@@ -5154,6 +5162,17 @@ function _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn) {
       } else {
         saveLocal(rec); onSaved(null);
       }
+  }
+
+  // Look up the engineer's default site from onboarding, then build + save.
+  if (fbOk && db) {
+    db.collection("engineerOnboarding").doc(empId).get()
+      .then(function(snap){ _buildAndSave(snap.exists ? (snap.data().defaultSite || null) : null); })
+      .catch(function(e){ console.warn("defaultSite lookup failed:", e); try { _buildAndSave(null); } catch(err){ console.error(err); btn.disabled=false; btn.innerHTML="✅ Check In"; } });
+  } else {
+    var local = (typeof _onbRecords !== "undefined" ? _onbRecords : []).find(function(r){ return (r.engId||r._id) === empId; });
+    _buildAndSave(local ? (local.defaultSite || null) : null);
+  }
 }
 
 // ── Check-out ──────────────────────────────────────
@@ -5323,6 +5342,9 @@ function initDash() {
 
   // Load leaves automatically (used by the analytics tab even when the Leave Mgmt tab isn't open)
   if (typeof loadLeaves === "function") loadLeaves();
+
+  // Load onboarding records so the chart can map engineers to their default site
+  if (typeof loadOnboarding === "function") loadOnboarding();
 
   // Load OTP requests so the badge updates without needing to click the tab
   if (typeof loadOtpRequests === "function") loadOtpRequests();
@@ -5543,6 +5565,7 @@ function renderTable() {
     var stat = r.status==="in"?'<span class="bdg bdg-in">● In</span>':'<span class="bdg bdg-out">● Out</span>';
     if (r.isLate) stat += ' <span class="bdg bdg-late">Late</span>';
     if (r.isOvertime) stat += ' <span class="bdg bdg-ot">OT</span>';
+    if (r.siteMismatch) stat += ' <span class="bdg" style="background:#fff7ed;color:#c2410c;border:1px solid #fdba74;font-size:.68rem" title="Checked in away from assigned site">📍 Off-site · assigned ' + sanitizeHtml(r.defaultSite||"—") + '</span>';
     var mapIn  = r.checkinLat  ? '<a class="map-lnk" href="https://maps.google.com/?q='+r.checkinLat+','+r.checkinLng+'" target="_blank">📍 '+r.checkinDist+'m</a>' : "—";
     var mapOut = r.checkoutLat ? '<a class="map-lnk" href="https://maps.google.com/?q='+r.checkoutLat+','+r.checkoutLng+'" target="_blank">📍 '+r.checkoutDist+'m</a>' : "—";
 
@@ -5836,9 +5859,9 @@ else document.addEventListener("DOMContentLoaded", _initHamburgerPendingWatch);
 // ── CSV export ─────────────────────────────────────
 function exportCSV() {
   var rows = filtered();
-  var hdr = ["Engineer ID","Name","Site","Date","Check-In","Check-Out","Duration","Status","Late","Overtime","Lat In","Lng In","Dist In","Lat Out","Lng Out","Dist Out"].join(",");
+  var hdr = ["Engineer ID","Name","Site","Default Site","Site Mismatch","Date","Check-In","Check-Out","Duration","Status","Late","Overtime","Lat In","Lng In","Dist In","Lat Out","Lng Out","Dist Out"].join(",");
   var lines = [hdr].concat(rows.map(function(r){
-    return [r.empId,r.empName,'"'+(r.site||"")+'"',r.checkinDate,r.checkinTime,r.checkoutTime||"",r.duration||"",r.status,r.isLate?"Yes":"No",r.isOvertime?"Yes":"No",r.checkinLat,r.checkinLng,r.checkinDist,r.checkoutLat||"",r.checkoutLng||"",r.checkoutDist||""].join(",");
+    return [r.empId,r.empName,'"'+(r.site||"")+'"','"'+(r.defaultSite||"")+'"',(r.siteMismatch?"Yes":"No"),r.checkinDate,r.checkinTime,r.checkoutTime||"",r.duration||"",r.status,r.isLate?"Yes":"No",r.isOvertime?"Yes":"No",r.checkinLat,r.checkinLng,r.checkinDist,r.checkoutLat||"",r.checkoutLng||"",r.checkoutDist||""].join(",");
   }));
   var blob = new Blob([lines.join("\n")],{type:"text/csv"});
   var a = document.createElement("a"); a.href=URL.createObjectURL(blob);
@@ -6013,24 +6036,75 @@ function _anBuildBreakdown(rows) {
     if (!r.checkoutTime) siteMap[site].stillIn.push(rec);
   });
 
-  // Absent: engineers known at each site (all-time) but missing from the current filter period
-  var allSiteEng = {};
-  allRecs.forEach(function(r) {
-    var site = r.site || "Unknown";
-    if (siteFilter && site !== siteFilter) return;
-    if (!allSiteEng[site]) allSiteEng[site] = {};
-    if (r.empId) allSiteEng[site][r.empId] = r.empName || r.empId;
+  // ── Roster-based Absent (default site from onboarding) ──
+  // As-of day = the "To" date filter, else today.
+  var toVal  = (document.getElementById("anDateTo") || {}).value || "";
+  var asOf   = toVal || new Date().toISOString().split("T")[0];
+  var todayIso = new Date().toISOString().split("T")[0];
+  // Cutoff gate: absent only counts once 09:00 has passed on the as-of day.
+  var cutoffPassed = (asOf < todayIso) || (asOf === todayIso && new Date().getHours() >= WORK_HOUR_LATE);
+
+  // Engineers who checked in ANYWHERE in the selected range (ignores site filter,
+  // so an off-site check-in still counts as "present somewhere").
+  var df = (document.getElementById("anDateFrom") || {}).value || "";
+  var dt = (document.getElementById("anDateTo")   || {}).value || "";
+  var presentSomewhere = {};
+  (allRecs || []).forEach(function(r){
+    var iso = _anIsoDate(r);
+    if (!iso) return;
+    if (df && iso < df) return;
+    if (dt && iso > dt) return;
+    if (r.empId) presentSomewhere[r.empId] = true;
   });
+
+  // Roster: empId -> defaultSite (only sites passing the site filter, if any).
+  var dsMap = (typeof _onbDefaultSiteMap === "function") ? _onbDefaultSiteMap() : {};
+  var nameOf = {};
+  (allRecs || []).forEach(function(r){ if (r.empId) nameOf[r.empId] = r.empName || r.empId; });
+  (typeof _onbRecords !== "undefined" ? _onbRecords : []).forEach(function(r){
+    var id = r.engId || r._id; if (id && r.name) nameOf[id] = nameOf[id] || r.name;
+  });
+
+  // On-leave empIds at the as-of day (reuse existing helper if present).
+  // _anOnLeaveEmpIds returns an object map {empId: true}, so no array conversion needed.
+  function _leaveSetFor(site) {
+    var out = {};
+    if (typeof _anOnLeaveEmpIds === "function") {
+      try {
+        var v = _anOnLeaveEmpIds(asOf, site) || {};
+        if (Array.isArray(v)) v.forEach(function(id){ out[id] = true; }); else out = v;
+      } catch (e) {}
+    }
+    return out;
+  }
 
   var sorter = function(a, b) { return (a.name || "").localeCompare(b.name || ""); };
   var result = {};
-  Object.keys(siteMap).forEach(function(site) {
-    var sm = siteMap[site];
-    var known = allSiteEng[site] || {};
+
+  // Ensure every rostered site appears even if it has zero check-ins today.
+  var rosterSites = {};
+  Object.keys(dsMap).forEach(function(id){
+    var site = dsMap[id];
+    if (siteFilter && site !== siteFilter) return;
+    if (!rosterSites[site]) rosterSites[site] = [];
+    rosterSites[site].push(id);
+  });
+
+  var allSites = {};
+  Object.keys(siteMap).forEach(function(s){ allSites[s] = true; });
+  Object.keys(rosterSites).forEach(function(s){ allSites[s] = true; });
+
+  Object.keys(allSites).forEach(function(site) {
+    var sm = siteMap[site] || { onTime:[], late:[], stillIn:[] };
     var absent = [];
-    Object.keys(known).forEach(function(id) {
-      if (!sm.onTimeIds[id] && !sm.lateIds[id]) absent.push({ empId: id, name: known[id] || id });
-    });
+    if (cutoffPassed) {
+      var leaveSet = _leaveSetFor(site);
+      (rosterSites[site] || []).forEach(function(id){
+        if (presentSomewhere[id]) return;       // checked in somewhere -> not absent
+        if (leaveSet[id]) return;               // on approved leave -> not absent
+        absent.push({ empId: id, name: nameOf[id] || id });
+      });
+    }
     result[site] = {
       onTime:  sm.onTime.slice().sort(sorter),
       late:    sm.late.slice().sort(sorter),
@@ -6048,7 +6122,16 @@ function _anRenderBreakdownChart(rows) {
   var subEl   = document.getElementById("anBreakdownSub");
   if (!canvas) return;
 
-  if (!rows.length) {
+  _anBreakdownCache = _anBuildBreakdown(rows || []);
+  _anBreakdownSites = Object.keys(_anBreakdownCache).sort();
+
+  // Show empty state only when there is genuinely nothing to display
+  // (no check-ins AND no roster-based absences across all sites).
+  var _bdHasContent = _anBreakdownSites.some(function(s){
+    var d = _anBreakdownCache[s];
+    return d && (d.onTime.length || d.late.length || d.absent.length || d.stillIn.length);
+  });
+  if (!_bdHasContent) {
     if (emptyEl) emptyEl.style.display = "flex";
     canvas.style.display = "none";
     if (_anBreakdownChart) { _anBreakdownChart.destroy(); _anBreakdownChart = null; }
@@ -6056,9 +6139,6 @@ function _anRenderBreakdownChart(rows) {
   }
   if (emptyEl) emptyEl.style.display = "none";
   canvas.style.display = "block";
-
-  _anBreakdownCache = _anBuildBreakdown(rows);
-  _anBreakdownSites = Object.keys(_anBreakdownCache).sort();
   // Module-level — always current; read by onClick and afterDraw plugin (no stale closure)
   _anBreakdownShortLabels = _anBreakdownSites.map(function(s){ return s.replace(/^(Site [A-Z] - |HQ - )/, ""); });
 
@@ -7119,11 +7199,11 @@ function exportAnalyticsXLSX() {
 function exportBreakdownXLSX() {
   if (typeof XLSX === "undefined") { toast("📊 Excel library still loading — try again in a moment", "t-err"); return; }
   var rows = _anFiltered();
-  if (!rows.length) { toast("No data to export for current filters", "t-err"); return; }
-
-  var cache = _anBuildBreakdown(rows);
+  var cache = _anBuildBreakdown(rows || []);
   var sites = Object.keys(cache).sort();
-  if (!sites.length) { toast("No site data available", "t-err"); return; }
+  // Allow export when there are roster-based absences even with zero check-ins.
+  var _bdHas = sites.some(function(s){ var d=cache[s]; return d && (d.onTime.length||d.late.length||d.absent.length||d.stillIn.length); });
+  if (!_bdHas) { toast("No data to export for current filters", "t-err"); return; }
 
   var df = (document.getElementById("anDateFrom")||{}).value || "All";
   var dt = (document.getElementById("anDateTo")  ||{}).value || "All";
@@ -12197,7 +12277,7 @@ var _onbDeleteId = null;   // ID queued for deletion
 function loadOnboarding() {
   var tbody = document.getElementById("onbTbody");
   var empty = document.getElementById("onbEmpty");
-  if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--ink3)">Loading…</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--ink3)">Loading…</td></tr>';
 
   if (!fbOk || !db) {
     _onbRecords = [];
@@ -12211,7 +12291,7 @@ function loadOnboarding() {
       _onbRenderTable();
     })
     .catch(function(e) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="color:var(--red);padding:20px;text-align:center">Error loading: ' + sanitizeHtml(e.message||"unknown") + '</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="color:var(--red);padding:20px;text-align:center">Error loading: ' + sanitizeHtml(e.message||"unknown") + '</td></tr>';
     });
 }
 
@@ -12233,6 +12313,10 @@ function _onbRenderTable() {
       + '<td style="font-family:var(--mono);font-weight:700;color:var(--blue)">' + sanitizeHtml(r.engId||r._id) + '</td>'
       + '<td style="font-weight:600">' + sanitizeHtml(r.name||"—") + '</td>'
       + '<td>' + sanitizeHtml(r.gender||"—") + '</td>'
+      + '<td>' + (r.defaultSite
+          ? '<span style="font-size:.82rem">' + sanitizeHtml(r.defaultSite) + '</span>'
+          : '<span style="font-size:.72rem;font-weight:700;color:#9ca3af;background:#f3f4f6;padding:2px 8px;border-radius:30px">Unassigned</span>')
+        + '</td>'
       + '<td style="font-family:var(--mono);font-size:.78rem">' + sanitizeHtml(r.nric||"—") + '</td>'
       + '<td>' + sanitizeHtml(r.phone||"—") + '</td>'
       + '<td style="font-size:.82rem">' + sanitizeHtml(r.email||"—") + '</td>'
@@ -12243,6 +12327,17 @@ function _onbRenderTable() {
       + '</div></td>'
       + '</tr>';
   }).join("");
+}
+
+// empId -> defaultSite, built from the cached onboarding records.
+// Keys match attendance r.empId (e.g. "Eng01"). Unassigned engineers are omitted.
+function _onbDefaultSiteMap() {
+  var m = {};
+  (typeof _onbRecords !== "undefined" ? _onbRecords : []).forEach(function(r){
+    var id = r.engId || r._id;
+    if (id && r.defaultSite) m[id] = r.defaultSite;
+  });
+  return m;
 }
 
 // ── Form open / close ─────────────────────────────────
@@ -12257,6 +12352,12 @@ function onbOpenForm(id) {
     var el = document.getElementById(fid); if (el) el.value = "";
   });
   var gSel = document.getElementById("onbGender"); if (gSel) gSel.value = "";
+  var dsSel = document.getElementById("onbDefaultSite");
+  if (dsSel) {
+    dsSel.innerHTML = '<option value="">— Select —</option>' +
+      WORK_SITES.map(function(s){ return '<option value="' + sanitizeHtml(s.name) + '">' + sanitizeHtml(s.name) + '</option>'; }).join("");
+    dsSel.value = "";
+  }
   if (status) status.textContent = "";
   var engIdStatus = document.getElementById("onbEngIdStatus"); if (engIdStatus) engIdStatus.textContent = "";
   var editId = document.getElementById("onbEditId"); if (editId) editId.value = "";
@@ -12270,6 +12371,7 @@ function onbOpenForm(id) {
     var ei = document.getElementById("onbEngId"); if (ei) { ei.value = (rec.engId||id).replace(/^[Ee][Nn][Gg]/i,""); ei.readOnly = true; ei.style.background="#f3f4f6"; ei.style.color="var(--ink3)"; }
     var ni = document.getElementById("onbName"); if (ni) ni.value = rec.name||"";
     if (gSel) gSel.value = rec.gender||"";
+    if (dsSel) dsSel.value = rec.defaultSite||"";
     var nr = document.getElementById("onbNric"); if (nr) nr.value = rec.nric||"";
     var ph = document.getElementById("onbPhone"); if (ph) ph.value = rec.phone||"";
     var ad = document.getElementById("onbAddress"); if (ad) ad.value = rec.address||"";
@@ -12331,6 +12433,7 @@ function onbSave() {
   var engId   = rawId ? "Eng" + rawId : "";
   var name    = ((document.getElementById("onbName")||{}).value||"").trim();
   var gender  = (document.getElementById("onbGender")||{}).value||"";
+  var defaultSite = (document.getElementById("onbDefaultSite")||{}).value||"";
   var nric    = ((document.getElementById("onbNric")||{}).value||"").trim();
   var phone   = ((document.getElementById("onbPhone")||{}).value||"").trim();
   var address = ((document.getElementById("onbAddress")||{}).value||"").trim();
@@ -12340,6 +12443,7 @@ function onbSave() {
   if (!engId || engId === "Eng") { if (statusEl) { statusEl.style.color="var(--red)"; statusEl.textContent="Engineer ID is required."; } return; }
   if (!name)  { if (statusEl) { statusEl.style.color="var(--red)"; statusEl.textContent="Name is required."; } return; }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { if (statusEl) { statusEl.style.color="var(--red)"; statusEl.textContent="Valid email is required."; } return; }
+  if (!defaultSite) { if (statusEl) { statusEl.style.color="var(--red)"; statusEl.textContent="Default site is required."; } return; }
 
   if (statusEl) statusEl.textContent = "Saving…";
 
@@ -12350,6 +12454,7 @@ function onbSave() {
     engId: engId,
     name: name,
     gender: gender,
+    defaultSite: defaultSite,
     nric: nric,
     phone: phone,
     address: address,
@@ -12423,6 +12528,7 @@ function onbExportExcel() {
       "Engineer ID": r.engId || r._id,
       "Name":        r.name    || "",
       "Gender":      r.gender  || "",
+      "Default Site":r.defaultSite || "",
       "NRIC / ID":   r.nric    || "",
       "Phone":       r.phone   || "",
       "Address":     r.address || "",
