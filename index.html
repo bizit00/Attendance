@@ -1676,8 +1676,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="chart-card">
         <div class="chart-card-hdr">
           <div>
-            <div class="chart-card-title">⚖️ Manpower Gap — Site Breakdown</div>
-            <div class="chart-card-sub" id="anGapSub">Available vs Required — as of today</div>
+            <div class="chart-card-title">⚖️ Manpower Planning & Reallocation</div>
+            <div class="chart-card-sub" id="anGapSub">Reallocation based on available vs required — as of today</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()" title="Set required manpower per site" style="font-size:.78rem;padding:6px 12px">⚙️ Configure Manpower</button>
@@ -1690,22 +1690,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
         <!-- Insufficient Workforce Alert (sites that cannot be covered) -->
         <div id="anInsufficientAlert" style="display:none"></div>
-
-        <!-- Horizontal bars: Available vs Required per site -->
-        <div class="an-gap-legend-row" id="anGapLegendRow">
-          <span class="an-gap-legend-dot" style="background:rgba(0,200,150,.78)"></span><span>Surplus</span>
-          <span class="an-gap-legend-dot" style="background:rgba(0,119,255,.78)"></span><span>On Target</span>
-          <span class="an-gap-legend-dot" style="background:rgba(255,59,92,.78)"></span><span>Deficit</span>
-          <span class="an-gap-legend-dot" style="background:rgba(148,163,184,.45);border:1.5px solid rgba(71,85,105,.85)"></span><span>Required target</span>
-          <span style="margin-left:auto;color:var(--ink3);font-size:.7rem">Bar = available engineers · number after bar = gap</span>
-        </div>
-        <div class="an-gap-chart-wrap">
-          <canvas id="anGapChart" style="display:none"></canvas>
-          <div id="anGapEmpty" class="chart-empty" style="display:none;position:absolute;inset:0">
-            <div class="chart-empty-icon">⚖️</div>
-            <div id="anGapEmptyMsg">Set required manpower per site to see gap analysis</div>
-          </div>
-        </div>
 
         <!-- Reallocation Recommendation Panel -->
         <div id="anReallocPanel" class="mp-realloc-panel" style="display:none">
@@ -7728,7 +7712,7 @@ function renderManpowerGap() {
 
   // Header subtitle
   var humanDate = isoDate + (isoDate === new Date().toISOString().split("T")[0] ? "  (today)" : "");
-  setText("anGapSub", "Available vs Required Manpower — as of " + humanDate);
+  setText("anGapSub", "Reallocation based on available vs required — as of " + humanDate);
   setText("anLeaveListSub", "As of " + humanDate);
 
   // Render new panels
