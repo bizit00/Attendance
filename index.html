@@ -1563,12 +1563,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <input type="date" id="anDateFrom" onchange="_raDebounced()" title="From date"/>
         <span class="an-filter-sep">→</span>
         <input type="date" id="anDateTo" onchange="_raDebounced()" title="To date"/>
-        <select id="anGroupBy" onchange="_raDebounced()">
-          <option value="site">📍 By Site</option>
-          <option value="engineer">👷 By Engineer</option>
-          <option value="date">📅 By Date</option>
-          <option value="status">🚦 By Status</option>
-        </select>
+        <button class="tb-btn tb-out" onclick="anToday()" title="Jump to today's data" style="gap:6px">📅 Today</button>
         <div style="flex:1"></div>
         <button class="tb-btn tb-out" onclick="startSlideshow()" title="Present charts as a slideshow" style="gap:6px">▶ Slideshow</button>
         <button class="tb-btn tb-pri" onclick="exportAnalyticsXLSX()" title="Download filtered dataset as Excel">⬇ Excel</button>
@@ -6339,6 +6334,17 @@ function analyticsClearFilters() {
   var f = document.getElementById("anDateFrom");  if (f) f.value = "";
   var t = document.getElementById("anDateTo");    if (t) t.value = "";
   var g = document.getElementById("anGroupBy");   if (g) g.value = "site";
+  renderAnalytics();
+}
+
+// ── Jump all charts/KPIs to today's data (sets the date range to today) ──
+function anToday() {
+  var d = new Date();
+  var iso = d.getFullYear() + "-"
+    + String(d.getMonth() + 1).padStart(2, "0") + "-"
+    + String(d.getDate()).padStart(2, "0");
+  var f = document.getElementById("anDateFrom"); if (f) f.value = iso;
+  var t = document.getElementById("anDateTo");   if (t) t.value = iso;
   renderAnalytics();
 }
 
