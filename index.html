@@ -6118,14 +6118,17 @@ function _anBuildBreakdown(rows) {
     }
 
     // Denominator = the configured Manpower target (so this chart tallies with the
-    // Manpower Gap "Required"); fall back to the Onboarding roster count, then to the
-    // observed headcount. Never less than what we can actually see on the bar.
+    // Manpower Gap "Required"). When a target is set the denominator is FIXED at it,
+    // even if more engineers attend than required — an over-staffed site then reads
+    // e.g. 15/9 (surplus). Only when no target is configured do we fall back to the
+    // Onboarding roster count, then to the observed headcount.
     var present     = sm.onTime.length + sm.late.length;
     var rosterCount = (rosterSites[site] || []).length;
-    var target = (typeof _anManpower !== "undefined" && _anManpower && _anManpower[site] != null)
+    var hasTarget   = (typeof _anManpower !== "undefined" && _anManpower && _anManpower[site] != null && Number(_anManpower[site]) > 0);
+    var target = hasTarget
       ? Number(_anManpower[site])
       : (rosterCount > 0 ? rosterCount : (present + absent.length));
-    var denom = Math.max(target, present + onLeave.length + absent.length);
+    var denom = hasTarget ? target : Math.max(target, present + onLeave.length + absent.length);
 
     result[site] = {
       onTime:  sm.onTime.slice().sort(sorter),
