@@ -6000,7 +6000,7 @@ function _anSiteRoster(site) {
 }
 
 // ── Breakdown chart state ────────────────────────────
-var _anBreakdownCache = {};  // { site: { onTime:[recs], late:[recs], absent:[recs], stillIn:[recs] } }
+var _anBreakdownCache = {};  // { site: { onTime:[], late:[], absent:[], onLeave:[], stillIn:[], target, denom } }
 var _anBreakdownSites = [];  // full site names parallel to chart Y-axis labels
 var _anBreakdownShortLabels = []; // short labels — module-level so onClick/afterDraw always read current values
 var _anBreakdownChart = null;
@@ -6099,20 +6099,42 @@ function _anBuildBreakdown(rows) {
 
   Object.keys(allSites).forEach(function(site) {
     var sm = siteMap[site] || { onTime:[], late:[], stillIn:[] };
+    var leaveSet = _leaveSetFor(site);
+
+    // On-leave roster engineers (always shown, regardless of the 09:00 cutoff).
+    var onLeave = [];
+    (rosterSites[site] || []).forEach(function(id){
+      if (leaveSet[id]) onLeave.push({ empId: id, name: nameOf[id] || id });
+    });
+
+    // Absent = rostered, not present anywhere, not on leave — only after the cutoff.
     var absent = [];
     if (cutoffPassed) {
-      var leaveSet = _leaveSetFor(site);
       (rosterSites[site] || []).forEach(function(id){
         if (presentSomewhere[id]) return;       // checked in somewhere -> not absent
         if (leaveSet[id]) return;               // on approved leave -> not absent
         absent.push({ empId: id, name: nameOf[id] || id });
       });
     }
+
+    // Denominator = the configured Manpower target (so this chart tallies with the
+    // Manpower Gap "Required"); fall back to the Onboarding roster count, then to the
+    // observed headcount. Never less than what we can actually see on the bar.
+    var present     = sm.onTime.length + sm.late.length;
+    var rosterCount = (rosterSites[site] || []).length;
+    var target = (typeof _anManpower !== "undefined" && _anManpower && _anManpower[site] != null)
+      ? Number(_anManpower[site])
+      : (rosterCount > 0 ? rosterCount : (present + absent.length));
+    var denom = Math.max(target, present + onLeave.length + absent.length);
+
     result[site] = {
       onTime:  sm.onTime.slice().sort(sorter),
       late:    sm.late.slice().sort(sorter),
       absent:  absent.sort(sorter),
-      stillIn: sm.stillIn.slice().sort(sorter)
+      onLeave: onLeave.sort(sorter),
+      stillIn: sm.stillIn.slice().sort(sorter),
+      target:  target,
+      denom:   denom
     };
   });
   return result;
@@ -6132,7 +6154,7 @@ function _anRenderBreakdownChart(rows) {
   // (no check-ins AND no roster-based absences across all sites).
   var _bdHasContent = _anBreakdownSites.some(function(s){
     var d = _anBreakdownCache[s];
-    return d && (d.onTime.length || d.late.length || d.absent.length || d.stillIn.length);
+    return d && (d.onTime.length || d.late.length || d.absent.length || d.onLeave.length || d.stillIn.length);
   });
   if (!_bdHasContent) {
     if (emptyEl) emptyEl.style.display = "flex";
@@ -6145,18 +6167,22 @@ function _anRenderBreakdownChart(rows) {
   // Module-level — always current; read by onClick and afterDraw plugin (no stale closure)
   _anBreakdownShortLabels = _anBreakdownSites.map(function(s){ return s.replace(/^(Site [A-Z] - |HQ - )/, ""); });
 
-  var onTimeCounts = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].onTime.length; });
-  var lateCounts   = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].late.length; });
-  var absentCounts = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].absent.length; });
+  var onTimeCounts  = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].onTime.length; });
+  var lateCounts    = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].late.length; });
+  var absentCounts  = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].absent.length; });
+  var onLeaveCounts = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].onLeave.length; });
 
   var totalCheckedIn = onTimeCounts.reduce(function(a,b){return a+b;},0) + lateCounts.reduce(function(a,b){return a+b;},0);
-  var totalEngineers = totalCheckedIn + absentCounts.reduce(function(a,b){return a+b;},0);
+  // Denominator = sum of each site's target (matches the Manpower Gap "Required").
+  var totalEngineers = _anBreakdownSites.reduce(function(acc,s){ return acc + (_anBreakdownCache[s].denom || 0); }, 0);
   var totalLate      = lateCounts.reduce(function(a,b){return a+b;},0);
   var totalAbsent    = absentCounts.reduce(function(a,b){return a+b;},0);
+  var totalOnLeave   = onLeaveCounts.reduce(function(a,b){return a+b;},0);
   var totalStillIn   = _anBreakdownSites.reduce(function(acc,s){ return acc + _anBreakdownCache[s].stillIn.length; }, 0);
 
   if (subEl) subEl.textContent =
     totalCheckedIn + "/" + totalEngineers + " checked in  ·  " + totalLate + " late  ·  " + totalAbsent + " absent"
+    + (totalOnLeave ? "  ·  " + totalOnLeave + " on leave" : "")
     + (totalStillIn ? "  ·  " + totalStillIn + " not yet checked out" : "")
     + "  —  click a bar for full details";
 
@@ -6171,11 +6197,12 @@ function _anRenderBreakdownChart(rows) {
     _anBreakdownChart.data.datasets[0].data = onTimeCounts;
     _anBreakdownChart.data.datasets[1].data = lateCounts;
     _anBreakdownChart.data.datasets[2].data = absentCounts;
+    _anBreakdownChart.data.datasets[3].data = onLeaveCounts;
     _anBreakdownChart.update({ duration: 250 });
     return;
   }
 
-  // Chart-level plugin: draw "checkedIn/total" label after each bar row
+  // Chart-level plugin: draw "checkedIn/target" label after each bar row
   var bdTotalsPlugin = {
     id: "bdTotals",
     afterDraw: function(chart) {
@@ -6185,16 +6212,17 @@ function _anRenderBreakdownChart(rows) {
       _anBreakdownSites.forEach(function(site, i) {
         var d = _anBreakdownCache[site];
         if (!d || !meta0.data[i]) return;
-        var ci    = d.onTime.length + d.late.length;
-        var total = ci + d.absent.length;
+        var ci    = d.onTime.length + d.late.length;          // checked in
+        var stack = ci + d.absent.length + d.onLeave.length;  // where the bar ends
+        var denom = d.denom || stack;                         // target (matches Manpower Gap)
         var y     = meta0.data[i].y;
-        var x     = xScale.getPixelForValue(total) + 8;
+        var x     = xScale.getPixelForValue(stack) + 8;
         ctx.save();
         ctx.font         = "600 10px 'DM Sans',sans-serif";
-        ctx.fillStyle    = total > 0 && ci < total ? "#dc2626" : "#374151";
+        ctx.fillStyle    = ci < denom ? "#dc2626" : "#374151";
         ctx.textAlign    = "left";
         ctx.textBaseline = "middle";
-        ctx.fillText(ci + "/" + total, x, y);
+        ctx.fillText(ci + "/" + denom, x, y);
         ctx.restore();
       });
     }
@@ -6205,9 +6233,10 @@ function _anRenderBreakdownChart(rows) {
     data: {
       labels: _anBreakdownShortLabels,
       datasets: [
-        { label: "On Time", data: onTimeCounts, backgroundColor: "#00c89699", borderRadius: 4, borderSkipped: false },
-        { label: "Late",    data: lateCounts,   backgroundColor: "#f59e0b99", borderRadius: 4, borderSkipped: false },
-        { label: "Absent",  data: absentCounts, backgroundColor: "#ff3b5c99", borderRadius: 4, borderSkipped: false }
+        { label: "On Time",  data: onTimeCounts,  backgroundColor: "#00c89699", borderRadius: 4, borderSkipped: false },
+        { label: "Late",     data: lateCounts,    backgroundColor: "#f59e0b99", borderRadius: 4, borderSkipped: false },
+        { label: "Absent",   data: absentCounts,  backgroundColor: "#ff3b5c99", borderRadius: 4, borderSkipped: false },
+        { label: "On Leave", data: onLeaveCounts, backgroundColor: "#6366f199", borderRadius: 4, borderSkipped: false }
       ]
     },
     plugins: [bdTotalsPlugin],
@@ -6233,7 +6262,9 @@ function _anRenderBreakdownChart(rows) {
               return "  Count: " + ctx.parsed.x;
             },
             afterLabel: function(ctx) {
-              var catKey = ctx.dataset.label === "On Time" ? "onTime" : (ctx.dataset.label === "Late" ? "late" : "absent");
+              var catKey = ctx.dataset.label === "On Time" ? "onTime"
+                         : (ctx.dataset.label === "Late" ? "late"
+                         : (ctx.dataset.label === "On Leave" ? "onLeave" : "absent"));
               var site   = _anBreakdownSites[ctx.dataIndex];
               var recs   = ((_anBreakdownCache[site] || {})[catKey]) || [];
               if (!recs.length) return ["  (none)"];
@@ -6254,16 +6285,16 @@ function _anRenderBreakdownChart(rows) {
         var el        = elements[0];
         var si        = el.index;        // Chart.js v4 uses .index, not .dataIndex
         var di        = el.datasetIndex;
-        var cats      = ["onTime", "late", "absent"];
-        var catLabels = ["On Time", "Late", "Absent"];
-        var catColors = ["#059669", "#d97706", "#dc2626"];
+        var cats      = ["onTime", "late", "absent", "onLeave"];
+        var catLabels = ["On Time", "Late", "Absent", "On Leave"];
+        var catColors = ["#059669", "#d97706", "#dc2626", "#4f46e5"];
         // Use module-level vars — always current regardless of chart reuse
         var site      = _anBreakdownSites[si];
         var shortLbl  = _anBreakdownShortLabels[si] || site || "—";
         var d         = _anBreakdownCache[site] || {};
         var recs      = (d[cats[di]]) || [];
         var checkedIn = (d.onTime || []).length + (d.late || []).length;
-        var total     = checkedIn + (d.absent || []).length;
+        var total     = d.denom || (checkedIn + (d.absent || []).length + (d.onLeave || []).length);
         var stillIn   = (d.stillIn || []).length;
 
         var panel = document.getElementById("anBreakdownDetail");
@@ -7216,7 +7247,7 @@ function exportBreakdownXLSX() {
   var cache = _anBuildBreakdown(rows || []);
   var sites = Object.keys(cache).sort();
   // Allow export when there are roster-based absences even with zero check-ins.
-  var _bdHas = sites.some(function(s){ var d=cache[s]; return d && (d.onTime.length||d.late.length||d.absent.length||d.stillIn.length); });
+  var _bdHas = sites.some(function(s){ var d=cache[s]; return d && (d.onTime.length||d.late.length||d.absent.length||(d.onLeave&&d.onLeave.length)||d.stillIn.length); });
   if (!_bdHas) { toast("No data to export for current filters", "t-err"); return; }
 
   var df = (document.getElementById("anDateFrom")||{}).value || "All";
@@ -7226,14 +7257,15 @@ function exportBreakdownXLSX() {
   var summaryRows = sites.map(function(site) {
     var d = cache[site];
     var checkedIn = d.onTime.length + d.late.length;
-    var total     = checkedIn + d.absent.length;
+    var total     = d.denom || (checkedIn + d.absent.length + (d.onLeave ? d.onLeave.length : 0));
     return {
       "Site":                       site,
-      "Total Engineers (Known)":    total,
+      "Total (Target)":             total,
       "Checked In":                 checkedIn,
       "On Time":                    d.onTime.length,
       "Late":                       d.late.length,
       "Absent (Not Checked In)":    d.absent.length,
+      "On Leave":                   d.onLeave ? d.onLeave.length : 0,
       "Still In (No Checkout Yet)": d.stillIn.length,
       "Late Rate":                  checkedIn > 0 ? Math.round(d.late.length / checkedIn * 100) + "%" : "—",
       "Date From":                  df,
@@ -7276,7 +7308,20 @@ function exportBreakdownXLSX() {
     });
   });
 
-  // ── Sheet 4: Still In — no checkout yet ──────────────
+  // ── Sheet 4: On Leave ─────────────────────────────────
+  var onLeaveRows = [];
+  sites.forEach(function(site) {
+    (cache[site].onLeave || []).forEach(function(r) {
+      onLeaveRows.push({
+        "Site":          site,
+        "Engineer ID":   r.empId,
+        "Engineer Name": r.name,
+        "Status":        "On Leave"
+      });
+    });
+  });
+
+  // ── Sheet 5: Still In — no checkout yet ──────────────
   var stillInRows = [];
   sites.forEach(function(site) {
     cache[site].stillIn.forEach(function(r) {
@@ -7305,16 +7350,19 @@ function exportBreakdownXLSX() {
   var ws1 = XLSX.utils.json_to_sheet(summaryRows);
   var ws2 = XLSX.utils.json_to_sheet(checkInRows.length  ? checkInRows  : [{ Note: "No check-in records for selected filters" }]);
   var ws3 = XLSX.utils.json_to_sheet(absentRows.length   ? absentRows   : [{ Note: "No absent engineers for selected filters" }]);
+  var ws5 = XLSX.utils.json_to_sheet(onLeaveRows.length  ? onLeaveRows  : [{ Note: "No engineers on leave for selected filters" }]);
   var ws4 = XLSX.utils.json_to_sheet(stillInRows.length  ? stillInRows  : [{ Note: "All engineers have checked out" }]);
 
   autoW(ws1, summaryRows);
   autoW(ws2, checkInRows.length  ? checkInRows  : [{ Note: "x" }]);
   autoW(ws3, absentRows.length   ? absentRows   : [{ Note: "x" }]);
+  autoW(ws5, onLeaveRows.length  ? onLeaveRows  : [{ Note: "x" }]);
   autoW(ws4, stillInRows.length  ? stillInRows  : [{ Note: "x" }]);
 
   XLSX.utils.book_append_sheet(wb, ws1, "Site Summary");
   XLSX.utils.book_append_sheet(wb, ws2, "All Check-ins");
   XLSX.utils.book_append_sheet(wb, ws3, "Absent Engineers");
+  XLSX.utils.book_append_sheet(wb, ws5, "On Leave");
   XLSX.utils.book_append_sheet(wb, ws4, "Still In");
 
   var stamp = new Date().toISOString().split("T")[0];
