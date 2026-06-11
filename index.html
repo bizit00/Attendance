@@ -1894,7 +1894,15 @@ tr.on-leave-row td{background:#f0f9ff!important}
   <!-- Onboarding pane -->
   <div id="teamPane-onboarding">
     <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:flex-start">
-      <div style="font-weight:700;font-size:1rem;color:var(--ink);flex:1;min-width:200px">📋 Engineer Onboarding</div>
+      <div style="font-weight:700;font-size:1rem;color:var(--ink)">📋 Engineer Onboarding</div>
+      <div style="position:relative;flex:1;min-width:200px;max-width:340px">
+        <input id="onbSearchInput" type="text" autocomplete="off"
+               placeholder="🔍 Search name, ID, email or phone…"
+               oninput="onbSearch(this.value)"
+               style="width:100%;padding:8px 30px 8px 12px;border:1px solid var(--line);border-radius:8px;font-size:.85rem;color:var(--ink);background:var(--card)">
+        <button id="onbSearchClear" type="button" onclick="onbSearchClearBtn()" title="Clear search"
+                style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:transparent;cursor:pointer;color:var(--ink3);font-size:.9rem;line-height:1;padding:4px">✕</button>
+      </div>
       <button class="tb-btn tb-pri" onclick="onbOpenForm(null)">＋ Add Engineer</button>
       <button class="tb-btn tb-out" onclick="onbExportExcel()">⬇ Export Excel</button>
     </div>
@@ -12272,6 +12280,29 @@ function sendTestEmail() {
 // ══ ENGINEER ONBOARDING ══════════════════════════════════════════════
 var _onbRecords = [];      // local cache of all onboarding docs
 var _onbDeleteId = null;   // ID queued for deletion
+var _onbSearch = "";       // current search query (lowercased, trimmed)
+
+// ── Search ────────────────────────────────────────────
+// Live client-side filter over the cached _onbRecords (no Firestore calls).
+function onbSearch(q) {
+  _onbSearch = (q || "").trim().toLowerCase();
+  var clearBtn = document.getElementById("onbSearchClear");
+  if (clearBtn) clearBtn.style.display = _onbSearch ? "block" : "none";
+  _onbRenderTable();
+}
+function onbSearchClearBtn() {
+  var input = document.getElementById("onbSearchInput");
+  if (input) input.value = "";
+  onbSearch("");
+}
+// A record matches if the query is a substring of name, engId, email or phone.
+function _onbMatches(r) {
+  if (!_onbSearch) return true;
+  var hay = [r.name, r.engId || r._id, r.email, r.phone]
+    .map(function(v){ return (v || "").toString().toLowerCase(); })
+    .join("  ");
+  return hay.indexOf(_onbSearch) !== -1;
+}
 
 // ── Load & render ────────────────────────────────────
 function loadOnboarding() {
@@ -12306,7 +12337,14 @@ function _onbRenderTable() {
   }
   if (empty) empty.style.display = "none";
 
-  tbody.innerHTML = _onbRecords.map(function(r) {
+  var rows = _onbRecords.filter(_onbMatches);
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--ink3)">'
+      + 'No engineers match “' + sanitizeHtml(_onbSearch) + '”</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(function(r) {
     var statusColor = r.status === "active" ? "var(--green)" : "#f59e0b";
     var statusLabel = r.status === "active" ? "✅ Active" : "⏳ Pending";
     return '<tr>'
