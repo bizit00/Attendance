@@ -4987,6 +4987,16 @@ function getSpotCheckBadge(requests) {
   return '<span style="color:var(--ink3);font-size:.75rem">—</span>';
 }
 
+// ── Normalize a phone number for a wa.me link (digits only) ──
+// Strips +, spaces and dashes. Singapore default: a bare 8-digit local mobile
+// (starts with 8 or 9, no country code) gets "65" prepended.
+function _waNormalizeSG(phone) {
+  var digits = String(phone || "").replace(/[^0-9]/g, "");
+  if (!digits) return "";
+  if (digits.length === 8 && /^[89]/.test(digits)) digits = "65" + digits;
+  return digits;
+}
+
 // ── Admin triggers a spot-check (manually or via auto-reminder) ──
 function triggerSpotCheck(attendanceId, empId, empName, empEmail, site, triggeredBy) {
   if (!fbOk || !db) { toast('Firestore not available', 't-err'); return; }
@@ -5009,8 +5019,19 @@ function triggerSpotCheck(attendanceId, empId, empName, empEmail, site, triggere
       + 'your attendance may be flagged for admin review.\n\n'
       + 'If you believe this is an error, please contact your admin.\n\n'
       + '— Attendance System';
-    showEmailFallback(empEmail, subject, body);
-    toast('📧 Spot-check email ready — send from your inbox', 't-ok');
+    // ── Deliver via WhatsApp (Option A) using the phone from onboarding ──
+    // Look the engineer up in the onboarding cache by ID; fall back to email
+    // if no phone is on file so the spot-check can still be sent.
+    var onbRec   = (typeof _onbRecords !== "undefined" ? _onbRecords : [])
+      .find(function(r){ return (r.engId || r._id) === empId; }) || {};
+    var waPhone  = _waNormalizeSG(onbRec.phone);
+    if (waPhone) {
+      window.open('https://wa.me/' + waPhone + '?text=' + encodeURIComponent(body), '_blank');
+      toast('📲 WhatsApp spot-check ready — tap send', 't-ok');
+    } else {
+      showEmailFallback(empEmail, subject, body);
+      toast('📧 No phone on file — email spot-check ready instead', 't-ok');
+    }
   });
 }
 
