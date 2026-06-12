@@ -7475,14 +7475,43 @@ function _anGapAnalysis(isoDate) {
   // Also include sites in manpower config that aren't in WORK_SITES (defensive)
   Object.keys(_anManpower || {}).forEach(function(s){ if (!rosters[s]) rosters[s] = {}; if (siteNames.indexOf(s) === -1) siteNames.push(s); });
 
+  // v6.33 fix: for today/past dates use ACTUAL check-ins as "available".
+  // The old logic used all-time roster minus approved leave, which inflated
+  // availability with engineers who did not show up (absent, no leave record).
+  // For future dates we keep capacity-planning mode (roster - approved leave)
+  // because we have no check-in data yet.
+  var today    = new Date().toISOString().split("T")[0];
+  var isFuture = isoDate > today;
+
+  // Build per-site actual check-in sets for today / past (single pass over allRecs)
+  var checkinSets = {}; // { siteName: { empId: true } }
+  if (!isFuture) {
+    (allRecs || []).forEach(function(r) {
+      if (!r.site || !r.empId) return;
+      var rDate = _anIsoDate(r);
+      if (rDate !== isoDate) return;
+      if (!checkinSets[r.site]) checkinSets[r.site] = {};
+      checkinSets[r.site][r.empId] = true;
+    });
+  }
+
   return siteNames.map(function(site){
     var rosterSet = rosters[site] || {};
     var roster = Object.keys(rosterSet).length;
     var onLeaveSet = _anOnLeaveEmpIds(isoDate, site);
-    // Only count "on leave" empIds that are part of this site's roster
+    // Only count "on leave" empIds that are part of this site's historical roster
     var onLeave = 0;
     Object.keys(onLeaveSet).forEach(function(id){ if (rosterSet[id]) onLeave++; });
-    var available = Math.max(0, roster - onLeave);
+
+    var available;
+    if (isFuture) {
+      // Future date: capacity planning -- everyone not on approved leave is counted
+      available = Math.max(0, roster - onLeave);
+    } else {
+      // Today / past: actual engineers who checked in on this date
+      available = Object.keys(checkinSets[site] || {}).length;
+    }
+
     var required  = (_anManpower && _anManpower[site] != null) ? Number(_anManpower[site]) : null;
     var gap = (required != null) ? (available - required) : null;
     var status;
