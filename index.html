@@ -5697,7 +5697,7 @@ function dTab(id, el) {
   if (id === "otp")       loadOtpRequests();
   if (id === "device")    { renderDeviceAudit(); _renderBuddyPunchAlerts(); }
   if (id === "team")      teamSubTab(_teamCurrentSub || "onboarding");
-  if (id === "analytics") renderAnalytics();
+  if (id === "analytics") { anDefaultToTodayIfEmpty(); renderAnalytics(); }
   // v6.8 — start/stop OneDrive auto-refresh as TDR tab is entered/left
   if (id === "tdr") { try { tdrOdOnTabEnter(); } catch(e){} }
   else              { try { tdrOdOnTabLeave(); } catch(e){} }
@@ -6364,6 +6364,22 @@ function anToday() {
   var f = document.getElementById("anDateFrom"); if (f) f.value = iso;
   var t = document.getElementById("anDateTo");   if (t) t.value = iso;
   renderAnalytics();
+}
+
+// ── Default the date range to today when the Analytics tab first opens ──
+// Only fills empty filters, so a manually-chosen range (or an explicit Clear)
+// is preserved. Does NOT re-render — caller renders right after.
+function anDefaultToTodayIfEmpty() {
+  var f = document.getElementById("anDateFrom");
+  var t = document.getElementById("anDateTo");
+  if (!f || !t) return;
+  if (f.value || t.value) return; // user already set/changed a range — leave it
+  var d = new Date();
+  var iso = d.getFullYear() + "-"
+    + String(d.getMonth() + 1).padStart(2, "0") + "-"
+    + String(d.getDate()).padStart(2, "0");
+  f.value = iso;
+  t.value = iso;
 }
 
 // ── Debounced trigger for filter-change events (prevents re-render on every keystroke) ──
