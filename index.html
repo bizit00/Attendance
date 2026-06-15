@@ -6227,7 +6227,7 @@ function _anRenderBreakdownChart(rows) {
         var x     = xScale.getPixelForValue(stack) + 8;
         ctx.save();
         ctx.font         = "600 10px 'DM Sans',sans-serif";
-        ctx.fillStyle    = ci < denom ? "#dc2626" : "#374151";
+        ctx.fillStyle    = (denom > 0 && ci / denom < 0.90) ? "#dc2626" : "#374151";  // red when attendance < 90% (e.g. 8/10), normal at 90%+ (e.g. 9/10)
         ctx.textAlign    = "left";
         ctx.textBaseline = "middle";
         ctx.fillText(ci + "/" + denom, x, y);
