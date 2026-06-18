@@ -10680,9 +10680,16 @@ function isBuddyPunch(record, empId, date) {
     if (r.checkinDate !== date) return false;
 
     // Case A: same device, different engineer (classic buddy punch)
+    // v6.37: skip if engineers are at different sites (physically impossible
+    // to buddy-punch across separate locations; likely same-model phones).
     if (r.empId !== empId) {
-      if (hw && r.hwId && r.hwId === hw) return true;
-      if (dev && r.deviceId && r.deviceId === dev) return true;
+      var sameHw  = hw  && r.hwId     && r.hwId     === hw;
+      var sameDev = dev && r.deviceId && r.deviceId === dev;
+      if (sameHw || sameDev) {
+        var recSite = (typeof record === "object") ? (record.site || "") : "";
+        var rSite   = r.site || "";
+        if (!(recSite && rSite && recSite !== rSite)) return true;
+      }
     }
 
     // Case B: same engineer, different device (cross-device check-in fraud)
@@ -10720,32 +10727,78 @@ function renderDeviceAudit() {
   var cnt   = document.getElementById("deviceCount");
   if (!body) return;
 
-  // Find suspicious devices: same hardware, different engineers on the SAME date
-  var suspiciousDevices = devices.filter(function(devId){
+  // Find suspicious devices: same hardware, different engineers on the SAME date.
+  // v6.37 two-pass classification:
+  //   suspiciousDevices: genuinely suspicious (same site, rare occurrence)
+  //   sameModelDevices : likely false positive (diff sites OR recurring 3+ days)
+  //
+  // Same-model phones (e.g. two identical Samsung S23) share the same hwId
+  // because all hardware signals (screen, GPU, CPU, memory, platform) match.
+  // We distinguish them via:
+  //   1. DIFFERENT SITES: engineers at separate locations cannot swap devices.
+  //   2. RECURRING PATTERN: 3+ days of collision = persistent model match.
+  var SAME_MODEL_REPEAT_THRESHOLD = 3;
+  var suspiciousDevices = [];
+  var sameModelDevices  = [];
+
+  devices.forEach(function(devId) {
     var d = devMap[devId];
     var empIds = Object.keys(d.emps);
-    if (empIds.length < 2) return false;
-    var dateToEmps = {};
-    d.records.forEach(function(r){
-      if (!dateToEmps[r.checkinDate]) dateToEmps[r.checkinDate] = new Set ? new Set() : {};
-      if (dateToEmps[r.checkinDate].add) dateToEmps[r.checkinDate].add(r.empId);
-      else dateToEmps[r.checkinDate][r.empId] = true;
-    });
-    return Object.keys(dateToEmps).some(function(date){
-      var s = dateToEmps[date];
-      return (s.size !== undefined ? s.size : Object.keys(s).length) > 1;
-    });
-  });
+    if (empIds.length < 2) return;
 
-  // Update suspicious badge in tab
+    // { date -> { empId -> { site -> true } } }
+    var dateMap = {};
+    d.records.forEach(function(r) {
+      if (!dateMap[r.checkinDate]) dateMap[r.checkinDate] = {};
+      if (!dateMap[r.checkinDate][r.empId]) dateMap[r.checkinDate][r.empId] = {};
+      if (r.site) dateMap[r.checkinDate][r.empId][r.site] = true;
+    });
+
+    var overlapDates = Object.keys(dateMap).filter(function(date) {
+      return Object.keys(dateMap[date]).length > 1;
+    });
+    if (!overlapDates.length) return;
+
+    // Signal 1: any overlap date where engineers are at different sites
+    var hasDiffSiteEvidence = overlapDates.some(function(date) {
+      var empSiteMap = dateMap[date];
+      var allSites = {};
+      Object.keys(empSiteMap).forEach(function(eid) {
+        Object.keys(empSiteMap[eid]).forEach(function(s) { allSites[s] = true; });
+      });
+      return Object.keys(allSites).length >= Object.keys(empSiteMap).length;
+    });
+
+    // Signal 2: count dates where engineers are at the SAME site (genuine overlap)
+    var sameSiteOverlapDates = overlapDates.filter(function(date) {
+      var empSiteMap = dateMap[date];
+      var allSites = {};
+      Object.keys(empSiteMap).forEach(function(eid) {
+        Object.keys(empSiteMap[eid]).forEach(function(s) { allSites[s] = true; });
+      });
+      return Object.keys(allSites).length < Object.keys(empSiteMap).length;
+    });
+
+    if (hasDiffSiteEvidence || sameSiteOverlapDates.length >= SAME_MODEL_REPEAT_THRESHOLD) {
+      sameModelDevices.push(devId);
+    } else {
+      suspiciousDevices.push(devId);
+    }
+  });
+;
+
+  // Update suspicious badge (only truly suspicious, not same-model)
   var badge = document.getElementById("suspiciousBadge");
   if (badge) { badge.style.display = suspiciousDevices.length > 0 ? "inline" : "none"; }
 
-  // Render suspicious flags summary
+  // Render flags summary
   var flagsWrap = document.getElementById("deviceFlagsWrap");
   if (flagsWrap) {
+    var html = "";
+
+    // Red: genuinely suspicious
     if (suspiciousDevices.length > 0) {
-      flagsWrap.innerHTML = '<div style="background:linear-gradient(135deg,#fef2f2,#ffe4e6);border:2px solid #fca5a5;border-radius:var(--r2);padding:18px 20px;margin-bottom:4px">'
+      html += '<div style="background:linear-gradient(135deg,#fef2f2,#ffe4e6);border:2px solid #fca5a5;border-radius:var(--r2);padding:18px 20px;margin-bottom:10px">'
         +'<div style="font-weight:800;color:#b91c1c;font-size:1rem;margin-bottom:10px">⚠️ ' + suspiciousDevices.length + ' Suspected Buddy-Punch Device' + (suspiciousDevices.length>1?"s":"") + ' Detected</div>'
         + suspiciousDevices.map(function(devId){
           var d = devMap[devId];
@@ -10772,9 +10825,31 @@ function renderDeviceAudit() {
             +'</div>';
         }).join("")
         +'</div>';
-    } else {
-      flagsWrap.innerHTML = '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:var(--r2);padding:14px 18px;margin-bottom:4px;font-size:.85rem;color:#15803d;font-weight:600">✅ No buddy-punch activity detected across all records.</div>';
     }
+
+    // Yellow: same-model false positives
+    if (sameModelDevices.length > 0) {
+      html += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:var(--r2);padding:16px 20px;margin-bottom:10px">'
+        +'<div style="font-weight:700;color:#92400e;font-size:.95rem;margin-bottom:8px">📱 ' + sameModelDevices.length + ' Same-Model Device' + (sameModelDevices.length>1?"s":"") + ' — Not Buddy Punch</div>'
+        +'<div style="font-size:.8rem;color:#78350f;margin-bottom:10px">These engineers share the same phone model, producing an identical Hardware ID. They were detected at <strong>different sites</strong> or the same-hwId collision recurs consistently across many days — confirming it is not buddy-punch activity.</div>'
+        + sameModelDevices.map(function(devId){
+          var d = devMap[devId];
+          var empNames = Object.keys(d.emps).map(function(eid){
+            return '<strong>' + eid + '</strong> (' + d.emps[eid].name + ')';
+          }).join(' &amp; ');
+          return '<div style="background:#fff;border-radius:9px;padding:10px 14px;margin-bottom:6px;border:1px solid #fde68a;font-size:.82rem;color:#78350f">'
+            +'<span style="font-family:var(--mono);font-size:.72rem;color:#a16207">…' + devId.slice(-12) + '</span> '
+            + empNames + '</div>';
+        }).join("")
+        +'</div>';
+    }
+
+    // All clean
+    if (!suspiciousDevices.length && !sameModelDevices.length) {
+      html = '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:var(--r2);padding:14px 18px;margin-bottom:4px;font-size:.85rem;color:#15803d;font-weight:600">✅ No buddy-punch activity detected across all records.</div>';
+    }
+
+    flagsWrap.innerHTML = html;
   }
 
   if (!devices.length) {
@@ -10784,11 +10859,11 @@ function renderDeviceAudit() {
     return;
   }
   if (empty) empty.style.display = "none";
-  if (cnt) cnt.textContent = devices.length + " device" + (devices.length!==1?"s":"") + (suspiciousDevices.length>0 ? " · " + suspiciousDevices.length + " flagged" : "");
+  if (cnt) cnt.textContent = devices.length + " device" + (devices.length!==1?"s":"") + (suspiciousDevices.length>0 ? " · " + suspiciousDevices.length + " flagged" : "") + (sameModelDevices.length>0 ? " · " + sameModelDevices.length + " same-model" : "");
 
   // Sort: suspicious first, then by last check-in
   devices.sort(function(a,b){
-    var aSus = suspiciousDevices.indexOf(a)>=0, bSus = suspiciousDevices.indexOf(b)>=0;
+    var aSus = suspiciousDevices.indexOf(a)>=0 || sameModelDevices.indexOf(a)>=0, bSus = suspiciousDevices.indexOf(b)>=0 || sameModelDevices.indexOf(b)>=0;
     if (aSus && !bSus) return -1;
     if (!aSus && bSus) return 1;
     return (devMap[b].lastTs||0)-(devMap[a].lastTs||0);
@@ -10797,7 +10872,8 @@ function renderDeviceAudit() {
   body.innerHTML = devices.map(function(devId){
     var d = devMap[devId];
     var empIds = Object.keys(d.emps);
-    var isSus = suspiciousDevices.indexOf(devId) >= 0;
+    var isSus      = suspiciousDevices.indexOf(devId) >= 0;
+    var isSameModel = sameModelDevices.indexOf(devId) >= 0;
 
     var empList = empIds.map(function(eid){
       var e = d.emps[eid];
@@ -10810,7 +10886,9 @@ function renderDeviceAudit() {
 
     var flagCell = isSus
       ? '<span class="bdg" style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5">⚠️ Buddy Punch Suspected</span>'
-      : '<span class="bdg" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac">✅ Clean</span>';
+      : isSameModel
+        ? '<span class="bdg" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a">📱 Same Model</span>'
+        : '<span class="bdg" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac">✅ Clean</span>';
 
     // Show hardware ID prominently; list browser-variant fingerprints underneath
     var fpList = Object.keys(d.fpVariants);
@@ -10822,7 +10900,7 @@ function renderDeviceAudit() {
           ? '<div style="font-size:.62rem;color:#d1d5db;margin-top:4px;font-family:var(--mono);word-break:break-all">'+fpList[0]+'</div>'
           : '');
 
-    return '<tr' + (isSus ? ' style="background:#fff5f5"':'') + '>'
+    return '<tr' + (isSus ? ' style="background:#fff5f5"': isSameModel ? ' style="background:#fffdf0"' : '') + '>'
       +'<td style="font-family:var(--mono);font-size:.75rem;color:var(--ink3);max-width:140px">…'+devId.slice(-16)
         +'<br><span style="font-size:.65rem;word-break:break-all;color:#d1d5db">'+devId+'</span>'
         + variantHtml
