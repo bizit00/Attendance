@@ -1495,6 +1495,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <!-- LIVE TAB -->
     <div id="dTab-live">
       <div id="spotCheckRemindersWrap" style="margin-bottom:4px"></div>
+      <div id="nineHrIndicatorWrap" style="margin-bottom:4px"></div>
       <div class="toolbar">
         <input type="text" id="fSearch" placeholder="Search name / ID…" oninput="renderTable()"/>
         <select id="fSite" onchange="renderTable()"><option value="">All Sites</option></select>
@@ -5003,12 +5004,15 @@ function triggerSpotCheck(attendanceId, empId, empName, empEmail, site, triggere
   triggeredBy = triggeredBy || 'admin';
   createSpotCheckRequest(attendanceId, empId, empName, empEmail, site, triggeredBy, function(token) {
     if (!token) { toast('❌ Could not create spot-check request', 't-err'); return; }
-    db.collection('attendance').doc(attendanceId)
-      .update({ autoSpotCheckSent: true })
-      .catch(function(e){ console.warn('[SpotCheck] flag update failed:', e); });
     var localRec = allRecs.find(function(r){ return r.id === attendanceId; });
-    if (localRec) localRec.autoSpotCheckSent = true;
-    checkSpotCheckReminders();
+    if (localRec && localRec.checkinTimestamp) {
+      var hm = Math.floor((Date.now() - localRec.checkinTimestamp) / 3600000);
+      localRec.lastReminderHour = hm;
+      db.collection('attendance').doc(attendanceId)
+        .update({ lastReminderHour: hm })
+        .catch(function(e){ console.warn('[SpotCheck] lastReminderHour update failed:', e); });
+    }
+    checkWorkHourMonitors();
     var link    = window.location.origin + window.location.pathname + '?spotcheck=' + token;
     var subject = '⚠️ Location Verification Required — Please Respond Within 30 Minutes';
     var body    = 'Dear ' + empName + ',\n\n'
@@ -5142,8 +5146,7 @@ function _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn) {
         hwId: getHwId(),
         emailConflict: false,
         _source: "web", _userAgent: navigator.userAgent.slice(0, 100),
-        autoSpotCheckReminderAfter: Math.floor(Math.random() * (18000000 - 7200000 + 1)) + 7200000,
-        autoSpotCheckSent: false
+        lastReminderHour: 0
       };
 
       function onSaved(docId) {
@@ -5386,7 +5389,7 @@ function initDash() {
   }
 }
 
-function renderAll() { renderTable(); renderFeed(); updateStats(); updateDeviceBadge(); renderAnalytics(); checkSpotCheckReminders(); }
+function renderAll() { renderTable(); renderFeed(); updateStats(); updateDeviceBadge(); renderAnalytics(); checkWorkHourMonitors(); }
 
 function initSpotCheckListener() {
   if (!fbOk || !db) return;
@@ -5426,7 +5429,7 @@ function initSpotCheckListener() {
 
 setInterval(function() {
   if (document.getElementById('dTab-live') && document.getElementById('dTab-live').style.display !== 'none') {
-    checkSpotCheckReminders();
+    checkWorkHourMonitors();
   }
 }, 120000);
 
@@ -5467,18 +5470,40 @@ function filtered() {
   });
 }
 
-function checkSpotCheckReminders() {
-  var wrap = document.getElementById('spotCheckRemindersWrap');
-  if (!wrap) return;
+// ── Work-hour monitors (hourly reminder + 9h alert + 12h auto-checkout) ──
+var MS_HOUR             = 3600000;
+var AUTO_CHECKOUT_HOURS = 12;   // force check-out threshold
+var NINE_HOUR_ALERT     = 9;    // "call the engineer" threshold
+
+function checkWorkHourMonitors() {
+  var wrap  = document.getElementById('spotCheckRemindersWrap');
   var now   = Date.now();
   var today = new Date().toLocaleDateString('en-SG');
-  var due   = allRecs.filter(function(r) {
-    return r.status === 'in'
-      && r.checkinDate === today
-      && !r.autoSpotCheckSent
-      && r.autoSpotCheckReminderAfter
-      && (r.checkinTimestamp + r.autoSpotCheckReminderAfter) <= now;
+  var nineList  = [];
+  var hourlyDue = [];
+
+  (allRecs || []).forEach(function(r) {
+    if (r.status !== 'in' || r.checkinDate !== today || !r.checkinTimestamp) return;
+    var elapsedH = (now - r.checkinTimestamp) / MS_HOUR;
+    var hourMark = Math.floor(elapsedH);
+
+    // 1) 12h auto force-checkout (highest priority — short-circuits the rest)
+    if (elapsedH >= AUTO_CHECKOUT_HOURS) { _autoCheckout12h(r); return; }
+
+    // 2) 9h "call the engineer" alert
+    if (elapsedH >= NINE_HOUR_ALERT) { nineList.push(r); }
+
+    // 3) strict hourly spot-check reminder
+    if (hourMark >= 1 && hourMark > (r.lastReminderHour || 0)) { hourlyDue.push(r); }
   });
+
+  _renderHourlyReminders(wrap, hourlyDue, now);
+  _renderNineHourAlert(nineList, now);
+}
+
+// Strict hourly spot-check reminder banners.
+function _renderHourlyReminders(wrap, due, now) {
+  if (!wrap) return;
   if (!due.length) { wrap.innerHTML = ''; return; }
   wrap.innerHTML = due.map(function(r) {
     var elapsed = Math.floor((now - r.checkinTimestamp) / 3600000);
@@ -5490,13 +5515,128 @@ function checkSpotCheckReminders() {
     var empIdEsc    = _esc(r.empId||'').replace(/'/g, "\\'");
     return '<div class="sc-banner">'
       + '<div class="sc-banner-msg">⏰ <strong>' + _esc(r.empName||r.empId) + '</strong> has been on-site '
-      + elapsed + 'h ' + mins + 'm with no spot-check.</div>'
+      + elapsed + 'h ' + mins + 'm — hourly spot-check reminder.</div>'
       + '<button type="button" class="tb-btn tb-pri" style="font-size:.8rem;white-space:nowrap" '
       + 'onclick="triggerSpotCheck(\'' + idEsc + '\',\'' + empIdEsc + '\',\''
       + empNameEsc + '\',\'' + empEmailEsc + '\',\'' + siteEsc + '\',\'auto\')">'
       + '📍 Send Spot-Check</button>'
+      + '<button type="button" class="tb-btn" style="font-size:.8rem;white-space:nowrap" '
+      + 'onclick="snoozeHourlyReminder(\'' + idEsc + '\')">Dismiss</button>'
       + '</div>';
   }).join('');
+}
+
+// Mark the current hour as handled so the banner clears until the next whole hour.
+function snoozeHourlyReminder(docId) {
+  var r = (allRecs || []).find(function(x){ return x.id === docId; });
+  if (!r || !r.checkinTimestamp) return;
+  var hm = Math.floor((Date.now() - r.checkinTimestamp) / 3600000);
+  r.lastReminderHour = hm;
+  if (fbOk && db) db.collection('attendance').doc(docId).update({ lastReminderHour: hm }).catch(function(){});
+  checkWorkHourMonitors();
+}
+
+// 9h alert — Task 3 implementation.
+var _nineHrList = [];
+var _nineHrOpen = false;
+var _nineHrAlertedIds = {};   // in-memory set of attendance doc ids already alerted (resets on reload)
+
+function _renderNineHourAlert(list, now) {
+  _nineHrList = list.slice();
+
+  // Persistent indicator banner in the Live tab.
+  var ind = document.getElementById('nineHrIndicatorWrap');
+  if (ind) {
+    ind.innerHTML = list.length
+      ? '<div class="sc-banner" style="border-color:#fecaca;background:#fef2f2">'
+        + '<div class="sc-banner-msg">⚠️ <strong>' + list.length + '</strong> engineer(s) on-site 9h+ — may have forgotten to check out.</div>'
+        + '<button type="button" class="tb-btn tb-pri" style="font-size:.8rem;white-space:nowrap" onclick="openNineHrModal()">📞 View &amp; Call</button>'
+        + '</div>'
+      : '';
+  }
+
+  // Auto-pop the modal once for any engineer newly crossing 9h. Keyed by the
+  // stable attendance doc id so it survives Firestore snapshot rebuilds of allRecs
+  // (the flag must NOT live on the record object — that gets recreated each snapshot).
+  var hasNew = list.some(function(r){ return !_nineHrAlertedIds[r.id]; });
+  list.forEach(function(r){ _nineHrAlertedIds[r.id] = true; });
+  if (hasNew) { openNineHrModal(); }
+  else if (_nineHrOpen) { _fillNineHrList(); }
+}
+
+function _fillNineHrList() {
+  var box = document.getElementById('nineHrList');
+  if (!box) return;
+  if (!_nineHrList.length) {
+    box.innerHTML = '<div style="color:#6b7280;font-size:.85rem">No engineers currently at 9h+.</div>';
+    return;
+  }
+  var now = Date.now();
+  box.innerHTML = _nineHrList.map(function(r) {
+    var elapsed = Math.floor((now - r.checkinTimestamp) / 3600000);
+    var mins    = Math.floor(((now - r.checkinTimestamp) % 3600000) / 60000);
+    var onb = (typeof _onbRecords !== "undefined" ? _onbRecords : [])
+      .find(function(o){ return (o.engId || o._id) === r.empId; }) || {};
+    var phone   = onb.phone || '';
+    var waPhone = _waNormalizeSG(phone);
+    var nameEsc = _esc(r.empName || r.empId);
+    var actions;
+    if (phone) {
+      actions = '<a href="tel:' + _esc(phone) + '" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;border-radius:7px;padding:6px 12px;font-size:.8rem;font-weight:700;margin-right:6px">📞 Call</a>'
+        + (waPhone ? '<a href="https://wa.me/' + waPhone + '" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#25d366;color:#fff;text-decoration:none;border-radius:7px;padding:6px 12px;font-size:.8rem;font-weight:700">💬 WhatsApp</a>' : '');
+    } else {
+      actions = '<span style="color:#9ca3af;font-size:.78rem">No phone on file</span>';
+    }
+    return '<div style="border:1px solid #f3d6d6;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fff">'
+      + '<div style="font-weight:700;font-size:.9rem">' + nameEsc + ' <span style="color:#6b7280;font-weight:500">(' + _esc(r.empId) + ')</span></div>'
+      + '<div style="color:#6b7280;font-size:.8rem;margin:2px 0 8px">' + _esc(r.site || '') + ' · on-site ' + elapsed + 'h ' + mins + 'm' + (phone ? ' · ' + _esc(phone) : '') + '</div>'
+      + actions
+      + '</div>';
+  }).join('');
+}
+
+function openNineHrModal() {
+  var el = document.getElementById('nineHrModal');
+  if (!el) return;
+  _fillNineHrList();
+  el.style.display = 'flex';
+  _nineHrOpen = true;
+}
+
+function closeNineHrModal() {
+  var el = document.getElementById('nineHrModal');
+  if (el) el.style.display = 'none';
+  _nineHrOpen = false;
+}
+
+// In-memory set of attendance doc ids whose auto-checkout has fired this session.
+// Keyed by the stable Firestore doc id so it survives snapshot rebuilds of allRecs
+// (must NOT live on the record object — that is recreated on every snapshot).
+var _autoCheckoutInFlightIds = {};
+
+// Automatic force check-out once an engineer passes 12h on-site.
+// Checkout instant is stamped at exactly check-in + 12h (not "now").
+function _autoCheckout12h(r) {
+  if (!fbOk || !db) return;
+  if (_autoCheckoutInFlightIds[r.id]) return;   // already firing/fired this session
+  _autoCheckoutInFlightIds[r.id] = true;
+
+  var coInstant = new Date(r.checkinTimestamp + AUTO_CHECKOUT_HOURS * MS_HOUR);
+  applyForceCheckout(r.id, r.empId, r.empName, r.checkinTimestamp, coInstant, {
+    autoCheckout: true,
+    forcedBy: "system-12h",
+    note: "System auto check-out after 12h"
+  })
+  .then(function(dur) {
+    // Intentionally left in the set on success: the record's status becomes "out",
+    // so it won't re-enter the monitor loop, and we never want a second auto-checkout.
+    toast("⏱️ Auto checked-out " + (r.empName || r.empId) + " after 12h (" + dur + ")", "t-ok");
+    renderTable(); renderFeed(); updateStats();
+  })
+  .catch(function(e) {
+    delete _autoCheckoutInFlightIds[r.id];   // allow retry on a later tick
+    console.warn("[AutoCheckout] failed for " + r.id + ":", e);
+  });
 }
 
 function renderSpotCheckLog() {
@@ -14269,6 +14409,61 @@ function closeForceCoModal() {
   if (el) el.style.display = "none";
 }
 
+// Shared force check-out writer. Used by the manual admin modal AND the
+// automatic 12h work-hour monitor. checkoutInstant is a Date object.
+// meta: { autoCheckout?:bool, forcedBy?:string, adminEmail?:string, note?:string }
+// Returns a Promise resolving to the duration string ("Xh Ym").
+function applyForceCheckout(docId, empId, empName, checkinTs, checkoutInstant, meta) {
+  meta = meta || {};
+  var coTs   = checkoutInstant.getTime();
+  var diffMs = coTs - (checkinTs || coTs);
+  var diffH  = Math.floor(diffMs / 3600000);
+  var diffM  = Math.floor((diffMs % 3600000) / 60000);
+  var dur    = diffH + "h " + diffM + "m";
+  var isOT   = diffH >= 9;
+
+  var updates = {
+    checkoutTime:      checkoutInstant.toLocaleTimeString("en-SG", {hour:"2-digit", minute:"2-digit", second:"2-digit"}),
+    checkoutISO:       checkoutInstant.toISOString(),
+    checkoutTimestamp: coTs,
+    checkoutLat: null, checkoutLng: null, checkoutDist: null, checkoutAcc: null,
+    status:   "out",
+    duration: dur,
+    isOvertime: isOT
+  };
+  if (meta.autoCheckout) {
+    updates.autoCheckout  = true;
+    updates.forcedBy      = meta.forcedBy || "system";
+    updates.adminForced   = false;
+    updates.adminNote     = meta.note || "System auto check-out";
+  } else {
+    updates.adminForced   = true;
+    updates.adminForcedBy = meta.adminEmail || "Admin";
+    updates.adminForcedAt = new Date().toISOString();
+    updates.adminNote     = meta.note || "Admin force check-out";
+  }
+
+  return db.collection("attendance").doc(docId).update(updates).then(function() {
+    var rec = allRecs.find(function(r){ return r.id === docId; });
+    if (rec) {
+      rec.checkoutTime      = updates.checkoutTime;
+      rec.checkoutISO       = updates.checkoutISO;
+      rec.checkoutTimestamp = coTs;
+      rec.checkoutLat = null; rec.checkoutLng = null; rec.checkoutDist = null; rec.checkoutAcc = null;
+      rec.status     = "out";
+      rec.duration   = dur;
+      rec.isOvertime = isOT;
+      if (meta.autoCheckout) { rec.autoCheckout = true; rec.forcedBy = updates.forcedBy; }
+      else { rec.adminForced = true; }
+    }
+    // Public signal so the engineer's own device detects the forced checkout.
+    if (empId) {
+      db.collection("empBindings").doc(empId).set({ forceCheckoutAt: Date.now() }, { merge: true }).catch(function(){});
+    }
+    return dur;
+  });
+}
+
 function confirmForceCheckout() {
   var coDateTimeVal = (document.getElementById("fcoCoDateTime").value || "").trim();
   var note = (document.getElementById("fcoNote").value || "").trim();
@@ -14286,78 +14481,31 @@ function confirmForceCheckout() {
     return;
   }
 
-  // Calculate duration
-  var diffMs = coTs - (_fcoCheckinTs || coTs);
-  var diffH  = Math.floor(diffMs / 3600000);
-  var diffM  = Math.floor((diffMs % 3600000) / 60000);
-  var dur    = diffH + "h " + diffM + "m";
-  var isOT   = diffH >= 9;
-
-  var adminUser = (firebase && firebase.auth && firebase.auth().currentUser) || null;
+  var adminUser  = (firebase && firebase.auth && firebase.auth().currentUser) || null;
   var adminEmail = adminUser ? adminUser.email : "Admin";
 
-  var updates = {
-    checkoutTime:      coDateTime.toLocaleTimeString("en-SG", {hour:"2-digit", minute:"2-digit", second:"2-digit"}),
-    checkoutISO:       coDateTime.toISOString(),
-    checkoutTimestamp: coTs,
-    checkoutLat:       null,
-    checkoutLng:       null,
-    checkoutDist:      null,
-    checkoutAcc:       null,
-    status:            "out",
-    duration:          dur,
-    isOvertime:        isOT,
-    adminForced:       true,
-    adminForcedBy:     adminEmail,
-    adminForcedAt:     new Date().toISOString(),
-    adminNote:         note || "Admin force check-out"
-  };
-
   var confirmBtn = document.getElementById("fcoConfirmBtn");
-  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Processingâ€¦"; }
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Processing…"; }
 
-  db.collection("attendance").doc(_fcoDocId).update(updates)
-    .then(function() {
+  applyForceCheckout(_fcoDocId, _fcoEmpId, _fcoEmpName, _fcoCheckinTs, coDateTime,
+    { adminEmail: adminEmail, note: note || "Admin force check-out" })
+    .then(function(dur) {
       closeForceCoModal();
-      // Update local record
-      var rec = allRecs.find(function(r){ return r.id === _fcoDocId; });
-      if (rec) {
-        rec.checkoutTime      = updates.checkoutTime;
-        rec.checkoutISO       = updates.checkoutISO;
-        rec.checkoutTimestamp = updates.checkoutTimestamp;
-        rec.checkoutLat       = null;
-        rec.checkoutLng       = null;
-        rec.checkoutDist      = null;
-        rec.checkoutAcc       = null;
-        rec.status            = "out";
-        rec.duration          = dur;
-        rec.isOvertime        = isOT;
-        rec.adminForced       = true;
-      }
-      // Write a public signal to empBindings so the engineer's phone
-      // can detect the force checkout even if attendance read is blocked by rules.
-      // empBindings is publicly readable â€” this acts as the notification channel.
-      if (_fcoEmpId) {
-        db.collection("empBindings").doc(_fcoEmpId).set(
-          { forceCheckoutAt: Date.now() },
-          { merge: true }
-        ).catch(function(){});
-      }
       renderTable();
       renderFeed();
-      renderStats();
-      toast("âœ… Force check-out applied for " + _fcoEmpName + ". Duration: " + dur, "t-ok");
+      updateStats();
+      toast("✅ Force check-out applied for " + _fcoEmpName + ". Duration: " + dur, "t-ok");
     })
     .catch(function(e) {
       var msg = (e.message || String(e));
       if (msg.toLowerCase().indexOf("permission") !== -1) {
-        errEl.innerHTML = "â›” Firestore permission denied. Go to <strong>Setup tab â†’ Firestore Rules</strong> and re-copy the rules into Firebase Console, then try again.";
+        errEl.innerHTML = "⛔ Firestore permission denied. Go to <strong>Setup tab → Firestore Rules</strong> and re-copy the rules into Firebase Console, then try again.";
       } else {
         errEl.textContent = "Error: " + msg;
       }
     })
     .finally(function() {
-      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "âœ… Confirm Force Check-Out"; }
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ Confirm Force Check-Out"; }
     });
 }
 // â•â• END ADMIN FORCE CHECK-OUT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -14416,6 +14564,18 @@ function confirmForceCheckout() {
 <!-- â•â• END ADMIN FORCE CHECK-OUT MODAL â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 
 <!-- â•â• CHART SLIDESHOW OVERLAY â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<!-- ══ 9-HOUR LONG-SHIFT ALERT ══════════════════════ -->
+<div id="nineHrModal" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.7);z-index:8700;align-items:center;justify-content:center;overflow-y:auto;padding:20px 0" onclick="if(event.target===this)closeNineHrModal()">
+  <div style="background:#fff;border-radius:14px;max-width:460px;width:92%;margin:auto;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="font-size:1.05rem;font-weight:800;color:#b91c1c;margin-bottom:6px">⚠️ Long Shift Alert (9h+)</div>
+    <div style="font-size:.85rem;color:#374151;margin-bottom:14px">The following engineer(s) have been on-site 9 hours or more. They may have forgotten to check out, or may have an issue. Call to confirm.</div>
+    <div id="nineHrList"></div>
+    <div style="text-align:right;margin-top:14px">
+      <button type="button" onclick="closeNineHrModal()" style="background:#e5e7eb;color:#111;border:none;border-radius:8px;padding:9px 18px;font-size:.87rem;font-weight:700;cursor:pointer">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="slideshowOverlay" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.96);z-index:9100;align-items:center;justify-content:center" onclick="ssOverlayClick(event)">
   <div id="slideshowModal">
     <div class="ss-progress"><div class="ss-progress-bar" id="ssProgressBar"></div></div>
