@@ -1682,6 +1682,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()" title="Set required manpower per site" style="font-size:.78rem;padding:6px 12px">⚙️ Configure Manpower</button>
+            <button class="tb-btn tb-out" onclick="openSitesModal()" title="Add or remove work sites (name + GPS)" style="font-size:.78rem;padding:6px 12px">📍 Manage Sites</button>
             <span class="an-live-badge">LIVE</span>
           </div>
         </div>
@@ -2327,6 +2328,12 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // Custom work sites — admin adds sites (name + GPS); everyone reads for the dropdown
+    match /workSites/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
     // Manpower history snapshots — admin write; authenticated read
     match /manpowerHistory/{docId} {
       allow read: if request.auth != null;
@@ -2588,6 +2595,12 @@ service cloud.firestore {
     // Cleared buddy-punch cases — admin verifies a false positive and clears it
     match /clearedDeviceCases/{doc} {
       allow read, write: if request.auth != null;
+    }
+
+    // Custom work sites — admin adds sites (name + GPS); everyone reads for the dropdown
+    match /workSites/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
     // ── 6. Spot-check requests ───────────────────────
     match /spotCheckRequests/{token} {
@@ -2915,6 +2928,42 @@ service cloud.firestore {
   </div>
 </div>
 
+<!-- ══ MANAGE WORK SITES MODAL ════════════════════ -->
+<div id="sitesModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:560px;max-height:92vh;overflow-y:auto">
+    <button class="modal-close" onclick="closeSitesModal()">✕</button>
+    <div class="modal-title">📍 Manage Work Sites</div>
+    <div class="modal-sub">Add your own sites with GPS coordinates. New sites appear in the check-in dropdown and every site filter automatically.</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="field" style="grid-column:1/-1">
+        <label>Site name <span style="color:var(--red)">*</span></label>
+        <input type="text" id="newSiteName" placeholder="e.g. Site N - Changi Clinic" maxlength="60"/>
+      </div>
+      <div class="field">
+        <label>Latitude <span style="color:var(--red)">*</span></label>
+        <input type="text" id="newSiteLat" placeholder="1.352100" inputmode="decimal"/>
+      </div>
+      <div class="field">
+        <label>Longitude <span style="color:var(--red)">*</span></label>
+        <input type="text" id="newSiteLng" placeholder="103.819800" inputmode="decimal"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+      <button class="tb-btn tb-out" onclick="siteUseMyLocation()" style="white-space:nowrap">📡 Use my current location</button>
+      <span id="sitesFormMsg" style="font-size:.78rem;color:var(--ink3);font-family:var(--mono)"></span>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="closeSitesModal()">Close</button>
+      <button class="modal-btn-confirm" onclick="addCustomSite()">＋ Add site</button>
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin:18px 0 12px"></div>
+    <div style="font-weight:700;font-size:.85rem;color:var(--ink2);margin-bottom:8px">Your custom sites</div>
+    <div id="customSitesList" style="max-height:34vh;overflow-y:auto"></div>
+  </div>
+</div>
+
 <!-- ══ ONBOARDING FORM MODAL ══════════════════════ -->
 <div id="onbModal" class="modal-overlay">
   <div class="modal-box" style="max-width:580px;max-height:92vh;overflow-y:auto">
@@ -3131,6 +3180,10 @@ var WORK_SITES = [
   { name:"Site L - Hui Hong Home",        lat:1.4208355755415034, lng:103.8475711887202 },
   { name:"Site M - Marcus Home",        lat:1.275931624207712, lng:103.80887589637807 }
 ];
+
+// v6.41: keep the built-in sites separate so admin-added (custom) sites can be
+// merged on top live, without ever losing the originals.
+var _BASE_WORK_SITES = WORK_SITES.slice();
 
 var GEOFENCE_M = 500;
 // ╔══════════════════════════════════════════════╗
@@ -3698,6 +3751,9 @@ document.addEventListener("DOMContentLoaded", function(){
     showScreen('spotcheck');
     _waitForDbThenLoadSpotCheck(_scParam);
   }
+
+  // v6.41: load admin-defined custom sites so they appear in the check-in dropdown
+  if (typeof loadCustomSites === "function") loadCustomSites();
 
   ["engIdWrap","leaveEngIdWrap"].forEach(function(wrapId){
     var wrap = document.getElementById(wrapId);
@@ -5403,6 +5459,9 @@ function initDash() {
   // Load admin-cleared (verified-not-buddy-punch) device cases
   if (typeof loadClearedDeviceCases === "function") loadClearedDeviceCases();
 
+  // Load admin-defined custom work sites (merged into the site dropdowns live)
+  if (typeof loadCustomSites === "function") loadCustomSites();
+
   if (fbOk && db) {
     if (fbUnsub) fbUnsub();
     fbUnsub = db.collection("attendance").orderBy("checkinTimestamp","desc")
@@ -5542,12 +5601,17 @@ function checkWorkHourMonitors() {
   var hourlyDue = [];
 
   (allRecs || []).forEach(function(r) {
-    if (r.status !== 'in' || r.checkinDate !== today || !r.checkinTimestamp) return;
+    if (r.status !== 'in' || !r.checkinTimestamp) return;   // v6.41: consider ALL open sessions, not just today's
     var elapsedH = (now - r.checkinTimestamp) / MS_HOUR;
     var hourMark = Math.floor(elapsedH);
 
-    // 1) 12h auto force-checkout (highest priority — short-circuits the rest)
+    // 1) 12h auto force-checkout — applies to ANY still-open session, including
+    //    stale ones left open from previous days (overnight / forgotten checkouts).
+    //    Each is closed at its own check-in + 12h, so prior-day sessions are swept too.
     if (elapsedH >= AUTO_CHECKOUT_HOURS) { _autoCheckout12h(r); return; }
+
+    // The live alerts/reminders below only make sense for shifts still running today.
+    if (r.checkinDate !== today) return;
 
     // 2) 9h "call the engineer" alert
     if (elapsedH >= NINE_HOUR_ALERT) { nineList.push(r); }
@@ -9483,6 +9547,112 @@ var _verifiedExpanded  = false;   // ✅ Verified / cleared-by-admin section
 var _sameModelExpanded = false;   // 📱 Same-model auto-resolved section
 function toggleVerifiedSection()  { _verifiedExpanded  = !_verifiedExpanded;  if (typeof renderDeviceAudit === "function") renderDeviceAudit(); }
 function toggleSameModelSection() { _sameModelExpanded = !_sameModelExpanded; if (typeof renderDeviceAudit === "function") renderDeviceAudit(); }
+
+// ══════════════════════════════════════════════════════════════════════
+// CUSTOM WORK SITES  (admin-defined name + GPS, Firestore-backed, live)
+// ══════════════════════════════════════════════════════════════════════
+var customSitesList = [];
+var _fbSitesUnsub = null;
+
+function loadCustomSites() {
+  if (!fbOk || !db) return;
+  if (_fbSitesUnsub) _fbSitesUnsub();
+  _fbSitesUnsub = db.collection("workSites").onSnapshot(function(snap) {
+    customSitesList = snap.docs
+      .map(function(d){ return Object.assign({ id:d.id }, d.data()); })
+      .sort(function(a,b){ return (a.createdAt||0) - (b.createdAt||0); });
+    var custom = customSitesList.map(function(s){ return { name:s.name, lat:s.lat, lng:s.lng, custom:true }; });
+    WORK_SITES = _BASE_WORK_SITES.concat(custom);   // built-ins first, custom appended (stable indexes)
+    refreshAllSiteDropdowns();
+    renderCustomSitesList();
+  }, function(err){ console.warn("[AT] workSites listener:", err); });
+}
+
+// Repopulate every site dropdown in the app, preserving the current selection.
+function refreshAllSiteDropdowns() {
+  [["fSite",'<option value="">All Sites</option>'],
+   ["ffSite",'<option value="">All Sites</option>'],
+   ["anSite",'<option value="">🏢 All Sites</option>'],
+   ["calSite",'<option value="">All Sites</option>']].forEach(function(p){
+    var el = document.getElementById(p[0]);
+    if (!el) return;
+    var cur = el.value;
+    el.innerHTML = p[1];
+    WORK_SITES.forEach(function(s){ var o=document.createElement("option"); o.value=s.name; o.textContent=s.name; el.appendChild(o); });
+    el.value = cur;
+  });
+  // Engineer check-in select is index-valued
+  var es = document.getElementById("empSite");
+  if (es) {
+    var curIdx = es.value;
+    es.innerHTML = '<option value="">— Select your work site —</option>';
+    WORK_SITES.forEach(function(s,i){ var o=document.createElement("option"); o.value=i; o.textContent=s.name; es.appendChild(o); });
+    es.value = curIdx;
+  }
+}
+
+function openSitesModal()  { renderCustomSitesList(); var m=document.getElementById("sitesModal"); if(m) m.classList.add("open"); }
+function closeSitesModal() { var m=document.getElementById("sitesModal"); if(m) m.classList.remove("open"); var msg=document.getElementById("sitesFormMsg"); if(msg) msg.textContent=""; }
+
+function siteUseMyLocation() {
+  var msg = document.getElementById("sitesFormMsg");
+  if (!navigator.geolocation) { if(msg){ msg.style.color="var(--red)"; msg.textContent="Geolocation not available on this device."; } return; }
+  if (msg) { msg.style.color="var(--ink3)"; msg.textContent="Getting your location…"; }
+  navigator.geolocation.getCurrentPosition(function(pos){
+    document.getElementById("newSiteLat").value = pos.coords.latitude.toFixed(6);
+    document.getElementById("newSiteLng").value = pos.coords.longitude.toFixed(6);
+    if (msg) { msg.style.color="#15803d"; msg.textContent="✓ Filled from your location (±"+Math.round(pos.coords.accuracy)+"m)"; }
+  }, function(err){ if(msg){ msg.style.color="var(--red)"; msg.textContent="Location failed: "+(err.message||err); } }, { enableHighAccuracy:true, timeout:10000 });
+}
+
+function addCustomSite() {
+  var msg  = document.getElementById("sitesFormMsg");
+  function fail(t){ if(msg){ msg.style.color="var(--red)"; msg.textContent=t; } }
+  var name = (document.getElementById("newSiteName").value||"").trim();
+  var lat  = parseFloat((document.getElementById("newSiteLat").value||"").trim());
+  var lng  = parseFloat((document.getElementById("newSiteLng").value||"").trim());
+  if (!name)                              return fail("Enter a site name.");
+  if (isNaN(lat) || lat < -90  || lat > 90)  return fail("Latitude must be a number between -90 and 90.");
+  if (isNaN(lng) || lng < -180 || lng > 180) return fail("Longitude must be a number between -180 and 180.");
+  if (WORK_SITES.some(function(x){ return x.name.toLowerCase() === name.toLowerCase(); })) return fail("A site with that name already exists.");
+  if (!fbOk || !db)                       return fail("Firestore not connected — cannot save.");
+  var adminEmail = (firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || "Admin";
+  db.collection("workSites").add({ name:name, lat:lat, lng:lng, createdAt:Date.now(), createdBy:adminEmail })
+    .then(function(){
+      if(msg){ msg.style.color="#15803d"; msg.textContent="✓ Added "+name; }
+      document.getElementById("newSiteName").value="";
+      document.getElementById("newSiteLat").value="";
+      document.getElementById("newSiteLng").value="";
+      toast("📍 Site added: "+name, "t-ok");
+    })
+    .catch(function(e){ fail("Failed to save: "+(e.message||e)); });
+}
+
+function removeCustomSite(id) {
+  var site = customSitesList.find(function(x){ return x.id === id; });
+  var nm = site ? site.name : "this site";
+  if (!fbOk || !db) return;
+  if (!confirm("Remove site \""+nm+"\"?\n\nExisting check-in records that used this site are NOT changed.")) return;
+  db.collection("workSites").doc(id).delete()
+    .then(function(){ toast("Site removed: "+nm, "t-ok"); })
+    .catch(function(e){ toast("Failed: "+(e.message||e), "t-err"); });
+}
+
+function renderCustomSitesList() {
+  var wrap = document.getElementById("customSitesList");
+  if (!wrap) return;
+  if (!customSitesList.length) {
+    wrap.innerHTML = '<div style="font-size:.8rem;color:var(--ink3);padding:8px 2px">No custom sites yet — add one above. Built-in sites are always available.</div>';
+    return;
+  }
+  wrap.innerHTML = customSitesList.map(function(s){
+    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px">'
+      + '<div style="min-width:0"><div style="font-weight:600;font-size:.85rem;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+sanitizeHtml(s.name)+'</div>'
+      + '<div style="font-size:.72rem;color:var(--ink3);font-family:var(--mono)">'+s.lat+', '+s.lng+'</div></div>'
+      + '<button class="tb-btn" onclick="removeCustomSite(\''+s.id+'\')" style="white-space:nowrap;color:#b91c1c;border-color:#fca5a5">🗑 Remove</button>'
+      + '</div>';
+  }).join("");
+}
 
 function loadClearedDeviceCases() {
   if (!fbOk || !db) return;
