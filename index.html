@@ -1994,7 +1994,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <div style="font-size:2rem;flex-shrink:0">🔒</div>
         <div>
           <div style="color:#fff;font-weight:800;font-size:1rem;margin-bottom:4px">Device–Engineer Binding</div>
-          <div style="color:#9ca3af;font-size:.83rem;line-height:1.6">Each engineer's phone generates a hardware-stable <strong style="color:#e5e7eb">Hardware ID</strong> from GPU, screen, CPU and platform signals — the same physical device produces the <strong style="color:#e5e7eb">same Hardware ID across Chrome, Firefox and Safari</strong>. If one device is used to check in <strong style="color:var(--orange)">more than one engineer on the same date</strong> — even from different browsers — it is automatically flagged as a suspected buddy-punch attempt.</div>
+          <div style="color:#9ca3af;font-size:.83rem;line-height:1.6">Each phone is identified by a <strong style="color:#e5e7eb">random Device Token</strong> stored on that device the first time it is used — so two phones of the <strong style="color:#e5e7eb">same model</strong> (e.g. two identical iPhones) always get <strong style="color:#e5e7eb">different tokens</strong> and are never confused. A buddy punch is flagged only when <strong style="color:var(--orange)">one device token is used by more than one engineer on the same date</strong> — i.e. a single phone physically passed between people. A hardware-stable <strong style="color:#e5e7eb">Hardware ID</strong> (GPU, screen, CPU) is kept as a secondary signal for older records; same-model collisions on Hardware ID alone are no longer treated as buddy punches.</div>
         </div>
       </div>
 
@@ -4626,6 +4626,31 @@ function getHwId() {
   return "tmp_" + Math.random().toString(36).slice(2);
 }
 
+// ── Random Device Token (model-proof anti-buddy-punch) ────────────────────
+// A hardware fingerprint CANNOT tell two phones of the SAME MODEL apart — this
+// is worst on iPhones, where Apple makes every same-model device look identical
+// (same GPU, screen, canvas, audio). So instead of trusting the model
+// fingerprint, we mint a RANDOM token the first time this phone is used and
+// store it on the device. Two identical iPhones get two DIFFERENT tokens, so
+// they never collide. A real buddy punch is then ONE token used by two
+// different engineers (a phone physically passed around) — not two people who
+// merely happen to own the same model.
+function getDeviceToken() {
+  var t = localStorage.getItem("at_device_token");
+  if (t && /^dvc_/.test(t)) return t;
+  var rnd;
+  try {
+    var arr = new Uint8Array(16);
+    crypto.getRandomValues(arr);
+    rnd = Array.from(arr, function(b){ return b.toString(16).padStart(2, "0"); }).join("");
+  } catch (e) {
+    rnd = Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  }
+  t = "dvc_" + rnd;
+  try { localStorage.setItem("at_device_token", t); } catch (e) {}
+  return t;
+}
+
 // Check if this device already checked in someone today
 function deviceAlreadyCheckedIn(empId) {
   var today = new Date().toLocaleDateString("en-SG");
@@ -4688,6 +4713,7 @@ function _reportBuddyPunchAlert(empId, empName, myDevId, conflictRec) {
     empName:             empName,
     newDeviceId:         myDevId,
     newHwId:             getHwId(),
+    newDeviceToken:      getDeviceToken(),
     existingDeviceId:    conflictRec.deviceId || "",
     existingHwId:        conflictRec.hwId     || "",
     existingCheckinTime: conflictRec.checkinTime || "—",
@@ -5154,6 +5180,7 @@ function _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn) {
         status:"in", isLate:isLate, isOvertime:false, duration:null,
         deviceId: devId,
         hwId: getHwId(),
+        deviceToken: getDeviceToken(),
         emailConflict: false,
         _source: "web", _userAgent: navigator.userAgent.slice(0, 100),
         lastReminderHour: 0
@@ -10750,18 +10777,25 @@ function isBuddyPunch(record, empId, date) {
   if (!record || !date) return false;
   var hw  = (typeof record === "object") ? (record.hwId || "") : "";
   var dev = (typeof record === "object") ? (record.deviceId || "") : record;
-  if (!hw && !dev) return false;
+  var tok = (typeof record === "object") ? (record.deviceToken || "") : "";
+  if (!hw && !dev && !tok) return false;
 
   // Admin has verified this device is not buddy punch (e.g. same phone model) — never flag.
-  if ((hw && clearedDeviceCases[hw]) || (dev && clearedDeviceCases[dev])) return false;
+  if ((hw && clearedDeviceCases[hw]) || (dev && clearedDeviceCases[dev]) || (tok && clearedDeviceCases[tok])) return false;
 
   return allRecs.some(function(r){
     if (r.checkinDate !== date) return false;
 
     // Case A: same device, different engineer (classic buddy punch)
-    // v6.37: skip if engineers are at different sites (physically impossible
-    // to buddy-punch across separate locations; likely same-model phones).
     if (r.empId !== empId) {
+      // v6.39: when BOTH records carry a random device token, ONLY an identical
+      // token is a real buddy punch. Same hardware ID but different tokens means
+      // two separate phones of the same model (e.g. two iPhone 15s) — never flag.
+      if (tok && r.deviceToken) {
+        if (r.deviceToken === tok) return true;
+        return false;
+      }
+      // Legacy fallback (records without a token) — hwId/deviceId + site logic.
       var sameHw  = hw  && r.hwId     && r.hwId     === hw;
       var sameDev = dev && r.deviceId && r.deviceId === dev;
       if (sameHw || sameDev) {
@@ -10773,8 +10807,15 @@ function isBuddyPunch(record, empId, date) {
 
     // Case B: same engineer, different device (cross-device check-in fraud)
     if (r.empId === empId) {
-      if (hw && r.hwId && r.hwId !== hw) return true;
-      if (!hw && dev && r.deviceId && r.deviceId !== dev) return true;
+      // v6.39 token-aware: a token can regenerate if the engineer clears their
+      // browser storage, so require the HARDWARE id to also differ before
+      // flagging — that confirms a genuinely different physical phone.
+      if (tok && r.deviceToken) {
+        if (r.deviceToken !== tok && hw && r.hwId && r.hwId !== hw) return true;
+      } else {
+        if (hw && r.hwId && r.hwId !== hw) return true;
+        if (!hw && dev && r.deviceId && r.deviceId !== dev) return true;
+      }
     }
 
     return false;
@@ -10788,7 +10829,10 @@ function renderDeviceAudit() {
   // Records missing hwId (created before this field existed) fall back to deviceId.
   var devMap = {};
   allRecs.forEach(function(r){
-    var key = r.hwId || r.deviceId;
+    // v6.39: group by the RANDOM device token first (model-proof). Same-model
+    // phones have different tokens, so they land in separate groups and never
+    // collide. Legacy records (no token) fall back to hwId / deviceId.
+    var key = r.deviceToken || r.hwId || r.deviceId;
     if (!key) return;
     if (!devMap[key]) devMap[key] = { emps: {}, records: [], lastTs: 0, fpVariants: {} };
     var d = devMap[key];
@@ -10843,6 +10887,12 @@ function renderDeviceAudit() {
     });
     if (!overlapDates.length) return;
 
+    // v6.39: a real random device token grouping two different engineers means
+    // ONE physical phone was shared — a genuine buddy punch, never same-model.
+    if (devId.indexOf("dvc_") === 0) { suspiciousDevices.push(devId); return; }
+
+    // Legacy records (created before device tokens existed) fall back to the
+    // hardware-ID heuristics below to separate same-model phones.
     // Signal 1: any overlap date where engineers are at different sites
     var hasDiffSiteEvidence = overlapDates.some(function(date) {
       var empSiteMap = dateMap[date];
