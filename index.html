@@ -5474,22 +5474,41 @@ setInterval(function() {
 }, 120000);
 
 function updateDeviceBadge() {
-  // Quick pass to see if any suspicious devices exist — updates the tab badge without full render.
-  // Groups by hwId (hardware-stable) so the same physical phone shows up once even when
-  // used across multiple browsers; falls back to deviceId for legacy records.
-  var suspicious = false;
-  var devDateEmps = {}; // "key|date" -> { empId: true }
+  // Quick pass to set the Device Audit tab dot. v6.40: uses the SAME rules as the
+  // full audit so the dot agrees with the panel —
+  //   • group by random device TOKEN (model-proof); fall back to hwId/deviceId for legacy records
+  //   • admin-cleared (verified) devices NEVER count as suspicious  → dot clears after verification
+  //   • a real token shared by 2+ engineers same date = suspicious
+  //   • legacy (token-less) collisions only count when engineers share a SITE (diff site = same model)
+  var byKey = {}; // key -> { date -> { empId -> site } }
   allRecs.forEach(function(r){
     if (!r.checkinDate) return;
-    var key = r.hwId || r.deviceId;
+    var key = r.deviceToken || r.hwId || r.deviceId;
     if (!key) return;
-    var k = key + "|" + r.checkinDate;
-    if (!devDateEmps[k]) devDateEmps[k] = {};
-    devDateEmps[k][r.empId] = true;
+    if (!byKey[key]) byKey[key] = {};
+    if (!byKey[key][r.checkinDate]) byKey[key][r.checkinDate] = {};
+    byKey[key][r.checkinDate][r.empId] = r.site || "";
   });
-  Object.keys(devDateEmps).forEach(function(key){
-    if (Object.keys(devDateEmps[key]).length > 1) suspicious = true;
+
+  var suspicious = false;
+  Object.keys(byKey).forEach(function(key){
+    if (suspicious) return;
+    if (clearedDeviceCases[key]) return;             // admin verified — not suspicious
+    var isToken = key.indexOf("dvc_") === 0;
+    var dates = byKey[key];
+    Object.keys(dates).forEach(function(date){
+      if (suspicious) return;
+      var emps = dates[date];
+      var empIds = Object.keys(emps);
+      if (empIds.length < 2) return;                 // one engineer on this device — fine
+      if (isToken) { suspicious = true; return; }    // same physical phone, multiple people
+      // Legacy: only flag if two engineers share the SAME site (diff sites => same-model phones)
+      var sites = {};
+      empIds.forEach(function(e){ sites[emps[e] || ("?"+e)] = true; });
+      if (Object.keys(sites).length < empIds.length) suspicious = true;
+    });
   });
+
   var badge = document.getElementById("suspiciousBadge");
   if (badge) badge.style.display = suspicious ? "inline" : "none";
 }
@@ -9459,6 +9478,11 @@ var fbBuddyPunchUnsub = null;
 var clearedDeviceCases = {};      // { hwId: { clearedBy, clearedAt, note, emps } }
 var fbClearedCasesUnsub = null;
 var _devAuditMap = {};            // last devMap built by renderDeviceAudit (for button handlers)
+// v6.40: Device Audit section collapse state (collapsed by default to keep the page tidy)
+var _verifiedExpanded  = false;   // ✅ Verified / cleared-by-admin section
+var _sameModelExpanded = false;   // 📱 Same-model auto-resolved section
+function toggleVerifiedSection()  { _verifiedExpanded  = !_verifiedExpanded;  if (typeof renderDeviceAudit === "function") renderDeviceAudit(); }
+function toggleSameModelSection() { _sameModelExpanded = !_sameModelExpanded; if (typeof renderDeviceAudit === "function") renderDeviceAudit(); }
 
 function loadClearedDeviceCases() {
   if (!fbOk || !db) return;
@@ -9467,7 +9491,10 @@ function loadClearedDeviceCases() {
     .onSnapshot(function(snap) {
       clearedDeviceCases = {};
       snap.docs.forEach(function(doc) { clearedDeviceCases[doc.id] = doc.data(); });
-      // Re-render the Device Audit so cleared cases move out of the alert list
+      // v6.40: always refresh the tab dot (works even when the tab is closed) so a
+      // verified case stops lighting the red dot on every admin login.
+      if (typeof updateDeviceBadge === "function") updateDeviceBadge();
+      // Re-render the full Device Audit panel only when it is actually open.
       if (typeof renderDeviceAudit === "function") {
         var devTab = document.getElementById("dTab-device");
         if (devTab && devTab.style.display !== "none") renderDeviceAudit();
@@ -10930,8 +10957,9 @@ function renderDeviceAudit() {
   if (flagsWrap) {
     var html = "";
 
-    // Red: genuinely suspicious
+    // Red: genuinely suspicious (always expanded — these need admin action)
     if (suspiciousDevices.length > 0) {
+      html += '<div style="font-size:.72rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#b91c1c;margin:2px 0 6px">Needs review</div>';
       html += '<div style="background:linear-gradient(135deg,#fef2f2,#ffe4e6);border:2px solid #fca5a5;border-radius:var(--r2);padding:18px 20px;margin-bottom:10px">'
         +'<div style="font-weight:800;color:#b91c1c;font-size:1rem;margin-bottom:10px">⚠️ ' + suspiciousDevices.length + ' Suspected Buddy-Punch Device' + (suspiciousDevices.length>1?"s":"") + ' Detected</div>'
         + suspiciousDevices.map(function(devId){
@@ -10967,9 +10995,14 @@ function renderDeviceAudit() {
 
     // Green: admin-cleared / verified cases (not buddy punch)
     if (clearedDevices.length > 0) {
-      html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:var(--r2);padding:16px 20px;margin-bottom:10px">'
-        +'<div style="font-weight:700;color:#15803d;font-size:.95rem;margin-bottom:8px">✅ ' + clearedDevices.length + ' Verified Case' + (clearedDevices.length>1?"s":"") + ' — Cleared by Admin</div>'
-        +'<div style="font-size:.8rem;color:#166534;margin-bottom:10px">An admin confirmed with the engineers that these devices are <strong>not buddy punching</strong> (for example, the engineers own the same phone model, which produces an identical Hardware ID). These devices no longer raise an alert.</div>'
+      var vArrow = _verifiedExpanded ? "▾" : "▸";
+      html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:var(--r2);padding:14px 20px;margin-bottom:10px">'
+        +'<div onclick="toggleVerifiedSection()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px">'
+          +'<div style="font-weight:700;color:#15803d;font-size:.95rem">✅ ' + clearedDevices.length + ' Verified Case' + (clearedDevices.length>1?"s":"") + ' — Cleared by Admin</div>'
+          +'<div style="font-size:.8rem;color:#15803d;font-weight:700;white-space:nowrap">' + vArrow + ' ' + (_verifiedExpanded ? "Hide" : "Show") + '</div>'
+        +'</div>'
+        +'<div style="display:' + (_verifiedExpanded ? "block" : "none") + ';margin-top:10px">'
+          +'<div style="font-size:.8rem;color:#166534;margin-bottom:10px">An admin confirmed with the engineers that these devices are <strong>not buddy punching</strong> (for example, the engineers own the same phone model, which produces an identical Hardware ID). These devices no longer raise an alert.</div>'
         + clearedDevices.map(function(devId){
           var d = devMap[devId];
           var meta = clearedDeviceCases[devId] || {};
@@ -10987,14 +11020,20 @@ function renderDeviceAudit() {
             +'<button onclick="unclearBuddyPunchCase(\''+devId+'\')" style="flex-shrink:0;padding:6px 12px;border-radius:8px;background:#fff;color:#92400e;border:1.5px solid #fde68a;font-size:.76rem;font-weight:600;cursor:pointer;white-space:nowrap">↩ Undo / Re-flag</button>'
             +'</div>';
         }).join("")
+        +'</div>'
         +'</div>';
     }
 
     // Yellow: same-model false positives
     if (sameModelDevices.length > 0) {
-      html += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:var(--r2);padding:16px 20px;margin-bottom:10px">'
-        +'<div style="font-weight:700;color:#92400e;font-size:.95rem;margin-bottom:8px">📱 ' + sameModelDevices.length + ' Same-Model Device' + (sameModelDevices.length>1?"s":"") + ' — Not Buddy Punch</div>'
-        +'<div style="font-size:.8rem;color:#78350f;margin-bottom:10px">These engineers share the same phone model, producing an identical Hardware ID. They were detected at <strong>different sites</strong> or the same-hwId collision recurs consistently across many days — confirming it is not buddy-punch activity.</div>'
+      var mArrow = _sameModelExpanded ? "▾" : "▸";
+      html += '<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:var(--r2);padding:14px 20px;margin-bottom:10px">'
+        +'<div onclick="toggleSameModelSection()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px">'
+          +'<div style="font-weight:700;color:#92400e;font-size:.95rem">📱 ' + sameModelDevices.length + ' Same-Model Device' + (sameModelDevices.length>1?"s":"") + ' — Not Buddy Punch</div>'
+          +'<div style="font-size:.8rem;color:#92400e;font-weight:700;white-space:nowrap">' + mArrow + ' ' + (_sameModelExpanded ? "Hide" : "Show") + '</div>'
+        +'</div>'
+        +'<div style="display:' + (_sameModelExpanded ? "block" : "none") + ';margin-top:10px">'
+          +'<div style="font-size:.8rem;color:#78350f;margin-bottom:10px">These engineers share the same phone model, producing an identical Hardware ID. They were detected at <strong>different sites</strong> or the same-hwId collision recurs consistently across many days — confirming it is not buddy-punch activity.</div>'
         + sameModelDevices.map(function(devId){
           var d = devMap[devId];
           var empNames = Object.keys(d.emps).map(function(eid){
@@ -11004,6 +11043,7 @@ function renderDeviceAudit() {
             +'<span style="font-family:var(--mono);font-size:.72rem;color:#a16207">…' + devId.slice(-12) + '</span> '
             + empNames + '</div>';
         }).join("")
+        +'</div>'
         +'</div>';
     }
 
