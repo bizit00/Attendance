@@ -2322,6 +2322,11 @@ service cloud.firestore {
       allow read, update: if request.auth != null;
     }
 
+    // Cleared buddy-punch cases — admin verifies a false positive and clears it
+    match /clearedDeviceCases/{doc} {
+      allow read, write: if request.auth != null;
+    }
+
     // Manpower history snapshots — admin write; authenticated read
     match /manpowerHistory/{docId} {
       allow read: if request.auth != null;
@@ -2578,6 +2583,11 @@ service cloud.firestore {
     match /buddyPunchAlerts/{doc} {
       allow create: if true;
       allow read, update: if request.auth != null;
+    }
+
+    // Cleared buddy-punch cases — admin verifies a false positive and clears it
+    match /clearedDeviceCases/{doc} {
+      allow read, write: if request.auth != null;
     }
     // ── 6. Spot-check requests ───────────────────────
     match /spotCheckRequests/{token} {
@@ -5362,6 +5372,9 @@ function initDash() {
 
   // Load buddy punch alerts so the Device Audit badge updates in real-time
   if (typeof loadBuddyPunchAlerts === "function") loadBuddyPunchAlerts();
+
+  // Load admin-cleared (verified-not-buddy-punch) device cases
+  if (typeof loadClearedDeviceCases === "function") loadClearedDeviceCases();
 
   if (fbOk && db) {
     if (fbUnsub) fbUnsub();
@@ -9410,6 +9423,69 @@ var fbOtpUnsub = null;
 var buddyPunchAlertsList = [];
 var fbBuddyPunchUnsub = null;
 
+// ── Cleared (admin-verified) buddy-punch cases ───────────────────────────
+// When an admin confirms with the engineers that a flagged device is NOT a
+// buddy punch (e.g. two people happen to own the SAME phone model, which
+// produces an identical Hardware ID), the admin clears the case here.
+// Persisted to Firestore so the clearance is permanent and visible to every
+// admin across browsers. Keyed by hwId (the hardware-stable device key).
+var clearedDeviceCases = {};      // { hwId: { clearedBy, clearedAt, note, emps } }
+var fbClearedCasesUnsub = null;
+var _devAuditMap = {};            // last devMap built by renderDeviceAudit (for button handlers)
+
+function loadClearedDeviceCases() {
+  if (!fbOk || !db) return;
+  if (fbClearedCasesUnsub) fbClearedCasesUnsub();
+  fbClearedCasesUnsub = db.collection("clearedDeviceCases")
+    .onSnapshot(function(snap) {
+      clearedDeviceCases = {};
+      snap.docs.forEach(function(doc) { clearedDeviceCases[doc.id] = doc.data(); });
+      // Re-render the Device Audit so cleared cases move out of the alert list
+      if (typeof renderDeviceAudit === "function") {
+        var devTab = document.getElementById("dTab-device");
+        if (devTab && devTab.style.display !== "none") renderDeviceAudit();
+      }
+    }, function(err) { console.warn("[AT] clearedDeviceCases listener:", err); });
+}
+
+// Admin marks a flagged device as verified / not buddy punch.
+function clearBuddyPunchCase(devId) {
+  if (!fbOk || !db) { toast("Firestore not connected — cannot save clearance.", "t-err"); return; }
+  var note = prompt(
+    "Clear this buddy-punch case?\n\n" +
+    "Only do this AFTER you have verified with the engineers that this is NOT buddy " +
+    "punching (for example, they own the same phone model, which produces an " +
+    "identical Hardware ID).\n\n" +
+    "Optional note (reason / who you spoke to):",
+    "Verified with engineers — same phone model, separate devices.");
+  if (note === null) return; // admin cancelled
+  var adminEmail = (firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || "Admin";
+  var d = _devAuditMap[devId];
+  var emps = d ? Object.keys(d.emps).map(function(eid){ return { empId: eid, name: d.emps[eid].name }; }) : [];
+  db.collection("clearedDeviceCases").doc(devId).set({
+    hwId:       devId,
+    clearedBy:  adminEmail,
+    clearedAt:  Date.now(),
+    clearedIso: new Date().toISOString(),
+    note:       (note || "").slice(0, 300),
+    emps:       emps
+  }).then(function() {
+    toast("✅ Case cleared — marked as verified (not buddy punch).", "t-ok");
+  }).catch(function(e) {
+    console.warn("[AT] clearBuddyPunchCase:", e);
+    toast("Failed to clear case: " + (e.message || e), "t-err");
+  });
+}
+
+// Admin re-opens a previously cleared case (undo).
+function unclearBuddyPunchCase(devId) {
+  if (!fbOk || !db) return;
+  if (!confirm("Re-flag this device as a suspected buddy-punch case?\n\nIt will reappear in the red alerts list.")) return;
+  db.collection("clearedDeviceCases").doc(devId).delete()
+    .then(function() { toast("Case re-flagged as suspected.", "t-ok"); })
+    .catch(function(e) { toast("Failed: " + (e.message || e), "t-err"); });
+}
+
 function loadBuddyPunchAlerts() {
   if (!fbOk || !db) return;
   if (fbBuddyPunchUnsub) fbBuddyPunchUnsub();
@@ -10676,6 +10752,9 @@ function isBuddyPunch(record, empId, date) {
   var dev = (typeof record === "object") ? (record.deviceId || "") : record;
   if (!hw && !dev) return false;
 
+  // Admin has verified this device is not buddy punch (e.g. same phone model) — never flag.
+  if ((hw && clearedDeviceCases[hw]) || (dev && clearedDeviceCases[dev])) return false;
+
   return allRecs.some(function(r){
     if (r.checkinDate !== date) return false;
 
@@ -10722,6 +10801,7 @@ function renderDeviceAudit() {
   });
 
   var devices = Object.keys(devMap);
+  _devAuditMap = devMap;   // expose for Clear Case button handlers
   var body  = document.getElementById("deviceTblBody");
   var empty = document.getElementById("deviceTblEmpty");
   var cnt   = document.getElementById("deviceCount");
@@ -10740,11 +10820,15 @@ function renderDeviceAudit() {
   var SAME_MODEL_REPEAT_THRESHOLD = 3;
   var suspiciousDevices = [];
   var sameModelDevices  = [];
+  var clearedDevices    = [];   // admin-verified, not buddy punch
 
   devices.forEach(function(devId) {
     var d = devMap[devId];
     var empIds = Object.keys(d.emps);
     if (empIds.length < 2) return;
+
+    // Admin already verified this device is not buddy punch — route to cleared list.
+    if (clearedDeviceCases[devId]) { clearedDevices.push(devId); return; }
 
     // { date -> { empId -> { site -> true } } }
     var dateMap = {};
@@ -10822,6 +10906,35 @@ function renderDeviceAudit() {
               }).join(' &amp; ');
               return '<div style="font-size:.84rem;color:#b91c1c;margin-bottom:2px">📅 <strong>' + date + '</strong> — used by ' + emps + '</div>';
             }).join("")
+            +'<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+              +'<button onclick="clearBuddyPunchCase(\''+devId+'\')" style="padding:7px 14px;border-radius:8px;background:#16a34a;color:#fff;border:none;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap">✓ Clear Case (Verified)</button>'
+              +'<span style="font-size:.72rem;color:#9ca3af">Use after confirming with the engineers it is not buddy punching (e.g. same phone model).</span>'
+            +'</div>'
+            +'</div>';
+        }).join("")
+        +'</div>';
+    }
+
+    // Green: admin-cleared / verified cases (not buddy punch)
+    if (clearedDevices.length > 0) {
+      html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:var(--r2);padding:16px 20px;margin-bottom:10px">'
+        +'<div style="font-weight:700;color:#15803d;font-size:.95rem;margin-bottom:8px">✅ ' + clearedDevices.length + ' Verified Case' + (clearedDevices.length>1?"s":"") + ' — Cleared by Admin</div>'
+        +'<div style="font-size:.8rem;color:#166534;margin-bottom:10px">An admin confirmed with the engineers that these devices are <strong>not buddy punching</strong> (for example, the engineers own the same phone model, which produces an identical Hardware ID). These devices no longer raise an alert.</div>'
+        + clearedDevices.map(function(devId){
+          var d = devMap[devId];
+          var meta = clearedDeviceCases[devId] || {};
+          var empNames = Object.keys(d.emps).map(function(eid){
+            return '<strong>' + eid + '</strong> (' + d.emps[eid].name + ')';
+          }).join(' &amp; ');
+          var when = meta.clearedAt ? new Date(meta.clearedAt).toLocaleString("en-SG") : "—";
+          var note = meta.note ? '<div style="font-size:.74rem;color:#166534;margin-top:3px">📝 ' + sanitizeHtml(meta.note) + '</div>' : '';
+          return '<div style="background:#fff;border-radius:9px;padding:10px 14px;margin-bottom:6px;border:1px solid #86efac;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'
+            +'<div style="font-size:.82rem;color:#166534">'
+              +'<span style="font-family:var(--mono);font-size:.72rem;color:#15803d">…' + devId.slice(-12) + '</span> ' + empNames
+              +'<div style="font-size:.72rem;color:#15803d;margin-top:3px">Cleared by ' + sanitizeHtml(meta.clearedBy || "Admin") + ' · ' + when + '</div>'
+              + note
+            +'</div>'
+            +'<button onclick="unclearBuddyPunchCase(\''+devId+'\')" style="flex-shrink:0;padding:6px 12px;border-radius:8px;background:#fff;color:#92400e;border:1.5px solid #fde68a;font-size:.76rem;font-weight:600;cursor:pointer;white-space:nowrap">↩ Undo / Re-flag</button>'
             +'</div>';
         }).join("")
         +'</div>';
@@ -10845,7 +10958,7 @@ function renderDeviceAudit() {
     }
 
     // All clean
-    if (!suspiciousDevices.length && !sameModelDevices.length) {
+    if (!suspiciousDevices.length && !sameModelDevices.length && !clearedDevices.length) {
       html = '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:var(--r2);padding:14px 18px;margin-bottom:4px;font-size:.85rem;color:#15803d;font-weight:600">✅ No buddy-punch activity detected across all records.</div>';
     }
 
@@ -10859,11 +10972,11 @@ function renderDeviceAudit() {
     return;
   }
   if (empty) empty.style.display = "none";
-  if (cnt) cnt.textContent = devices.length + " device" + (devices.length!==1?"s":"") + (suspiciousDevices.length>0 ? " · " + suspiciousDevices.length + " flagged" : "") + (sameModelDevices.length>0 ? " · " + sameModelDevices.length + " same-model" : "");
+  if (cnt) cnt.textContent = devices.length + " device" + (devices.length!==1?"s":"") + (suspiciousDevices.length>0 ? " · " + suspiciousDevices.length + " flagged" : "") + (sameModelDevices.length>0 ? " · " + sameModelDevices.length + " same-model" : "") + (clearedDevices.length>0 ? " · " + clearedDevices.length + " verified" : "");
 
   // Sort: suspicious first, then by last check-in
   devices.sort(function(a,b){
-    var aSus = suspiciousDevices.indexOf(a)>=0 || sameModelDevices.indexOf(a)>=0, bSus = suspiciousDevices.indexOf(b)>=0 || sameModelDevices.indexOf(b)>=0;
+    var aSus = suspiciousDevices.indexOf(a)>=0 || sameModelDevices.indexOf(a)>=0 || clearedDevices.indexOf(a)>=0, bSus = suspiciousDevices.indexOf(b)>=0 || sameModelDevices.indexOf(b)>=0 || clearedDevices.indexOf(b)>=0;
     if (aSus && !bSus) return -1;
     if (!aSus && bSus) return 1;
     return (devMap[b].lastTs||0)-(devMap[a].lastTs||0);
@@ -10874,6 +10987,7 @@ function renderDeviceAudit() {
     var empIds = Object.keys(d.emps);
     var isSus      = suspiciousDevices.indexOf(devId) >= 0;
     var isSameModel = sameModelDevices.indexOf(devId) >= 0;
+    var isCleared   = clearedDevices.indexOf(devId) >= 0;
 
     var empList = empIds.map(function(eid){
       var e = d.emps[eid];
@@ -10886,6 +11000,8 @@ function renderDeviceAudit() {
 
     var flagCell = isSus
       ? '<span class="bdg" style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5">⚠️ Buddy Punch Suspected</span>'
+      : isCleared
+        ? '<span class="bdg" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac">✅ Verified (Cleared)</span>'
       : isSameModel
         ? '<span class="bdg" style="background:#fffbeb;color:#92400e;border:1px solid #fde68a">📱 Same Model</span>'
         : '<span class="bdg" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac">✅ Clean</span>';
