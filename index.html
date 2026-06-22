@@ -2015,8 +2015,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <!-- Historical suspicious flags (same device, different engineers) -->
       <div id="deviceFlagsWrap" style="margin-bottom:18px"></div>
 
-      <!-- Spot Check Log for today -->
-      <div id="spotCheckLogWrap" style="margin-bottom:18px"></div>
+
+
 
       <!-- All device bindings table -->
       <div class="tbl-wrap">
@@ -4696,13 +4696,10 @@ function _reportBuddyPunchAlert(empId, empName, myDevId, conflictRec) {
 }
 
 // ── Spot-Check globals ──────────────────────────────
-var spotCheckCache      = {};  // attendanceId -> array of request docs for today
 var scCurrentToken      = null; // token being verified on the spot-check screen
 var scCurrentData       = null; // loaded spotCheckRequests doc
 var scSessionMode       = null; // v6.45: when set, engineer screen is in shared-session mode
 var scTimerInterval     = null; // countdown interval handle
-var scUnsubscribe       = null; // Firestore listener unsub for spotCheckRequests
-var _scResultsWritten   = {};  // token -> true; prevents duplicate attendance writes
 
 // ── Token generator ────────────────────────────────
 function generateSpotCheckToken() {
@@ -4773,35 +4770,6 @@ function scGenerateSiteLink(btn, i) {
 
 // ── Create a spot-check request document in Firestore ──
 // callback(token) on success, callback(null) on failure
-function createSpotCheckRequest(attendanceId, empId, empName, empEmail, site, triggeredBy, callback) {
-  if (!fbOk || !db) { callback(null); return; }
-  var token = generateSpotCheckToken();
-  var now   = Date.now();
-  var siteData = WORK_SITES.find(function(s) { return s.name === site; }) || {};
-  var doc = {
-    token:          token,
-    attendanceId:   attendanceId,
-    empId:          empId,
-    empEmail:       empEmail,
-    empName:        empName,
-    site:           site,
-    siteLat:        siteData.lat  || 0,
-    siteLng:        siteData.lng  || 0,
-    siteRadius:     GEOFENCE_M,
-    triggeredBy:    triggeredBy,
-    triggeredAt:    now,
-    expiresAt:      now + 30 * 60 * 1000,
-    status:         'pending',
-    responseAt:     null,
-    responseLat:    null,
-    responseLng:    null,
-    responseDist:   null,
-    responseAcc:    null
-  };
-  db.collection('spotCheckRequests').doc(token).set(doc)
-    .then(function()  { callback(token); })
-    .catch(function(e){ console.error('[SpotCheck] Firestore write failed:', e); callback(null); });
-}
 
 // ── Wait for Firestore to be ready, then load the spot-check token ──
 function _waitForDbThenLoadSpotCheck(token, attempts) {
@@ -5115,26 +5083,6 @@ function _finishSpotCheckGps(pos, btn, iconEl, txtEl, statusEl, samples, forceSp
 }
 
 // ── Build the worst-result badge HTML from an array of spot-check docs ──
-function getSpotCheckBadge(requests) {
-  if (!requests || !requests.length) return '<span style="color:var(--ink3);font-size:.75rem">—</span>';
-  var hasVerified = false, hasFailed = false, hasExpired = false, hasPending = false;
-  requests.forEach(function(r) {
-    if (r.status === 'verified') hasVerified = true;
-    if (r.status === 'failed')   hasFailed   = true;
-    if (r.status === 'expired')  hasExpired  = true;
-    if (r.status === 'pending')  hasPending  = true;
-  });
-  if (hasFailed)   return '<span style="color:#b91c1c;font-size:.78rem;font-weight:600">❌ Wrong Location</span>';
-  if (hasExpired)  return '<span style="color:#d97706;font-size:.78rem;font-weight:600">⚠️ No Response</span>';
-  if (hasPending)  return '<span style="color:#d97706;font-size:.78rem;font-weight:600">⏳ Pending</span>';
-  if (hasVerified) {
-    var latest = requests.filter(function(r){ return r.status==='verified'; })
-                         .sort(function(a,b){ return b.responseAt-a.responseAt; })[0];
-    var t = latest.responseAt ? new Date(latest.responseAt).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'}) : '';
-    return '<span style="color:#15803d;font-size:.78rem;font-weight:600">✅ Verified ' + t + '</span>';
-  }
-  return '<span style="color:var(--ink3);font-size:.75rem">—</span>';
-}
 
 // ── Normalize a phone number for a wa.me link (digits only) ──
 // Strips +, spaces and dashes. Singapore default: a bare 8-digit local mobile
@@ -5147,45 +5095,6 @@ function _waNormalizeSG(phone) {
 }
 
 // ── Admin triggers a spot-check (manually or via auto-reminder) ──
-function triggerSpotCheck(attendanceId, empId, empName, empEmail, site, triggeredBy) {
-  if (!fbOk || !db) { toast('Firestore not available', 't-err'); return; }
-  triggeredBy = triggeredBy || 'admin';
-  createSpotCheckRequest(attendanceId, empId, empName, empEmail, site, triggeredBy, function(token) {
-    if (!token) { toast('❌ Could not create spot-check request', 't-err'); return; }
-    var localRec = allRecs.find(function(r){ return r.id === attendanceId; });
-    if (localRec && localRec.checkinTimestamp) {
-      var hm = Math.floor((Date.now() - localRec.checkinTimestamp) / 3600000);
-      localRec.lastReminderHour = hm;
-      db.collection('attendance').doc(attendanceId)
-        .update({ lastReminderHour: hm })
-        .catch(function(e){ console.warn('[SpotCheck] lastReminderHour update failed:', e); });
-    }
-    checkWorkHourMonitors();
-    var link    = window.location.origin + window.location.pathname + '?spotcheck=' + token;
-    var subject = '⚠️ Location Verification Required — Please Respond Within 30 Minutes';
-    var body    = 'Dear ' + empName + ',\n\n'
-      + 'Your attendance is being verified for today\'s shift at ' + site + '.\n\n'
-      + 'Please tap the link below to confirm your location:\n\n'
-      + link + '\n\n'
-      + 'You have 30 minutes to respond. After that, the link expires and\n'
-      + 'your attendance may be flagged for admin review.\n\n'
-      + 'If you believe this is an error, please contact your admin.\n\n'
-      + '— Attendance System';
-    // ── Deliver via WhatsApp (Option A) using the phone from onboarding ──
-    // Look the engineer up in the onboarding cache by ID; fall back to email
-    // if no phone is on file so the spot-check can still be sent.
-    var onbRec   = (typeof _onbRecords !== "undefined" ? _onbRecords : [])
-      .find(function(r){ return (r.engId || r._id) === empId; }) || {};
-    var waPhone  = _waNormalizeSG(onbRec.phone);
-    if (waPhone) {
-      window.open('https://wa.me/' + waPhone + '?text=' + encodeURIComponent(body), '_blank');
-      toast('📲 WhatsApp spot-check ready — tap send', 't-ok');
-    } else {
-      showEmailFallback(empEmail, subject, body);
-      toast('📧 No phone on file — email spot-check ready instead', 't-ok');
-    }
-  });
-}
 
 // ── Check-in ───────────────────────────────────────
 function doCheckin() {
@@ -5535,7 +5444,6 @@ function initDash() {
         _diagAttendance("Attendance read FAILED → " + (err.code || "error") + ": " + err.message
           + "  (Most common cause: Firestore Security Rules are denying this account's read.)");
       });
-    initSpotCheckListener();
     initSpotCheckSessionListener();
     // Pre-load leave pending count for badge
     db.collection("leaveApplications").where("status","==","pending")
@@ -5614,41 +5522,6 @@ function initSpotCheckSessionListener() {
     }, function(e){ console.warn('[SpotCheckSession] sessions listener error:', e); });
 }
 
-function initSpotCheckListener() {
-  if (!fbOk || !db) return;
-  if (scUnsubscribe) scUnsubscribe();
-  var todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  scUnsubscribe = db.collection('spotCheckRequests')
-    .where('triggeredAt', '>=', todayStart.getTime())
-    .onSnapshot(function(snap) {
-      var newCache = {};
-      snap.docs.forEach(function(d) {
-        var data = d.data();
-        var aid  = data.attendanceId;
-        if (!aid) return;
-        if (!newCache[aid]) newCache[aid] = [];
-        newCache[aid].push(data);
-        // Write result summary to attendance doc the first time a terminal state is observed.
-        // Runs under admin auth — no unauthenticated write rule needed.
-        if (['verified','failed','expired'].indexOf(data.status) !== -1
-            && data.token && !_scResultsWritten[data.token]) {
-          _scResultsWritten[data.token] = true;
-          db.collection('attendance').doc(aid).update({
-            spotCheckResults: firebase.firestore.FieldValue.arrayUnion({
-              token:        data.token,
-              triggeredBy:  data.triggeredBy || 'admin',
-              status:       data.status,
-              responseAt:   data.responseAt   || null,
-              responseDist: data.responseDist || null
-            })
-          }).catch(function(e){ console.warn('[SpotCheck] attendance update failed:', e); });
-        }
-      });
-      spotCheckCache = newCache;
-      renderTable();
-      renderSpotCheckLog();
-    }, function(e) { console.warn('[SpotCheck] listener error:', e); });
-}
 
 setInterval(function() {
   if (document.getElementById('dTab-live') && document.getElementById('dTab-live').style.display !== 'none') {
@@ -5914,48 +5787,6 @@ function renderSpotCheckByLocation() {
     + '</div>';
 }
 
-function renderSpotCheckLog() {
-  var wrap = document.getElementById('spotCheckLogWrap');
-  if (!wrap) return;
-  var all = [];
-  Object.keys(spotCheckCache).forEach(function(aid) {
-    (spotCheckCache[aid] || []).forEach(function(req) { all.push(req); });
-  });
-  if (!all.length) { wrap.innerHTML = ''; return; }
-  all.sort(function(a,b){ return b.triggeredAt - a.triggeredAt; });
-  var rows = all.map(function(req) {
-    var sentTime = new Date(req.triggeredAt).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'});
-    var respTime = req.responseAt
-      ? new Date(req.responseAt).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'})
-      : '—';
-    var statusHtml = {
-      pending:  '<span style="color:#d97706;font-weight:600">⏳ Pending</span>',
-      verified: '<span style="color:#15803d;font-weight:600">✅ Verified</span>',
-      failed:   '<span style="color:#b91c1c;font-weight:600">❌ Wrong Location</span>',
-      expired:  '<span style="color:#d97706;font-weight:600">⚠️ No Response</span>'
-    }[req.status] || _esc(req.status);
-    var distHtml = req.responseDist != null ? Number(req.responseDist).toFixed(1) + 'm' : '—';
-    var byHtml   = req.triggeredBy === 'auto'
-      ? '<span class="bdg" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:.7rem">Auto</span>'
-      : '<span class="bdg" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;font-size:.7rem">Admin</span>';
-    return '<tr>'
-      + '<td>' + _esc(req.empName||'—') + ' <span style="font-size:.72rem;color:var(--ink3)">(' + _esc(req.empId||'') + ')</span></td>'
-      + '<td style="font-size:.78rem">' + _esc(req.site||'—') + '</td>'
-      + '<td>' + byHtml + '</td>'
-      + '<td style="font-family:var(--mono);font-size:.75rem">' + sentTime + '</td>'
-      + '<td>' + statusHtml + '</td>'
-      + '<td style="font-size:.75rem;color:var(--ink3)">' + respTime + '</td>'
-      + '<td style="font-size:.75rem">' + distHtml + '</td>'
-      + '</tr>';
-  }).join('');
-  wrap.innerHTML = '<div class="tbl-wrap" style="margin-bottom:0">'
-    + '<div class="tbl-hdr"><span class="tbl-hdr-t">📍 Spot Check Log — Today</span>'
-    + '<span class="tbl-count">' + all.length + ' request' + (all.length!==1?'s':'') + '</span></div>'
-    + '<div style="overflow-x:auto"><table class="sc-log-table"><thead><tr>'
-    + '<th>Engineer</th><th>Site</th><th>Triggered By</th>'
-    + '<th>Sent At</th><th>Status</th><th>Response Time</th><th>Distance</th>'
-    + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
-}
 
 // ── v6.46: find this engineer's location-session response (live), by Engineer ID ──
 // Prefers the session for the engineer's own site, then any session. Returns the
@@ -5989,11 +5820,7 @@ function _openSessionFor(r) {
 }
 
 function _buildSpotCheckCell(r) {
-  var aid      = r.id;
-  var requests = spotCheckCache[aid] || [];
-  var badge    = getSpotCheckBadge(requests);
-
-  // v6.46: location spot-check (shared-link) result for this engineer, live from spotSessionCache
+  // v6.48: location spot-check is the only system — show the session status only.
   var sess = _sessionResponseFor(r);
   var sessBadge = '';
   if (sess) {
@@ -6004,8 +5831,6 @@ function _buildSpotCheckCell(r) {
       sessBadge = '<span style="color:#b91c1c;font-size:.78rem;font-weight:600">❌ Wrong Location</span>';
     }
   }
-
-  // v6.47: pending / no-response for a checked-in engineer who hasn't responded yet
   if (!sessBadge && r.status === 'in') {
     var openSess = _openSessionFor(r);
     if (openSess) {
@@ -6016,23 +5841,7 @@ function _buildSpotCheckCell(r) {
       }
     }
   }
-
-  if (r.status === 'in' && aid) {
-    var empNameEsc  = _esc(r.empName||'').replace(/'/g, "\\'");
-    var empEmailEsc = _esc(r.empEmail||'').replace(/'/g, "\\'");
-    var siteEsc     = _esc(r.site||'').replace(/'/g, "\\'");
-    var aidEsc      = _esc(aid||'').replace(/'/g, "\\'");
-    var empIdEsc    = _esc(r.empId||'').replace(/'/g, "\\'");
-    var btn = '<button type="button" class="tb-btn" style="font-size:.72rem;padding:4px 9px;margin-right:4px" '
-            + 'onclick="triggerSpotCheck(\''+ aidEsc +'\',\''+ empIdEsc +'\',\''
-            + empNameEsc +'\',\''+ empEmailEsc +'\',\''+ siteEsc +'\',\'admin\')">'
-            + '📍 Spot Check</button>';
-    var legacy = requests.length ? badge : '';
-    return btn + legacy + (sessBadge ? (legacy ? ' ' : '') + sessBadge : '');
-  }
-  if (requests.length) return badge + (sessBadge ? ' ' + sessBadge : '');
-  if (sessBadge) return sessBadge;
-  return '<span style="color:var(--ink3);font-size:.75rem">—</span>';
+  return sessBadge || '<span style="color:var(--ink3);font-size:.75rem">—</span>';
 }
 
 function renderTable() {
@@ -6205,7 +6014,6 @@ function dTab(id, el) {
     if (!leaveRecs.length && db) { loadLeaves(); }
     renderCalendar();
   }
-  if (id === 'device') renderSpotCheckLog();
 }
 
 // ── Team tab sub-navigation ────────────────────────────────────────────
