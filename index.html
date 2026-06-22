@@ -1442,9 +1442,13 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <div id="sc-gps-status"></div>
       </div>
       <div id="sc-id-wrap" style="display:none;margin-top:14px">
-        <input id="sc-emp-id" type="text" inputmode="text" autocomplete="off"
-               placeholder="Enter your Engineer ID"
-               style="width:100%;padding:12px 14px;border:1px solid #cbd5e1;border-radius:10px;font-size:1rem;text-align:center" />
+        <div style="display:flex;align-items:stretch;max-width:280px;margin:0 auto">
+          <span style="display:flex;align-items:center;padding:12px 14px;background:#eef2ff;border:1px solid #cbd5e1;border-right:none;border-radius:10px 0 0 10px;font-size:1rem;font-weight:700;color:#3730a3">Eng</span>
+          <input id="sc-emp-id" type="text" inputmode="numeric" autocomplete="off"
+                 placeholder="123"
+                 style="flex:1;min-width:0;padding:12px 14px;border:1px solid #cbd5e1;border-radius:0 10px 10px 0;font-size:1rem;text-align:center" />
+        </div>
+        <div style="margin-top:6px;font-size:.78rem;color:#6b7280;text-align:center">Enter your Engineer ID number — we add &quot;Eng&quot; automatically.</div>
         <button type="button" class="gps-btn" style="margin-top:10px" onclick="scSessionContinue()">
           <span>➡️</span><span>Continue</span>
         </button>
@@ -4843,7 +4847,7 @@ function _showScIdEntry(data) {
   document.getElementById('sc-big-icon').textContent = '📍';
   document.getElementById('sc-card-title').textContent = '📍 Location Spot-Check';
   document.getElementById('sc-card-sub').textContent   =
-    'Site: ' + data.site + '. Enter your Engineer ID, then confirm your location.';
+    'Site: ' + data.site + '. Enter your Engineer ID number, then confirm your location.';
   var gw = document.getElementById('sc-gps-wrap'); if (gw) gw.style.display = 'none';
   var rw = document.getElementById('sc-result');   if (rw) rw.innerHTML = '';
   var idw = document.getElementById('sc-id-wrap');  if (idw) idw.style.display = 'block';
@@ -5601,6 +5605,7 @@ function initSpotCheckSessionListener() {
                 if (spotSessionCache[site].token === token) spotSessionCache[site].responses = bucket;
               });
               renderSpotCheckByLocation();
+              renderTable();   // v6.46: refresh the Attendance Records spot-check column live
             }, function(e){ console.warn('[SpotCheckSession] responses listener error:', e); });
         }
       });
@@ -5713,69 +5718,32 @@ var NINE_HOUR_ALERT     = 9;    // "call the engineer" threshold
 
 function checkWorkHourMonitors() {
   var wrap  = document.getElementById('spotCheckRemindersWrap');
+  if (wrap) wrap.innerHTML = '';   // v6.46: hourly spot-check reminder removed
   var now   = Date.now();
   var today = new Date().toLocaleDateString('en-SG');
   var nineList  = [];
-  var hourlyDue = [];
 
   (allRecs || []).forEach(function(r) {
     if (r.status !== 'in' || !r.checkinTimestamp) return;   // v6.41: consider ALL open sessions, not just today's
     var elapsedH = (now - r.checkinTimestamp) / MS_HOUR;
-    var hourMark = Math.floor(elapsedH);
 
     // 1) 12h auto force-checkout — applies to ANY still-open session, including
     //    stale ones left open from previous days (overnight / forgotten checkouts).
     //    Each is closed at its own check-in + 12h, so prior-day sessions are swept too.
     if (elapsedH >= AUTO_CHECKOUT_HOURS) { _autoCheckout12h(r); return; }
 
-    // The live alerts/reminders below only make sense for shifts still running today.
+    // The live alerts below only make sense for shifts still running today.
     if (r.checkinDate !== today) return;
 
     // 2) 9h "call the engineer" alert
     if (elapsedH >= NINE_HOUR_ALERT) { nineList.push(r); }
-
-    // 3) strict hourly spot-check reminder
-    if (hourMark >= 1 && hourMark > (r.lastReminderHour || 0)) { hourlyDue.push(r); }
   });
 
-  _renderHourlyReminders(wrap, hourlyDue, now);
   _renderNineHourAlert(nineList, now);
 }
 
-// Strict hourly spot-check reminder banners.
-function _renderHourlyReminders(wrap, due, now) {
-  if (!wrap) return;
-  if (!due.length) { wrap.innerHTML = ''; return; }
-  wrap.innerHTML = due.map(function(r) {
-    var elapsed = Math.floor((now - r.checkinTimestamp) / 3600000);
-    var mins    = Math.floor(((now - r.checkinTimestamp) % 3600000) / 60000);
-    var empNameEsc  = _esc(r.empName||'').replace(/'/g, "\\'");
-    var empEmailEsc = _esc(r.empEmail||'').replace(/'/g, "\\'");
-    var siteEsc     = _esc(r.site||'').replace(/'/g, "\\'");
-    var idEsc       = _esc(r.id||'').replace(/'/g, "\\'");
-    var empIdEsc    = _esc(r.empId||'').replace(/'/g, "\\'");
-    return '<div class="sc-banner">'
-      + '<div class="sc-banner-msg">⏰ <strong>' + _esc(r.empName||r.empId) + '</strong> has been on-site '
-      + elapsed + 'h ' + mins + 'm — hourly spot-check reminder.</div>'
-      + '<button type="button" class="tb-btn tb-pri" style="font-size:.8rem;white-space:nowrap" '
-      + 'onclick="triggerSpotCheck(\'' + idEsc + '\',\'' + empIdEsc + '\',\''
-      + empNameEsc + '\',\'' + empEmailEsc + '\',\'' + siteEsc + '\',\'auto\')">'
-      + '📍 Send Spot-Check</button>'
-      + '<button type="button" class="tb-btn" style="font-size:.8rem;white-space:nowrap" '
-      + 'onclick="snoozeHourlyReminder(\'' + idEsc + '\')">Dismiss</button>'
-      + '</div>';
-  }).join('');
-}
 
-// Mark the current hour as handled so the banner clears until the next whole hour.
-function snoozeHourlyReminder(docId) {
-  var r = (allRecs || []).find(function(x){ return x.id === docId; });
-  if (!r || !r.checkinTimestamp) return;
-  var hm = Math.floor((Date.now() - r.checkinTimestamp) / 3600000);
-  r.lastReminderHour = hm;
-  if (fbOk && db) db.collection('attendance').doc(docId).update({ lastReminderHour: hm }).catch(function(){});
-  checkWorkHourMonitors();
-}
+
 
 // 9h alert — Task 3 implementation.
 var _nineHrList = [];
@@ -5987,10 +5955,47 @@ function renderSpotCheckLog() {
     + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 
+// ── v6.46: find this engineer's location-session response (live), by Engineer ID ──
+// Prefers the session for the engineer's own site, then any session. Returns the
+// response doc { status, responseAt, ... } or null. Display-only — never written back.
+function _sessionResponseFor(r) {
+  if (typeof spotSessionCache === 'undefined' || !spotSessionCache) return null;
+  var want = _normEngId(r.empId || '').toLowerCase();
+  if (!want) return null;
+  var order = [];
+  if (r.site && spotSessionCache[r.site]) order.push(spotSessionCache[r.site]);
+  Object.keys(spotSessionCache).forEach(function(s){
+    if (s !== r.site) order.push(spotSessionCache[s]);
+  });
+  for (var i = 0; i < order.length; i++) {
+    var resps = order[i] && order[i].responses;
+    if (!resps) continue;
+    var hit = null;
+    Object.keys(resps).forEach(function(eid){
+      if (!hit && eid.toLowerCase() === want) hit = resps[eid];
+    });
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function _buildSpotCheckCell(r) {
   var aid      = r.id;
   var requests = spotCheckCache[aid] || [];
   var badge    = getSpotCheckBadge(requests);
+
+  // v6.46: location spot-check (shared-link) result for this engineer, live from spotSessionCache
+  var sess = _sessionResponseFor(r);
+  var sessBadge = '';
+  if (sess) {
+    if (sess.status === 'verified') {
+      var st = sess.responseAt ? new Date(sess.responseAt).toLocaleTimeString('en-SG',{hour:'2-digit',minute:'2-digit'}) : '';
+      sessBadge = '<span style="color:#15803d;font-size:.78rem;font-weight:600">✅ Verified ' + st + '</span>';
+    } else if (sess.status === 'failed') {
+      sessBadge = '<span style="color:#b91c1c;font-size:.78rem;font-weight:600">❌ Wrong Location</span>';
+    }
+  }
+
   if (r.status === 'in' && aid) {
     var empNameEsc  = _esc(r.empName||'').replace(/'/g, "\\'");
     var empEmailEsc = _esc(r.empEmail||'').replace(/'/g, "\\'");
@@ -6001,9 +6006,12 @@ function _buildSpotCheckCell(r) {
             + 'onclick="triggerSpotCheck(\''+ aidEsc +'\',\''+ empIdEsc +'\',\''
             + empNameEsc +'\',\''+ empEmailEsc +'\',\''+ siteEsc +'\',\'admin\')">'
             + '📍 Spot Check</button>';
-    return btn + (requests.length ? badge : '');
+    var legacy = requests.length ? badge : '';
+    return btn + legacy + (sessBadge ? (legacy ? ' ' : '') + sessBadge : '');
   }
-  return requests.length ? badge : '<span style="color:var(--ink3);font-size:.75rem">—</span>';
+  if (requests.length) return badge + (sessBadge ? ' ' + sessBadge : '');
+  if (sessBadge) return sessBadge;
+  return '<span style="color:var(--ink3);font-size:.75rem">—</span>';
 }
 
 function renderTable() {
