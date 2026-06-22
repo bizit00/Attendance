@@ -140,6 +140,9 @@ input,select{font-family:var(--body);outline:none}
 .live-dot{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;color:var(--green)}
 .live-dot::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.5s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}}
+/* v6.49: detect browser autofill (which often fires no input event) so validation can re-run */
+@keyframes onAutoFillStart{from{}to{}}
+input:-webkit-autofill,input:autofill{animation-name:onAutoFillStart;animation-duration:.01s}
 
 /* ── SHARED CARD ── */
 .card{background:var(--card);border-radius:var(--r2);box-shadow:var(--sh);padding:22px 20px;margin-bottom:16px;border:1px solid var(--border)}
@@ -315,6 +318,24 @@ tr:hover td{background:#fafdf8}
 .map-lnk{color:var(--blue);font-size:.78rem;font-weight:600;display:inline-flex;align-items:center;gap:3px}
 .map-lnk:hover{color:var(--green)}
 .dur{font-family:var(--mono);font-size:.78rem;background:#f3f4f6;padding:2px 8px;border-radius:6px;color:var(--ink2)}
+/* ── v6.50: Attendance Records redesign (Live Status table) — scoped to .at-table ── */
+.at-scroll{overflow:auto;max-height:70vh}
+.at-table{width:100%;border-collapse:separate;border-spacing:0}
+.at-table th{padding:12px 16px}
+.at-table td{padding:14px 16px;line-height:1.45}
+/* row backgrounds set on <tr> so the sticky first cell can inherit them */
+.at-table tbody tr{background:#fff}
+.at-table tbody tr:nth-child(even){background:#faf9f7}
+.at-table tbody tr:hover{background:#eff6ff}
+/* sticky header (within the .at-scroll box) */
+.at-scroll .at-table thead th{position:sticky;top:0;z-index:2}
+.at-table thead th{background:#fafaf8;box-shadow:inset 0 -1px 0 var(--border)}
+/* sticky Engineer (first) column; inherit the row bg so it stays opaque + matches zebra/hover/suspicious */
+.at-table th:first-child,.at-table td:first-child{position:sticky;left:0;z-index:1;background-color:inherit;box-shadow:2px 0 5px -3px rgba(0,0,0,.15)}
+.at-scroll .at-table thead th:first-child{z-index:3;background:#fafaf8}
+/* keep ALL columns on small screens (override the global column-hiding, for this table only) */
+@media(max-width:768px){.at-table th:nth-child(n+8),.at-table td:nth-child(n+8){display:table-cell}}
+@media(max-width:500px){.at-table th:nth-child(n+6),.at-table td:nth-child(n+6){display:table-cell}}
 
 /* Activity feed */
 .feed-item{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border)}
@@ -1199,7 +1220,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <div id="engIdAvailHint" style="display:none;margin-top:4px;padding:6px 10px;border-radius:8px;font-size:.78rem;font-weight:600;border:1.5px solid"></div>
         </div>
         <div class="field"><label>Email Address <span style="color:var(--red);font-size:.75rem">REQUIRED</span></label>
-          <input type="email" id="empEmail" placeholder="your.email@company.com" oninput="chkBtn()" autocomplete="email"/>
+          <input type="email" id="empEmail" placeholder="your.email@company.com" oninput="chkBtn()" onchange="chkBtn()" onblur="chkBtn()" autocomplete="email"/>
           <div id="emailBindStatus" style="margin-top:6px"></div>
           <button class="otp-verify-btn" id="otpVerifyBtn" style="display:none" onclick="sendOtp()">📧 Verify Email</button>
           <div class="otp-resend-timer" id="otpResendTimer" style="display:none"></div>
@@ -1523,8 +1544,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <span class="tbl-hdr-t">Attendance Records</span>
           <span class="tbl-count" id="tblCount">0 records</span>
         </div>
-        <div style="overflow-x:auto">
-          <table>
+        <div class="at-scroll">
+          <table class="at-table">
             <thead><tr>
               <th>Engineer</th><th>Site</th><th>Status</th>
               <th>Check-In</th><th>Check-Out</th><th>Duration</th>
@@ -4323,6 +4344,18 @@ function _esc(str) {
 
 // ── Init engineer screen ───────────────────────────
 function initEmp() {
+  // v6.49: browser autofill (saved email) often does NOT fire the 'input' event, so a stale
+  // "✗ Invalid email format" pill + disabled Check-In button would persist after the engineer
+  // taps a remembered email. Re-run validation the instant the field is autofilled — detected
+  // via the :-webkit-autofill / :autofill CSS animation — and on change/blur (set on the input).
+  var _ee = document.getElementById("empEmail");
+  if (_ee && !_ee._autofillWired) {
+    _ee._autofillWired = true;
+    _ee.addEventListener("animationstart", function(e){
+      if (e.animationName === "onAutoFillStart") chkBtn();
+    });
+  }
+
   // Reset OTP state each time the engineer screen opens
   otpVerified = false;
   _otpVerifiedCache = false;
