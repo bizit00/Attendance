@@ -5610,6 +5610,7 @@ function initSpotCheckSessionListener() {
         }
       });
       renderSpotCheckByLocation();
+      renderTable();   // v6.47: show ⏳ Pending the moment a site session is created
     }, function(e){ console.warn('[SpotCheckSession] sessions listener error:', e); });
 }
 
@@ -5652,6 +5653,7 @@ function initSpotCheckListener() {
 setInterval(function() {
   if (document.getElementById('dTab-live') && document.getElementById('dTab-live').style.display !== 'none') {
     checkWorkHourMonitors();
+    renderTable();   // v6.47: flip ⏳ Pending → ⌛ No response when a session expires (time-driven, no Firestore event)
   }
 }, 120000);
 
@@ -5979,6 +5981,13 @@ function _sessionResponseFor(r) {
   return null;
 }
 
+// v6.47: latest location-session for this engineer's site (today), or null.
+function _openSessionFor(r) {
+  if (typeof spotSessionCache === 'undefined' || !spotSessionCache) return null;
+  if (!r.site) return null;
+  return spotSessionCache[r.site] || null;
+}
+
 function _buildSpotCheckCell(r) {
   var aid      = r.id;
   var requests = spotCheckCache[aid] || [];
@@ -5993,6 +6002,18 @@ function _buildSpotCheckCell(r) {
       sessBadge = '<span style="color:#15803d;font-size:.78rem;font-weight:600">✅ Verified ' + st + '</span>';
     } else if (sess.status === 'failed') {
       sessBadge = '<span style="color:#b91c1c;font-size:.78rem;font-weight:600">❌ Wrong Location</span>';
+    }
+  }
+
+  // v6.47: pending / no-response for a checked-in engineer who hasn't responded yet
+  if (!sessBadge && r.status === 'in') {
+    var openSess = _openSessionFor(r);
+    if (openSess) {
+      if (openSess.expiresAt > Date.now()) {
+        sessBadge = '<span style="color:#b45309;font-size:.78rem;font-weight:600">⏳ Pending</span>';
+      } else {
+        sessBadge = '<span style="color:#6b7280;font-size:.78rem;font-weight:600">⌛ No response</span>';
+      }
     }
   }
 
