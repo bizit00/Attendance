@@ -1441,6 +1441,15 @@ tr.on-leave-row td{background:#f0f9ff!important}
         </button>
         <div id="sc-gps-status"></div>
       </div>
+      <div id="sc-id-wrap" style="display:none;margin-top:14px">
+        <input id="sc-emp-id" type="text" inputmode="text" autocomplete="off"
+               placeholder="Enter your Engineer ID"
+               style="width:100%;padding:12px 14px;border:1px solid #cbd5e1;border-radius:10px;font-size:1rem;text-align:center" />
+        <button type="button" class="gps-btn" style="margin-top:10px" onclick="scSessionContinue()">
+          <span>➡️</span><span>Continue</span>
+        </button>
+        <div id="sc-id-status" style="margin-top:8px;font-size:.82rem;color:#b91c1c"></div>
+      </div>
       <div id="sc-result" style="margin-top:16px;font-size:.9rem;line-height:1.6"></div>
     </div>
   </div>
@@ -1491,6 +1500,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <!-- LIVE TAB -->
     <div id="dTab-live">
       <div id="spotCheckRemindersWrap" style="margin-bottom:4px"></div>
+      <div id="scByLocationWrap" style="margin-bottom:8px"></div>
       <div id="nineHrIndicatorWrap" style="margin-bottom:4px"></div>
       <div class="toolbar">
         <input type="text" id="fSearch" placeholder="Search name / ID…" oninput="renderTable()"/>
@@ -2484,6 +2494,23 @@ service cloud.firestore {
                     && resource.data.expiresAt > request.time.toMillis()
                     && resource.data.status == 'pending'
                     && request.resource.data.status in ['verified', 'failed', 'expired'];
+    }
+
+    // ── 6b. Spot-check SESSIONS (v6.45 — one shared link per site) ──
+    match /spotCheckSessions/{token} {
+      allow read:   if true;                  // engineer opens the shared link
+      allow create: if request.auth != null;  // only admin creates a session
+      allow update: if request.auth != null;  // admin may close/expire it
+
+      match /responses/{empId} {
+        allow read: if true;
+        allow create: if !exists(/databases/$(database)/documents/spotCheckSessions/$(token)/responses/$(empId))
+                      && get(/databases/$(database)/documents/spotCheckSessions/$(token)).data.status == 'open'
+                      && get(/databases/$(database)/documents/spotCheckSessions/$(token)).data.expiresAt > request.time.toMillis()
+                      && request.resource.data.keys().hasOnly(['empId','responseAt','responseLat','responseLng','responseDist','responseAcc','status'])
+                      && request.resource.data.status in ['verified','failed'];
+        allow update, delete: if false;
+      }
     }
 
     // ── 7. Manpower history snapshots (v6.19) ────────
@@ -4668,6 +4695,7 @@ function _reportBuddyPunchAlert(empId, empName, myDevId, conflictRec) {
 var spotCheckCache      = {};  // attendanceId -> array of request docs for today
 var scCurrentToken      = null; // token being verified on the spot-check screen
 var scCurrentData       = null; // loaded spotCheckRequests doc
+var scSessionMode       = null; // v6.45: when set, engineer screen is in shared-session mode
 var scTimerInterval     = null; // countdown interval handle
 var scUnsubscribe       = null; // Firestore listener unsub for spotCheckRequests
 var _scResultsWritten   = {};  // token -> true; prevents duplicate attendance writes
@@ -4679,6 +4707,64 @@ function generateSpotCheckToken() {
   return Array.from(arr, function(b) {
     return b.toString(16).padStart(2, '0');
   }).join('');
+}
+
+// ── v6.45: Engineer-ID normalizer for matching typed IDs to the roster ──
+// Bare digits become "Eng<digits>"; otherwise trimmed as-is. Comparison is
+// done case-insensitively by callers.
+function _normEngId(s) {
+  var t = String(s == null ? "" : s).trim();
+  if (/^\d+$/.test(t)) t = "Eng" + t;
+  return t;
+}
+
+// ── v6.45: Admin creates ONE shared spot-check session for a whole site ──
+function createSpotCheckSession(site, windowMin, callback) {
+  if (!fbOk || !db) { toast('Firestore not available', 't-err'); if (callback) callback(null); return; }
+  var win   = ([15,30,60].indexOf(windowMin) >= 0) ? windowMin : 30;
+  var token = generateSpotCheckToken();
+  var now   = Date.now();
+  var sd    = WORK_SITES.find(function(s){ return s.name === site; }) || {};
+  var doc = {
+    token:       token,
+    site:        site,
+    siteLat:     sd.lat || 0,
+    siteLng:     sd.lng || 0,
+    siteRadius:  GEOFENCE_M,
+    windowMin:   win,
+    triggeredBy: 'admin',
+    triggeredAt: now,
+    expiresAt:   now + win * 60 * 1000,
+    status:      'open'
+  };
+  db.collection('spotCheckSessions').doc(token).set(doc)
+    .then(function()  { if (callback) callback(token); })
+    .catch(function(e){ console.error('[SpotCheckSession] write failed:', e); toast('❌ Could not create session', 't-err'); if (callback) callback(null); });
+}
+
+// ── v6.45: admin clicks "Copy link" for a site → create session + copy URL ──
+// 2nd arg is the row INDEX into window._scLocSites (set by renderSpotCheckByLocation),
+// so site names with special characters never enter HTML ids/onclick.
+function scGenerateSiteLink(btn, i) {
+  var site = (window._scLocSites || [])[i];
+  if (!site) { toast('Site not found — refresh and try again', 't-err'); return; }
+  var sel = document.getElementById('scWin-' + i);
+  var win = sel ? parseInt(sel.value, 10) : 30;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating…'; }
+  createSpotCheckSession(site, win, function(token){
+    if (btn) { btn.disabled = false; }
+    if (!token) { if (btn) btn.textContent = '📋 Copy link'; return; }
+    var link = window.location.origin + window.location.pathname + '?spotcheck=' + token;
+    function done(okMsg){ if (btn) btn.textContent = '✅ Copied'; toast(okMsg, 't-ok'); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link)
+        .then(function(){ done('Link for ' + site + ' copied — paste into the group'); })
+        .catch(function(){ window.prompt('Copy this spot-check link for ' + site + ':', link); if (btn) btn.textContent = '📋 Copy link'; });
+    } else {
+      window.prompt('Copy this spot-check link for ' + site + ':', link);
+      if (btn) btn.textContent = '📋 Copy link';
+    }
+  });
 }
 
 // ── Create a spot-check request document in Firestore ──
@@ -4725,7 +4811,73 @@ function _waitForDbThenLoadSpotCheck(token, attempts) {
   setTimeout(function() { _waitForDbThenLoadSpotCheck(token, attempts + 1); }, 500);
 }
 
+// ── v6.45: route a token to a SESSION (shared link) or a per-engineer REQUEST ──
 function _loadSpotCheckToken(token) {
+  db.collection('spotCheckSessions').doc(token).get()
+    .then(function(snap){
+      if (snap.exists) { _loadSpotCheckSession(token, snap.data()); return; }
+      _loadSpotCheckRequest(token);   // legacy per-engineer link
+    })
+    .catch(function(e){ console.error('[SpotCheck] session lookup failed:', e); _loadSpotCheckRequest(token); });
+}
+
+// ── v6.45: shared session link — validate, then ask for the Engineer ID ──
+function _loadSpotCheckSession(token, data) {
+  var now = Date.now();
+  if (data.status !== 'open') {
+    _showScScreen('error', '⚠️ Spot-Check Closed', 'This location spot-check is no longer open. Contact your admin.');
+    return;
+  }
+  if (now >= data.expiresAt) {
+    _showScScreen('error', '⏱ Spot-Check Expired', 'This location spot-check has expired. Contact your admin for a new link.');
+    return;
+  }
+  // Stash everything the GPS step needs; empId filled in after ID entry.
+  scSessionMode = { token: token, empId: null, site: data.site, siteLat: data.siteLat, siteLng: data.siteLng, siteRadius: data.siteRadius };
+  scCurrentData = { site: data.site, siteLat: data.siteLat, siteLng: data.siteLng, siteRadius: data.siteRadius, expiresAt: data.expiresAt, empName: '' };
+  _showScIdEntry(data);
+}
+
+// ── v6.45: render the Engineer-ID entry step for a shared session ──
+function _showScIdEntry(data) {
+  document.getElementById('sc-big-icon').textContent = '📍';
+  document.getElementById('sc-card-title').textContent = '📍 Location Spot-Check';
+  document.getElementById('sc-card-sub').textContent   =
+    'Site: ' + data.site + '. Enter your Engineer ID, then confirm your location.';
+  var gw = document.getElementById('sc-gps-wrap'); if (gw) gw.style.display = 'none';
+  var rw = document.getElementById('sc-result');   if (rw) rw.innerHTML = '';
+  var idw = document.getElementById('sc-id-wrap');  if (idw) idw.style.display = 'block';
+  var st  = document.getElementById('sc-id-status'); if (st) st.textContent = '';
+}
+
+// ── v6.45: validate the typed ID, block duplicates, reveal GPS step ──
+function scSessionContinue() {
+  var input = document.getElementById('sc-emp-id');
+  var st    = document.getElementById('sc-id-status');
+  var empId = _normEngId(input ? input.value : '');
+  if (!empId) { if (st) st.textContent = 'Please enter your Engineer ID.'; return; }
+  if (!scSessionMode) { if (st) st.textContent = 'Session error — reopen the link.'; return; }
+  if (st) st.textContent = 'Checking…';
+  db.collection('spotCheckSessions').doc(scSessionMode.token)
+    .collection('responses').doc(empId).get()
+    .then(function(snap){
+      if (snap.exists) {
+        _showScScreen('done-ok', '✅ Already Confirmed', 'You have already responded to this spot-check. Thank you!');
+        return;
+      }
+      scSessionMode.empId = empId;
+      scCurrentData.empName = empId;
+      // Hide ID step, show GPS step, start the countdown to the session expiry.
+      document.getElementById('sc-id-wrap').style.display = 'none';
+      document.getElementById('sc-card-sub').textContent  = 'Hi ' + empId + ', please confirm you are at ' + scSessionMode.site + ' right now.';
+      document.getElementById('sc-gps-wrap').style.display = 'block';
+      var remaining = Math.max(1, Math.floor((scCurrentData.expiresAt - Date.now()) / 1000));
+      _startScTimer(remaining);
+    })
+    .catch(function(e){ console.error('[SpotCheck] dup check failed:', e); if (st) st.textContent = 'Network error — try again.'; });
+}
+
+function _loadSpotCheckRequest(token) {
   db.collection('spotCheckRequests').doc(token).get()
     .then(function(snap) {
       if (!snap.exists) {
@@ -4790,12 +4942,18 @@ function _startScTimer(seconds) {
   function updateTimer() {
     if (seconds <= 0) {
       clearInterval(scTimerInterval);
-      _showScScreen('error', 'Time\'s Up',
-        'The 30-minute window has passed. Your attendance has been flagged. Contact your admin.');
-      if (fbOk && db && scCurrentToken) {
-        db.collection('spotCheckRequests').doc(scCurrentToken)
-          .update({ status: 'expired' })
-          .catch(function(){});
+      if (scSessionMode) {
+        // v6.45: shared session link has no per-engineer spotCheckRequests doc to expire
+        _showScScreen('error', '⏱ Spot-Check Expired',
+          'The spot-check window has passed. Contact your admin for a new link.');
+      } else {
+        _showScScreen('error', 'Time\'s Up',
+          'The 30-minute window has passed. Your attendance has been flagged. Contact your admin.');
+        if (fbOk && db && scCurrentToken) {
+          db.collection('spotCheckRequests').doc(scCurrentToken)
+            .update({ status: 'expired' })
+            .catch(function(){});
+        }
       }
       return;
     }
@@ -4923,16 +5081,32 @@ function _finishSpotCheckGps(pos, btn, iconEl, txtEl, statusEl, samples, forceSp
   if (scTimerInterval) { clearInterval(scTimerInterval); scTimerInterval = null; }
   document.getElementById('sc-timer').style.display = 'none';
   btn.style.display = 'none';
-  if (fbOk && db && scCurrentToken) {
+  if (fbOk && db) {
     var now = Date.now();
-    db.collection('spotCheckRequests').doc(scCurrentToken).update({
-      status:      status,
-      responseAt:  now,
-      responseLat: lat,
-      responseLng: lng,
-      responseDist:dist,
-      responseAcc: acc
-    }).catch(function(e){ console.warn('[SpotCheck] result save failed:', e); });
+    if (scSessionMode && scSessionMode.empId) {
+      // v6.45: shared-session response — one immutable doc per Engineer ID
+      db.collection('spotCheckSessions').doc(scSessionMode.token)
+        .collection('responses').doc(scSessionMode.empId)
+        .set({
+          empId:        scSessionMode.empId,
+          responseAt:   now,
+          responseLat:  lat,
+          responseLng:  lng,
+          responseDist: dist,
+          responseAcc:  acc,
+          status:       status
+        })
+        .catch(function(e){ console.warn('[SpotCheckSession] response save failed:', e); });
+    } else if (scCurrentToken) {
+      db.collection('spotCheckRequests').doc(scCurrentToken).update({
+        status:      status,
+        responseAt:  now,
+        responseLat: lat,
+        responseLng: lng,
+        responseDist:dist,
+        responseAcc: acc
+      }).catch(function(e){ console.warn('[SpotCheck] result save failed:', e); });
+    }
   }
 }
 
@@ -5358,6 +5532,7 @@ function initDash() {
           + "  (Most common cause: Firestore Security Rules are denying this account's read.)");
       });
     initSpotCheckListener();
+    initSpotCheckSessionListener();
     // Pre-load leave pending count for badge
     db.collection("leaveApplications").where("status","==","pending")
       .onSnapshot(function(snap){
@@ -5396,7 +5571,42 @@ function _diagAttendance(msg) {
   try { toast("Attendance read issue — see red banner", "t-err"); } catch(_){}
 }
 
-function renderAll() { renderTable(); renderFeed(); updateStats(); updateDeviceBadge(); renderAnalytics(); checkWorkHourMonitors(); }
+function renderAll() { renderTable(); renderFeed(); updateStats(); updateDeviceBadge(); renderAnalytics(); checkWorkHourMonitors(); renderSpotCheckByLocation(); }
+
+// ── v6.45: live cache of today's location spot-check sessions + responses ──
+var spotSessionCache = {};      // site -> { token, status, expiresAt, responses }
+var _scSessUnsub      = null;   // sessions listener unsub
+var _scRespUnsubs     = {};     // token -> responses listener unsub
+
+function initSpotCheckSessionListener() {
+  if (!fbOk || !db) return;
+  if (_scSessUnsub) _scSessUnsub();
+  var todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  _scSessUnsub = db.collection('spotCheckSessions')
+    .where('triggeredAt', '>=', todayStart.getTime())
+    .onSnapshot(function(snap){
+      var seen = {};
+      snap.docs.forEach(function(d){
+        var s = d.data(); var token = d.id; seen[token] = true;
+        if (!spotSessionCache[s.site]) spotSessionCache[s.site] = { token: token, status: s.status, expiresAt: s.expiresAt, responses: {} };
+        else { spotSessionCache[s.site].token = token; spotSessionCache[s.site].status = s.status; spotSessionCache[s.site].expiresAt = s.expiresAt; }
+        // Subscribe to this session's responses once.
+        if (!_scRespUnsubs[token]) {
+          _scRespUnsubs[token] = db.collection('spotCheckSessions').doc(token).collection('responses')
+            .onSnapshot(function(rsnap){
+              var bucket = {};
+              rsnap.docs.forEach(function(rd){ bucket[rd.id] = rd.data(); });
+              // Attach to whichever site currently maps to this token.
+              Object.keys(spotSessionCache).forEach(function(site){
+                if (spotSessionCache[site].token === token) spotSessionCache[site].responses = bucket;
+              });
+              renderSpotCheckByLocation();
+            }, function(e){ console.warn('[SpotCheckSession] responses listener error:', e); });
+        }
+      });
+      renderSpotCheckByLocation();
+    }, function(e){ console.warn('[SpotCheckSession] sessions listener error:', e); });
+}
 
 function initSpotCheckListener() {
   if (!fbOk || !db) return;
@@ -5668,6 +5878,70 @@ function _autoCheckout12h(r) {
     delete _autoCheckoutInFlightIds[r.id];   // allow retry on a later tick
     console.warn("[AutoCheckout] failed for " + r.id + ":", e);
   });
+}
+
+// ── v6.45: Admin panel — one shared spot-check link per site, with live tally ──
+function renderSpotCheckByLocation() {
+  var wrap = document.getElementById('scByLocationWrap');
+  if (!wrap) return;
+  var cache = (typeof spotSessionCache !== 'undefined' && spotSessionCache) ? spotSessionCache : {};
+
+  // Roster: engineers currently checked IN, grouped by site.
+  var roster = {}; // site -> [empId,...]
+  (allRecs || []).forEach(function(r){
+    if (r.status !== 'in' || !r.site) return;
+    if (!roster[r.site]) roster[r.site] = [];
+    roster[r.site].push(_normEngId(r.empId));
+  });
+
+  var sites = Object.keys(roster).sort();
+  if (!sites.length) { wrap.innerHTML = ''; return; }
+  window._scLocSites = sites;   // v6.45: index→site lookup for the Copy-link button (avoids unsafe site names in HTML ids/onclick)
+
+  var rows = sites.map(function(site, i){
+    var onSite = roster[site];
+    var sess   = cache[site];
+    var responded = 0, failed = 0, offRoster = 0;
+    var respIds = {};
+    if (sess && sess.responses) {
+      Object.keys(sess.responses).forEach(function(eid){
+        var rec = sess.responses[eid];
+        if (!rec) return;
+        respIds[eid.toLowerCase()] = rec.status;
+        var inRoster = onSite.some(function(x){ return x.toLowerCase() === eid.toLowerCase(); });
+        if (!inRoster) { offRoster++; return; }
+        if (rec.status === 'verified') responded++; else failed++;
+      });
+    }
+    var noResp = onSite.filter(function(x){ return !respIds.hasOwnProperty(x.toLowerCase()); }).length;
+    var hasOpen = sess && sess.status === 'open' && sess.expiresAt > Date.now();
+
+    var tally = sess
+      ? ('<span style="color:#15803d">' + responded + ' ✅</span> · '
+         + '<span style="color:#b91c1c">' + failed + ' ❌</span> · '
+         + '<span style="color:#92400e">' + noResp + ' no response</span>'
+         + (offRoster ? ' · <span style="color:#92400e">' + offRoster + ' ⚠ not on roster</span>' : ''))
+      : '<span style="color:var(--ink3)">No spot-check sent yet</span>';
+
+    return '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;'
+      + 'padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:6px;background:#fff">'
+      + '<div style="flex:1;min-width:160px">'
+      +   '<div style="font-weight:700">' + _esc(site) + ' <span style="font-weight:500;color:var(--ink3)">· ' + onSite.length + ' on-site</span></div>'
+      +   '<div style="font-size:.8rem;margin-top:2px">' + tally + '</div>'
+      + '</div>'
+      + '<select id="scWin-' + i + '" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;font-size:.8rem">'
+      +   '<option value="15">15 min</option><option value="30" selected>30 min</option><option value="60">60 min</option>'
+      + '</select>'
+      + '<button type="button" class="tb-btn" style="font-size:.78rem;padding:6px 12px" onclick="scGenerateSiteLink(this,' + i + ')">'
+      +   (hasOpen ? '🔁 New link' : '📋 Copy link') + '</button>'
+      + '</div>';
+  }).join('');
+
+  wrap.innerHTML =
+    '<div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb">'
+    + '<div style="font-weight:800;margin-bottom:8px">📍 Spot-Check by Location</div>'
+    + rows
+    + '</div>';
 }
 
 function renderSpotCheckLog() {
