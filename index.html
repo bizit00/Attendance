@@ -4282,6 +4282,14 @@ function sanitizeHtml(str) {
   });
 }
 
+// v6.44: Restore the HTML-escape helper accidentally deleted in v6.42 ("Remove TDR
+// Report"). 19 call sites (e.g. _buildSpotCheckCell) still reference _esc; its loss
+// made renderTable() throw whenever a row had status "in", silently blanking both
+// the Live Status and Activity Feed tabs. Definition restored verbatim from v6.41.
+function _esc(str) {
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
 // ── Init engineer screen ───────────────────────────
 function initEmp() {
   // Reset OTP state each time the engineer screen opens
