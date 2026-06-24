@@ -1204,6 +1204,40 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="sess-row"><span class="sess-k">Duration</span><span class="sess-v" id="sb-dur">—</span></div>
     </div>
 
+    <!-- v6.51 — manual location-confirmation card (shown only when GPS fails) -->
+    <div id="manualCard" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);
+         align-items:center;justify-content:center;padding:18px">
+      <div style="background:#fff;border-radius:16px;max-width:420px;width:100%;padding:20px 20px 16px;
+           box-shadow:0 20px 50px rgba(0,0,0,.3);max-height:90vh;overflow:auto">
+        <div style="font-weight:800;font-size:1.05rem;margin-bottom:4px">✋ Confirm your check-in/out</div>
+        <div style="font-size:.84rem;color:#64748b;margin-bottom:14px">
+          GPS couldn't verify your location. Confirm the details below and an admin will verify you on site.
+        </div>
+        <div style="font-size:.9rem;line-height:1.9">
+          <div><strong>ID:</strong> <span id="mc-id"></span></div>
+          <div><strong>Name:</strong> <span id="mc-name"></span></div>
+          <div><strong>Email:</strong> <span id="mc-email"></span></div>
+          <div><strong>Site:</strong> <span id="mc-site"></span></div>
+          <div><strong>Date / Time:</strong> <span id="mc-datetime"></span></div>
+        </div>
+        <div id="mc-gps" style="margin-top:10px;font-size:.78rem;color:#92400e;background:#fff7ed;
+             border:1px solid #fed7aa;border-radius:8px;padding:8px 10px"></div>
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button type="button" onclick="closeManualCard()"
+            style="flex:1;padding:11px;border:1px solid #cbd5e1;background:#fff;border-radius:10px;font-weight:600;cursor:pointer">Cancel</button>
+          <button type="button" id="mc-confirm-btn" onclick="confirmManualEntry()"
+            style="flex:1;padding:11px;border:none;background:#16a34a;color:#fff;border-radius:10px;font-weight:700;cursor:pointer">✅ Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- v6.51 — engineer pending-confirmation banner -->
+    <div id="manualPendingBanner" style="display:none;margin:14px 0;padding:14px 16px;border-radius:12px;
+         background:#fffbeb;border:1px solid #fcd34d;color:#92400e;font-size:.9rem;line-height:1.6">
+      <div style="font-weight:700;margin-bottom:4px">⏳ Pending admin confirmation</div>
+      <div id="mpb-text"></div>
+    </div>
+
     <!-- Check-in form -->
     <div id="ciForm">
       <div class="card">
@@ -1497,6 +1531,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <button class="nav-menu-item" data-tab="calendar" onclick="navMenuSelect('calendar')">📅 Calendar</button>
       <button class="nav-menu-item" data-tab="leave"    onclick="navMenuSelect('leave')">🏖️ Leave Mgmt</button>
       <button class="nav-menu-item" data-tab="otp"      onclick="navMenuSelect('otp')">🔑 OTP Requests</button>
+      <button class="nav-menu-item" data-tab="waitlist" onclick="navMenuSelect('waitlist')">⏳ Waiting List</button>
       <button class="nav-menu-item" data-tab="device"   onclick="navMenuSelect('device')">🖥️ Device Audit</button>
       <button class="nav-menu-item" data-tab="team"     onclick="navMenuSelect('team')">👥 Team</button>
       <button class="nav-menu-item" data-tab="setup"    onclick="navMenuSelect('setup')">⚙️ Setup Guide</button>
@@ -1517,6 +1552,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="dash-tab" onclick="dTab('calendar',this)">Calendar</div>
       <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('otp',this)" id="otpTabBtn">OTP Requests <span id="otpPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
+      <div class="dash-tab" onclick="dTab('waitlist',this)" id="waitlistTabBtn">⏳ Waiting List <span id="waitlistPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('device',this)">Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
       <div class="dash-tab" onclick="dTab('team',this)">Team</div>
       <div class="dash-tab" onclick="dTab('setup',this)">Setup Guide</div>
@@ -2005,6 +2041,15 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div style="background:#fffbeb;border-radius:var(--r);padding:14px 16px;border:1px solid #fde68a;font-size:.82rem;color:#78350f;margin-top:16px">
         <strong>⚙️ Remember:</strong> The <code style="background:#fef3c7;padding:1px 5px;border-radius:4px;font-family:var(--mono)">leaveApplications</code> Firestore rules are included in the Setup Guide → Step 7 unified rules block. If approve/reject fails, re-paste Step 7.
       </div>
+    </div>
+
+    <!-- v6.51 WAITING LIST TAB -->
+    <div id="dTab-waitlist" style="display:none">
+      <h3 style="margin:0 0 4px">⏳ Manual Confirmation Waiting List</h3>
+      <p style="margin:0 0 12px;color:var(--ink3);font-size:.86rem">
+        Engineers whose GPS could not verify. Confirm to record their attendance at the time they submitted.
+      </p>
+      <div id="waitListWrap"></div>
     </div>
 
     <!-- OTP REQUESTS TAB -->
@@ -2536,6 +2581,15 @@ service cloud.firestore {
                       && request.resource.data.status in ['verified','failed'];
         allow update, delete: if false;
       }
+    }
+
+    // ── 6c. Pending attendance — manual location confirmation (v6.51) ──
+    // Engineer submits a waiting-list entry when GPS fails; admin confirms/rejects.
+    match /pendingAttendance/{docId} {
+      allow read:   if true;                  // engineer polls own entry; admin lists all
+      allow create: if true;                  // engineer submits after a failed GPS verify
+      allow update: if request.auth != null;  // only admin confirms/rejects
+      allow delete: if false;
     }
 
     // ── 7. Manpower history snapshots (v6.19) ────────
@@ -3348,7 +3402,242 @@ function refreshGps(dir) {
   verifyGps(dir);
 }
 
+// v6.51 — pending draft frozen when the card opens (time = confirmation time, not admin time).
+var _manualDraft = null;
+
+// Fill + show the manual-confirmation card. `info` = { dir, empId, empName, empEmail, site, siteIdx, devId, linkedAttendanceId }
+function openManualCard(info) {
+  var now = new Date();
+  var fix = lastGpsFix[info.dir] || {};
+  _manualDraft = {
+    dir:               info.dir,
+    empId:             info.empId,
+    empName:           info.empName,
+    empEmail:          info.empEmail,
+    site:              info.site,
+    devId:             info.devId || null,
+    linkedAttendanceId: info.linkedAttendanceId || null,
+    reqTime:           now.toLocaleTimeString("en-SG"),
+    reqDate:           now.toLocaleDateString("en-SG"),
+    reqISO:            now.toISOString(),
+    reqTimestamp:      now.getTime(),
+    gpsLat:            fix.lat == null ? null : fix.lat,
+    gpsLng:            fix.lng == null ? null : fix.lng,
+    gpsDist:           fix.dist == null ? null : fix.dist,
+    gpsAcc:            fix.acc == null ? null : fix.acc,
+    gpsFailReason:     fix.reason || "unknown"
+  };
+  document.getElementById("mc-id").textContent       = info.empId;
+  document.getElementById("mc-name").textContent     = info.empName;
+  document.getElementById("mc-email").textContent    = info.empEmail;
+  document.getElementById("mc-site").textContent     = info.site;
+  document.getElementById("mc-datetime").textContent = _manualDraft.reqDate + " · " + _manualDraft.reqTime;
+  var gpsMsg = (info.dir === "in" ? "Check-IN" : "Check-OUT") + " · ";
+  gpsMsg += (_manualDraft.gpsDist != null)
+    ? ("GPS showed " + _manualDraft.gpsDist + "m away (±" + (_manualDraft.gpsAcc != null ? _manualDraft.gpsAcc : "?") + "m) — could not verify.")
+    : "GPS signal could not be obtained.";
+  document.getElementById("mc-gps").textContent = gpsMsg;
+  var btn = document.getElementById("mc-confirm-btn");
+  if (btn) { btn.disabled = false; btn.innerHTML = "✅ Confirm"; }
+  document.getElementById("manualCard").style.display = "flex";
+}
+
+function closeManualCard() {
+  document.getElementById("manualCard").style.display = "none";
+}
+
+// v6.51 — dedupe: at most one OPEN pending entry per engineer per direction.
+function _hasOpenPending(empId, dir, cb) {
+  if (!fbOk || !db) { cb(false); return; }
+  db.collection("pendingAttendance")
+    .where("empId", "==", empId).where("dir", "==", dir).where("status", "==", "pending")
+    .limit(1).get()
+    .then(function(snap){ cb(!snap.empty, snap.empty ? null : snap.docs[0]); })
+    .catch(function(e){ console.warn("[Manual] pending dedupe check failed:", e); cb(false); });
+}
+
+// v6.51 — entry point for the "Request manual confirmation" button.
+function requestManualConfirm(dir) {
+  if (dir === "out") {
+    var sess = getSess();
+    if (!sess || !sess.checkinTimestamp || sess.checkoutTimestamp) {
+      toast("No active session to check out from", "t-err"); return;
+    }
+    _hasOpenPending(sess.empId, "out", function(exists, doc){
+      if (exists && doc && doc.data().linkedAttendanceId === getSessDocId()) { _showPendingState(doc.id, "out"); return; }
+      openManualCard({
+        dir: "out", empId: sess.empId, empName: sess.empName, empEmail: sess.empEmail || "",
+        site: sess.site, devId: sess.deviceId || null, linkedAttendanceId: getSessDocId()
+      });
+    });
+    return;
+  }
+
+  // dir === "in": mirror doCheckin's validation + gauntlet, then open the card.
+  var empId    = sanitize(getEngId("empId"), 20);
+  var empName  = sanitize((document.getElementById("empName")||{}).value || "", 60);
+  var siteIdx  = (document.getElementById("empSite")||{}).value;
+  var empEmail = sanitize((((document.getElementById("empEmail")||{}).value)||"").trim().toLowerCase(), 120);
+
+  if (!empId || empId === "Eng") { toast("Please enter your Engineer number", "t-err"); return; }
+  if (!/^Eng[a-zA-Z0-9]+$/.test(empId)) { toast("Engineer ID must start with Eng (e.g. Eng01)", "t-err"); return; }
+  if (!empName || empName.length < 2) { toast("Please enter a valid full name", "t-err"); return; }
+  if (!empEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(empEmail)) { toast("Please enter a valid email address", "t-err"); return; }
+  if (siteIdx === "" || siteIdx == null) { toast("Please choose your site", "t-err"); return; }
+  var siteObj = WORK_SITES[parseInt(siteIdx)];
+  if (!siteObj) { toast("Site not found", "t-err"); return; }
+  if (!otpVerified) { toast("Please verify your email with the OTP code first", "t-err"); return; }
+  if (_onbValidated === false) { toast("Your details don't match onboarding records — contact admin", "t-err"); return; }
+
+  // Local buddy-punch (same device, different person today)
+  var already = deviceAlreadyCheckedIn(empId);
+  if (already) { toast("⛔ This device already checked in " + already + " today", "t-err"); return; }
+
+  toast("Checking your details…", "t-ok");
+  computeFingerprint().then(function(devId){
+    verifyIdentityBinding(empEmail, empId, empName, devId, function(result){
+      if (!result.ok) { toast(result.reason, "t-err"); return; }
+      _isOnApprovedLeaveToday(empId, function(leaveRec){
+        if (leaveRec) { toast("⛔ You are on approved " + leaveRec.leaveType + " today — check-in not allowed", "t-err"); return; }
+        _checkCrossDeviceDuplicate(empId, devId, function(conflict){
+          if (conflict) {
+            _reportBuddyPunchAlert(empId, empName, devId, conflict);
+            toast("⛔ Buddy punch detected — already checked in from another device today.", "t-err");
+            return;
+          }
+          _hasOpenPending(empId, "in", function(exists, doc){
+            if (exists) { _showPendingState(doc.id, "in"); return; }
+            openManualCard({
+              dir: "in", empId: empId, empName: empName, empEmail: empEmail,
+              site: siteObj.name, siteIdx: siteIdx, devId: devId
+            });
+          });
+        });
+      });
+    });
+  });
+}
+
+// v6.51 — engineer taps Confirm on the card → write the waiting-list entry.
+function confirmManualEntry() {
+  if (!_manualDraft) { closeManualCard(); return; }
+  var d = _manualDraft;
+  var btn = document.getElementById("mc-confirm-btn");
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Submitting…'; }
+
+  var entry = {
+    empId: d.empId, empName: d.empName, empEmail: d.empEmail, site: d.site, dir: d.dir,
+    reqTime: d.reqTime, reqDate: d.reqDate, reqISO: d.reqISO, reqTimestamp: d.reqTimestamp,
+    gpsLat: d.gpsLat, gpsLng: d.gpsLng, gpsDist: d.gpsDist, gpsAcc: d.gpsAcc, gpsFailReason: d.gpsFailReason,
+    deviceId: d.devId, hwId: getHwId(), deviceToken: getDeviceToken(),
+    linkedAttendanceId: d.linkedAttendanceId || null,
+    status: "pending", attendanceId: null, rejectReason: null,
+    createdAt: Date.now(),
+    confirmedBy: null, confirmedAt: null, rejectedBy: null, rejectedAt: null
+  };
+
+  if (!fbOk || !db) { toast("Firestore not available — cannot submit", "t-err"); if (btn){ btn.disabled=false; btn.innerHTML="✅ Confirm"; } return; }
+
+  db.collection("pendingAttendance").add(entry)
+    .then(function(ref){
+      closeManualCard();
+      toast("✅ Submitted — waiting for admin confirmation", "t-ok");
+      _showPendingState(ref.id, d.dir);
+    })
+    .catch(function(e){
+      console.error("[Manual] submit failed:", e);
+      toast("❌ Could not submit — check your connection / rules", "t-err");
+      if (btn) { btn.disabled = false; btn.innerHTML = "✅ Confirm"; }
+    });
+}
+
+// v6.51 — live pending state: subscribe to the entry, react to the admin decision.
+var _pendingUnsub = null;
+
+function _hidePendingBanner() {
+  var b = document.getElementById("manualPendingBanner");
+  if (b) b.style.display = "none";
+}
+
+function _showPendingState(pendingId, dir) {
+  var banner = document.getElementById("manualPendingBanner");
+  var txt    = document.getElementById("mpb-text");
+  if (banner) banner.style.display = "block";
+
+  if (_pendingUnsub) { try { _pendingUnsub(); } catch(_){} _pendingUnsub = null; }
+  if (!fbOk || !db) {
+    if (txt) txt.textContent = "Submitted. An admin will confirm you on site.";
+    return;
+  }
+
+  _pendingUnsub = db.collection("pendingAttendance").doc(pendingId).onSnapshot(function(snap){
+    if (!snap.exists) return;
+    var e = snap.data();
+    if (e.status === "pending") {
+      if (txt) txt.innerHTML = (dir === "in" ? "Check-IN" : "Check-OUT") +
+        " for <strong>" + _esc(e.site) + "</strong> at <strong>" + _esc(e.reqTime) +
+        "</strong> submitted. Waiting for an admin to verify you on site.";
+      return;
+    }
+    // Resolved — stop listening.
+    try { _pendingUnsub(); } catch(_){} _pendingUnsub = null;
+    _hidePendingBanner();
+
+    if (e.status === "confirmed") {
+      if (dir === "in") {
+        // Build a session mirroring a normal check-in so the UI/checkout flow works.
+        var rec = {
+          empId: e.empId, empName: e.empName, empEmail: e.empEmail, site: e.site,
+          checkinTime: e.reqTime, checkinDate: e.reqDate, checkinISO: e.reqISO, checkinTimestamp: e.reqTimestamp,
+          status: "in", viaManualConfirm: true
+        };
+        setSess(rec); setSessDocId(e.attendanceId || null);
+        showResult("ci", rec, false, false);
+        toast("✅ Confirmed — checked in at " + e.reqTime, "t-ok");
+        var ciF = document.getElementById("ciForm");  if (ciF) ciF.style.display = "none";
+        var coS = document.getElementById("coSection"); if (coS) coS.style.display = "block";
+        var sb  = document.getElementById("sessBadge"); if (sb)  sb.style.display = "block";
+        var e1 = document.getElementById("sb-emp");  if (e1) e1.textContent  = rec.empName + " (" + rec.empId + ")";
+        var e2 = document.getElementById("sb-site"); if (e2) e2.textContent = rec.site;
+        var e3 = document.getElementById("sb-cin");  if (e3) e3.textContent  = rec.checkinTime;
+      } else {
+        var _cs = getSess();
+        var _ms = (_cs && _cs.checkinTimestamp) ? Math.max(0, e.reqTimestamp - _cs.checkinTimestamp) : 0;
+        var _dur = Math.floor(_ms/3600000) + "h " + Math.floor((_ms%3600000)/60000) + "m";
+        setSess(null); setSessDocId(null);
+        showResult("co", { empId: e.empId, empName: e.empName, site: e.site, checkoutTime: e.reqTime, duration: _dur, checkoutViaManualConfirm: true }, false, false);
+        toast("👋 Confirmed — checked out at " + e.reqTime, "t-ok");
+        var sb2 = document.getElementById("sessBadge");  if (sb2) sb2.style.display = "none";
+        var co2 = document.getElementById("coSection");  if (co2) co2.style.display = "none";
+      }
+    } else if (e.status === "rejected") {
+      var reason = e.rejectReason ? (" Reason: " + e.rejectReason) : "";
+      toast("❌ Not confirmed by admin." + reason, "t-err");
+      alert("❌ Your manual confirmation was not approved." + reason + "\n\nPlease try verifying your GPS again or contact admin.");
+    }
+  }, function(err){ console.warn("[Manual] pending listener error:", err); });
+}
+
+// v6.51 — last failed-GPS context per direction, surfaced in the manual-confirm card + admin row.
+var lastGpsFix = { in: null, out: null };
+
 function setGpsUI(dir, state, name, dist, acc) {
+  // v6.51 — remember the most recent failure so the manual-confirm card can show it.
+  if (state !== "ok") {
+    var _gp = (typeof GPS !== "undefined" && GPS) ? GPS[dir] : null;
+    lastGpsFix[dir] = {
+      reason: state,
+      detail: name || null,
+      dist:   (dist == null ? null : dist),
+      acc:    (acc  == null ? null : acc),
+      lat:    _gp ? _gp.lat : null,
+      lng:    _gp ? _gp.lng : null,
+      ts:     Date.now()
+    };
+  } else {
+    lastGpsFix[dir] = null;
+  }
+
   var btnId  = dir==="in" ? "gpsCiBtn"    : "gpsCoBtnEl";
   var iconId = dir==="in" ? "gpsCiIcon"   : "gpsCoIcon";
   var txtId  = dir==="in" ? "gpsCiTxt"    : "gpsCoTxt";
@@ -3371,6 +3660,11 @@ function setGpsUI(dir, state, name, dist, acc) {
     'style="margin-top:8px;width:100%;padding:10px 14px;background:#0ea5e9;color:#fff;border:none;'+
     'border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">🔄 Refresh GPS</button>';
 
+  // v6.51 — fallback shown only on a real GPS failure: engineer asks admin to confirm presence.
+  var manualBtn = '<button type="button" onclick="requestManualConfirm(\''+dir+'\')" '+
+    'style="margin-top:8px;width:100%;padding:10px 14px;background:#fff;color:#b45309;border:1px solid #f59e0b;'+
+    'border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">✋ Can\'t verify? Request manual confirmation</button>';
+
   if (state==="ok") {
     btn.className="gps-btn ok";
     ic.textContent="✅"; tx.textContent="Verified — "+dist+"m from "+name;
@@ -3378,7 +3672,7 @@ function setGpsUI(dir, state, name, dist, acc) {
   } else if (state==="fail") {
     btn.className="gps-btn fail";
     ic.textContent="🚫"; tx.textContent="Out of range — "+dist+"m (max "+GEOFENCE_M+"m)";
-    st.innerHTML='<div class="pill pill-bad">🚫 Too far from '+name+' · You are '+dist+'m away. Must be within '+GEOFENCE_M+'m.</div>'+accBadge+refreshBtn;
+    st.innerHTML='<div class="pill pill-bad">🚫 Too far from '+name+' · You are '+dist+'m away. Must be within '+GEOFENCE_M+'m.</div>'+accBadge+refreshBtn+manualBtn;
   } else if (state==="wifispoof") {
     // v6.7 — Detected WiFi / IP-based geolocation (huge distance with deceptively tight accuracy,
     // or positions jumping kilometres between samples). Refuse and direct user to fix.
@@ -3394,7 +3688,7 @@ function setGpsUI(dir, state, name, dist, acc) {
         '• On iPhone: Settings → Privacy → Location Services → Safari/Chrome → <b>While Using + Precise Location ON</b><br>'+
         '• Move outdoors or near a window for clear sky view<br>'+
         '• Tap <b>Refresh GPS</b> below after applying the fix'+
-      '</div>'+refreshBtn;
+      '</div>'+refreshBtn+manualBtn;
   } else if (state==="lowacc") {
     // GPS reading is too inaccurate to trust — refuse to verify
     btn.className="gps-btn fail";
@@ -3408,11 +3702,11 @@ function setGpsUI(dir, state, name, dist, acc) {
         '• Move outdoors or near a window for clear sky<br>'+
         '• Make sure <b>Location Services</b> are on for your browser<br>'+
         '• Wait a few seconds and tap "Refresh GPS" below — the GPS chip warms up over time'+
-      '</div>'+refreshBtn;
+      '</div>'+refreshBtn+manualBtn;
   } else {
     btn.className="gps-btn fail";
     ic.textContent="❌"; tx.textContent="Try again";
-    st.innerHTML='<div class="pill pill-bad">❌ '+name+'</div>'+refreshBtn;
+    st.innerHTML='<div class="pill pill-bad">❌ '+name+'</div>'+refreshBtn+manualBtn;
   }
 }
 
@@ -5338,12 +5632,12 @@ function showResult(type, rec, isLate, isOT) {
     html += row("Site", rec.site);
     html += row("Time", '<span style="font-family:var(--mono)">'+rec.checkinTime+'</span>');
     html += row("Date", rec.checkinDate);
-    html += row("GPS Distance", rec.checkinDist+"m from site ✅");
+    html += row("GPS Distance", rec.viaManualConfirm ? "✋ Manually confirmed by admin" : (rec.checkinDist+"m from site ✅"));
     if (isLate) html += '<div class="pill pill-warn" style="margin-top:10px">⚠️ Late arrival recorded</div>';
   } else {
     html  = row("Check-Out Time", '<span style="font-family:var(--mono)">'+rec.checkoutTime+'</span>');
     html += row("Duration", rec.duration);
-    html += row("GPS Distance", rec.checkoutDist+"m from site ✅");
+    html += row("GPS Distance", rec.checkoutViaManualConfirm ? "✋ Manually confirmed by admin" : (rec.checkoutDist+"m from site ✅"));
     if (isOT) html += '<div class="pill pill-warn" style="margin-top:10px">⏰ Overtime flagged ('+rec.duration+')</div>';
   }
   document.getElementById("resultBody").innerHTML = html;
@@ -5462,6 +5756,7 @@ function initDash() {
 
   if (fbOk && db) {
     if (fbUnsub) fbUnsub();
+    initWaitingListListener();
     fbUnsub = db.collection("attendance").orderBy("checkinTimestamp","desc")
       .onSnapshot(function(snap){
         allRecs = snap.docs.map(function(d){ return Object.assign({id:d.id},d.data()); });
@@ -5514,6 +5809,135 @@ function _diagAttendance(msg) {
   banner.style.display = "block";
   banner.textContent = "🔎 DIAGNOSTIC (v6.43): " + msg;
   try { toast("Attendance read issue — see red banner", "t-err"); } catch(_){}
+}
+
+// v6.51 — live cache of pending waiting-list entries (admin side).
+var pendingListCache = [];
+var _waitListUnsub   = null;
+
+function _updateWaitlistBadge(n) {
+  var badge = document.getElementById("waitlistPendingBadge");
+  if (!badge) return;
+  badge.textContent = n;
+  badge.style.display = n > 0 ? "inline-block" : "none";
+}
+
+function initWaitingListListener() {
+  if (!fbOk || !db) return;
+  if (_waitListUnsub) { try { _waitListUnsub(); } catch(_){} }
+  _waitListUnsub = db.collection("pendingAttendance").where("status", "==", "pending")
+    .onSnapshot(function(snap){
+      pendingListCache = snap.docs.map(function(d){ var o = d.data(); o._id = d.id; return o; });
+      _updateWaitlistBadge(pendingListCache.length);
+      renderWaitingList();
+    }, function(e){ console.warn("[WaitList] listener error:", e); });
+}
+
+// v6.51 — resolve the admin's identity for audit fields.
+function _adminTag() {
+  try { if (typeof auth !== "undefined" && auth && auth.currentUser) return auth.currentUser.email || auth.currentUser.uid; } catch(_){}
+  return "admin";
+}
+
+// v6.51 — Confirm: write the real attendance record at the RECORDED time.
+function confirmPending(id, btn) {
+  var e = (pendingListCache || []).find(function(x){ return x._id === id; });
+  if (!e) { toast("Entry not found (refresh)", "t-err"); return; }
+  if (!fbOk || !db) { toast("Firestore not available", "t-err"); return; }
+  if (btn) { btn.disabled = true; btn.textContent = "⏳…"; }
+  var who = _adminTag(), when = Date.now();
+
+  function markResolved(attendanceId) {
+    db.collection("pendingAttendance").doc(id).update({
+      status: "confirmed", attendanceId: attendanceId || null, confirmedBy: who, confirmedAt: when
+    }).then(function(){ toast("✅ Confirmed " + e.empId, "t-ok"); })
+      .catch(function(err){ console.warn("[WaitList] mark confirmed failed:", err); });
+  }
+
+  if (e.dir === "in") {
+    var isLate = (new Date(e.reqTimestamp)).getHours() >= WORK_HOUR_LATE;
+    var rec = {
+      empId: e.empId, empName: e.empName, empEmail: e.empEmail, site: e.site,
+      defaultSite: null, siteMismatch: false,
+      checkinTime: e.reqTime, checkinDate: e.reqDate, checkinISO: e.reqISO, checkinTimestamp: e.reqTimestamp,
+      checkinLat: e.gpsLat, checkinLng: e.gpsLng, checkinDist: e.gpsDist, checkinAcc: e.gpsAcc,
+      checkoutTime: null, checkoutTimestamp: null, checkoutLat: null, checkoutLng: null, checkoutDist: null,
+      status: "in", isLate: isLate, isOvertime: false, duration: null,
+      deviceId: e.deviceId, hwId: e.hwId, deviceToken: e.deviceToken,
+      emailConflict: false, _source: "web-manual", _userAgent: "manual",
+      lastReminderHour: 0,
+      viaManualConfirm: true, confirmedBy: who, confirmedAt: when
+    };
+    db.collection("attendance").add(rec)
+      .then(function(ref){ markResolved(ref.id); })
+      .catch(function(err){ console.error("[WaitList] attendance write failed:", err); toast("❌ Write failed", "t-err"); if (btn){ btn.disabled=false; btn.textContent="✅ Confirm"; } });
+  } else {
+    // Check-OUT: patch the linked attendance doc using the recorded time.
+    if (!e.linkedAttendanceId) { toast("No linked session to check out", "t-err"); if (btn){ btn.disabled=false; btn.textContent="✅ Confirm"; } return; }
+    db.collection("attendance").doc(e.linkedAttendanceId).get().then(function(snap){
+      var cit = snap.exists ? (snap.data().checkinTimestamp || e.reqTimestamp) : e.reqTimestamp;
+      var ms = Math.max(0, e.reqTimestamp - cit);
+      var h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000);
+      var updates = {
+        checkoutTime: e.reqTime, checkoutISO: e.reqISO, checkoutTimestamp: e.reqTimestamp,
+        checkoutLat: e.gpsLat, checkoutLng: e.gpsLng, checkoutDist: e.gpsDist, checkoutAcc: e.gpsAcc,
+        status: "out", duration: h + "h " + m + "m", isOvertime: h >= MAX_HOURS_OT,
+        checkoutViaManualConfirm: true, checkoutConfirmedBy: who, checkoutConfirmedAt: when
+      };
+      return db.collection("attendance").doc(e.linkedAttendanceId).update(updates);
+    }).then(function(){ markResolved(e.linkedAttendanceId); })
+      .catch(function(err){ console.error("[WaitList] checkout patch failed:", err); toast("❌ Write failed", "t-err"); if (btn){ btn.disabled=false; btn.textContent="✅ Confirm"; } });
+  }
+}
+
+// v6.51 — Reject: mark not-confirmed with an optional reason. No attendance record.
+function rejectPending(id, btn) {
+  var e = (pendingListCache || []).find(function(x){ return x._id === id; });
+  if (!e) { toast("Entry not found (refresh)", "t-err"); return; }
+  if (!fbOk || !db) { toast("Firestore not available", "t-err"); return; }
+  var reason = window.prompt("Reason for rejecting " + e.empId + " (optional):", "");
+  if (reason === null) return; // admin cancelled the prompt
+  if (btn) { btn.disabled = true; btn.textContent = "⏳…"; }
+  db.collection("pendingAttendance").doc(id).update({
+    status: "rejected", rejectReason: (reason || "").slice(0, 200), rejectedBy: _adminTag(), rejectedAt: Date.now()
+  }).then(function(){ toast("Rejected " + e.empId, "t-ok"); })
+    .catch(function(err){ console.error("[WaitList] reject failed:", err); toast("❌ Reject failed", "t-err"); if (btn){ btn.disabled=false; btn.textContent="❌ Reject"; } });
+}
+
+// v6.51 — render the admin waiting-list panel from the live cache.
+function renderWaitingList() {
+  var wrap = document.getElementById("waitListWrap");
+  if (!wrap) return;
+  var list = (typeof pendingListCache !== "undefined" && pendingListCache) ? pendingListCache : [];
+  var pend = list.filter(function(e){ return e.status === "pending"; })
+                 .sort(function(a,b){ return (a.createdAt||0) - (b.createdAt||0); });
+
+  if (!pend.length) {
+    wrap.innerHTML = '<div style="padding:18px;text-align:center;color:var(--ink3)">No engineers waiting for confirmation.</div>';
+    return;
+  }
+
+  wrap.innerHTML = pend.map(function(e){
+    var dirLabel = e.dir === "in" ? '✅ Check-IN' : '🔴 Check-OUT';
+    var gps = (e.gpsDist != null)
+      ? (e.gpsDist + 'm away · ±' + (e.gpsAcc != null ? e.gpsAcc : '?') + 'm · ' + _esc(e.gpsFailReason || ''))
+      : 'No GPS fix · ' + _esc(e.gpsFailReason || '');
+    return '<div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;margin-bottom:8px;background:#fff">'
+      + '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">'
+      +   '<div style="font-weight:700">' + _esc(e.empName) + ' <span style="font-weight:500;color:var(--ink3)">(' + _esc(e.empId) + ')</span></div>'
+      +   '<div style="font-weight:700">' + dirLabel + '</div>'
+      + '</div>'
+      + '<div style="font-size:.84rem;margin-top:4px;line-height:1.7">'
+      +   '<div>📍 <strong>' + _esc(e.site) + '</strong> · 🕒 ' + _esc(e.reqTime) + ' · ' + _esc(e.reqDate) + '</div>'
+      +   '<div>✉️ ' + _esc(e.empEmail || '—') + '</div>'
+      +   '<div style="color:#92400e">📡 ' + gps + '</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;margin-top:10px">'
+      +   '<button type="button" class="tb-btn" style="background:#16a34a;color:#fff;border:none;padding:7px 14px;border-radius:8px;font-weight:600;cursor:pointer" onclick="confirmPending(\'' + e._id + '\',this)">✅ Confirm</button>'
+      +   '<button type="button" class="tb-btn" style="background:#fff;color:#b91c1c;border:1px solid #fca5a5;padding:7px 14px;border-radius:8px;font-weight:600;cursor:pointer" onclick="rejectPending(\'' + e._id + '\',this)">❌ Reject</button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
 }
 
 function renderAll() { renderTable(); renderFeed(); updateStats(); updateDeviceBadge(); renderAnalytics(); checkWorkHourMonitors(); renderSpotCheckByLocation(); }
@@ -6022,7 +6446,7 @@ function refreshDash() {
 
 // ── Dashboard tabs ─────────────────────────────────
 function dTab(id, el) {
-  ["live","feed","analytics","calendar","leave","otp","device","team","setup"].forEach(function(t){
+  ["live","feed","analytics","calendar","leave","otp","waitlist","device","team","setup"].forEach(function(t){
     var p = document.getElementById("dTab-"+t); if(p) p.style.display = t===id?"block":"none";
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
