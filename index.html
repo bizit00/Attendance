@@ -1368,7 +1368,13 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
         <div class="field">
           <label>Work Site <span style="color:var(--red)">*</span></label>
-          <select id="leaveSite"></select>
+          <select id="leaveSite" onchange="onLeaveSiteChange()"></select>
+        </div>
+
+        <div class="field">
+          <label>Site Team Manager <span style="color:var(--red)">*</span></label>
+          <select id="leaveManager" disabled><option value="">— Select your work site first —</option></select>
+          <div id="leaveManagerHint" style="display:none;font-size:.76rem;color:var(--red);margin-top:5px"></div>
         </div>
 
         <div class="field">
@@ -1534,7 +1540,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <button class="nav-menu-item" data-tab="waitlist" onclick="navMenuSelect('waitlist')">⏳ Waiting List</button>
       <button class="nav-menu-item" data-tab="device"   onclick="navMenuSelect('device')">🖥️ Device Audit</button>
       <button class="nav-menu-item" data-tab="team"     onclick="navMenuSelect('team')">👥 Team</button>
-      <button class="nav-menu-item" data-tab="setup"    onclick="navMenuSelect('setup')">⚙️ Setup Guide</button>
+      <button class="nav-menu-item" id="setupNavItem" data-tab="setup"    onclick="navMenuSelect('setup')">⚙️ Setup Guide</button>
       <div class="nav-menu-sep"></div>
       <button class="nav-menu-item nav-menu-signout" onclick="doSignOut()">⎋ Sign Out</button>
     </div>
@@ -1555,7 +1561,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="dash-tab" onclick="dTab('waitlist',this)" id="waitlistTabBtn">⏳ Waiting List <span id="waitlistPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" onclick="dTab('device',this)">Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
       <div class="dash-tab" onclick="dTab('team',this)">Team</div>
-      <div class="dash-tab" onclick="dTab('setup',this)">Setup Guide</div>
+      <div class="dash-tab" id="setupTabBtn" onclick="dTab('setup',this)">Setup Guide</div>
     </div>
 
     <!-- LIVE TAB -->
@@ -1937,6 +1943,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
       style="padding:7px 18px;border:none;background:none;font-size:.87rem;font-weight:700;color:var(--ink3);border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;font-family:var(--body)">
       👷 Eng Accounts
     </button>
+    <button id="teamSubBtnManagers" onclick="teamSubTab('managers')"
+            style="background:none;border:none;padding:10px 4px;font-weight:700;font-size:.9rem;cursor:pointer;color:var(--ink3);border-bottom:2px solid transparent;font-family:var(--body)">👔 Team Managers</button>
   </div>
 
   <!-- Onboarding pane -->
@@ -1974,6 +1982,42 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
   <!-- Accounts pane (hidden by default; content moved in by teamSubTab JS) -->
   <div id="teamPane-accounts" style="display:none"></div>
+
+  <div id="teamPane-managers" style="display:none">
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-lbl" style="color:var(--blue)">📧 HR Notification Email</div>
+      <p style="font-size:.8rem;color:var(--ink3);margin-bottom:10px">Every leave decision (approved / rejected) is emailed to the engineer AND to this HR address.</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="email" id="hrEmailInput" placeholder="hr@company.com" style="flex:1;min-width:200px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:.9rem"/>
+        <button class="tb-btn" style="background:var(--blue);color:#fff" onclick="saveHrEmail()">Save</button>
+      </div>
+      <div id="hrEmailMsg" style="font-size:.78rem;margin-top:8px;min-height:16px"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-lbl" style="color:var(--blue)">➕ Add Team Manager</div>
+      <p style="font-size:.8rem;color:var(--ink3);margin-bottom:10px">Creates a login the manager uses to sign in and approve/reject leave for their site(s). Managers see the full dashboard except the Setup Guide tab.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field" style="margin-bottom:8px"><label>Name <span style="color:var(--red)">*</span></label><input type="text" id="mgrName" maxlength="60" placeholder="e.g. Mr Tan"/></div>
+        <div class="field" style="margin-bottom:8px"><label>Phone</label><input type="text" id="mgrPhone" maxlength="30" placeholder="e.g. +65 9123 4567"/></div>
+        <div class="field" style="margin-bottom:8px"><label>Email (login) <span style="color:var(--red)">*</span></label><input type="email" id="mgrEmail" placeholder="manager@company.com"/></div>
+        <div class="field" style="margin-bottom:8px"><label>Initial Password <span style="color:var(--red)">*</span></label><input type="text" id="mgrPass" placeholder="min 6 characters"/></div>
+      </div>
+      <div class="field" style="margin-bottom:8px">
+        <label>Assigned Site(s) <span style="color:var(--red)">*</span></label>
+        <div id="mgrSites" style="display:flex;flex-wrap:wrap;gap:6px;max-height:160px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:8px"></div>
+      </div>
+      <button class="act-btn" onclick="submitNewManager()" style="background:linear-gradient(135deg,#0077ff,#005acc);margin-top:4px">➕ Create Manager</button>
+      <div id="mgrFormMsg" style="font-size:.8rem;margin-top:8px;min-height:16px"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-lbl">👔 Existing Team Managers</div>
+      <div id="managersList" style="margin-top:8px"></div>
+    </div>
+
+  </div>
 </div>
 <!-- END TEAM TAB -->
 
@@ -2522,6 +2566,14 @@ service cloud.firestore {
     // Leave entitlements (per-engineer quotas)
     match /leaveEntitlements/{doc} {
       allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Team managers (site approvers) — v6.52
+    match /teamManagers/{docId} {
+      // Public read: the unauthenticated leave form must list managers per site
+      allow read: if true;
+      // Only signed-in admin/manager can create, edit, or deactivate
       allow write: if request.auth != null;
     }
 
@@ -3183,6 +3235,7 @@ function initFirebase() {
     // ✅ SECURITY: Listen to auth state — only show dashboard if truly signed in
     firebase.auth().onAuthStateChanged(function(user) {
       authReady = true;
+      if (user && typeof applyRoleVisibility === "function") applyRoleVisibility();
       if (!user) {
         // If someone navigated to dashboard without auth, boot them
         var dash = document.getElementById("screen-dashboard");
@@ -5705,7 +5758,33 @@ function doLogin() {
 var allRecs = [];
 var fbUnsub = null;
 
+// ── Role detection (v6.52): manager = login email in active teamManagers ──
+var currentUserIsManager = false;
+var currentManagerName    = "";
+
+function applyRoleVisibility() {
+  var email = "";
+  try { email = (firebase.auth().currentUser && firebase.auth().currentUser.email || "").toLowerCase(); } catch(_){}
+  var mgr = teamManagersList.find(function(m){ return m.active !== false && (m.email||"").toLowerCase() === email; }) || null;
+  currentUserIsManager = !!mgr;
+  currentManagerName = mgr ? mgr.name : "";
+  var setupTab = document.getElementById("setupTabBtn");
+  var setupNav = document.getElementById("setupNavItem");
+  if (setupTab) setupTab.style.display = currentUserIsManager ? "none" : "";
+  if (setupNav) setupNav.style.display = currentUserIsManager ? "none" : "";
+  // If a manager somehow has the Setup tab open, bounce to Live Status.
+  if (currentUserIsManager) {
+    var setupPane = document.getElementById("dTab-setup");
+    if (setupPane && setupPane.style.display === "block") {
+      var liveTab = document.querySelector('.dash-tab[onclick*="\'live\'"]');
+      dTab("live", liveTab);
+    }
+  }
+}
+
 function initDash() {
+  loadTeamManagers();   // v6.52: stream team managers for CRUD + dropdowns
+  if (typeof loadHrEmail === "function") loadHrEmail();
   // set today's date in filter
   var fd = document.getElementById("fDate");
   if (fd && !fd.value) fd.value = new Date().toISOString().split("T")[0];
@@ -6479,7 +6558,7 @@ var _accMoved = false;
 
 function teamSubTab(id) {
   _teamCurrentSub = id;
-  ["onboarding","accounts"].forEach(function(t){
+  ["onboarding","accounts","managers"].forEach(function(t){
     var p = document.getElementById("teamPane-"+t);
     if (p) p.style.display = t===id ? "block" : "none";
     var btn = document.getElementById("teamSubBtn"+t.charAt(0).toUpperCase()+t.slice(1));
@@ -6502,6 +6581,7 @@ function teamSubTab(id) {
     }
     adminAccLoad();
   }
+  if (id === "managers") { populateManagerSiteCheckboxes(); renderManagersList(); loadHrEmail(); }
 }
 
 function dTabFromTopbar(id) {
@@ -10078,6 +10158,195 @@ function siteUseMyLocation() {
   }, function(err){ if(msg){ msg.style.color="var(--red)"; msg.textContent="Location failed: "+(err.message||err); } }, { enableHighAccuracy:true, timeout:10000 });
 }
 
+// ── Team Managers (v6.52) ───────────────────────────
+var teamManagersList = [];
+var _tmUnsub = null;
+
+function loadTeamManagers() {
+  if (!fbOk || !db) {
+    teamManagersList = JSON.parse(localStorage.getItem("at_managers") || "[]");
+    if (typeof renderManagersList === "function") renderManagersList();
+    if (typeof refreshLeaveManagerDropdown === "function") refreshLeaveManagerDropdown();
+    return;
+  }
+  if (_tmUnsub) return; // already listening
+  _tmUnsub = db.collection("teamManagers").onSnapshot(function(snap) {
+    teamManagersList = snap.docs.map(function(d){ return Object.assign({ id:d.id }, d.data()); })
+      .sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); });
+    if (typeof applyRoleVisibility === "function") applyRoleVisibility();
+    if (typeof renderManagersList === "function") renderManagersList();
+    if (typeof refreshLeaveManagerDropdown === "function") refreshLeaveManagerDropdown();
+  }, function(e){ console.warn("teamManagers listen:", e); });
+}
+
+function managersForSite(siteName) {
+  return teamManagersList.filter(function(m){
+    return m.active !== false && Array.isArray(m.sites) && m.sites.indexOf(siteName) !== -1;
+  });
+}
+
+// Create a real Firebase login without disturbing the admin's current session.
+function createManagerAuthAccount(email, password) {
+  if (!fbOk) return Promise.reject(new Error("Firebase not configured."));
+  var secondary;
+  try {
+    secondary = firebase.apps.filter(function(a){ return a.name === "ManagerCreator"; })[0]
+              || firebase.initializeApp(FIREBASE_CONFIG, "ManagerCreator");
+  } catch (e) { return Promise.reject(e); }
+  return secondary.auth().createUserWithEmailAndPassword(email, password)
+    .then(function() { return secondary.auth().signOut(); })
+    .catch(function(err) {
+      // ensure the secondary app isn't left signed-in on failure
+      try { secondary.auth().signOut(); } catch(_) {}
+      throw err;
+    });
+}
+
+function _mgrSiteNames() {
+  return WORK_SITES.map(function(s){ return s.name; });
+}
+
+function populateManagerSiteCheckboxes() {
+  var wrap = document.getElementById("mgrSites");
+  if (!wrap) return;
+  wrap.innerHTML = _mgrSiteNames().map(function(name){
+    var id = "mgrSite_" + name.replace(/[^a-z0-9]/gi, "_");
+    return '<label style="display:flex;align-items:center;gap:5px;font-size:.8rem;font-weight:600;border:1px solid var(--border);border-radius:8px;padding:5px 9px;cursor:pointer">'
+      + '<input type="checkbox" class="mgr-site-cb" value="' + sanitizeHtml(name) + '" id="' + id + '"/> ' + sanitizeHtml(name) + '</label>';
+  }).join("");
+}
+
+function _selectedMgrSites() {
+  return Array.prototype.slice.call(document.querySelectorAll(".mgr-site-cb"))
+    .filter(function(cb){ return cb.checked; }).map(function(cb){ return cb.value; });
+}
+
+function submitNewManager() {
+  var msg = document.getElementById("mgrFormMsg");
+  function fail(t){ if(msg){ msg.style.color="var(--red)"; msg.textContent=t; } }
+  function ok(t){ if(msg){ msg.style.color="#15803d"; msg.textContent=t; } }
+  var name  = sanitize((document.getElementById("mgrName")||{}).value||"", 60);
+  var email = ((document.getElementById("mgrEmail")||{}).value||"").trim().toLowerCase();
+  var phone = sanitize((document.getElementById("mgrPhone")||{}).value||"", 30);
+  var pass  = ((document.getElementById("mgrPass")||{}).value||"");
+  var sites = _selectedMgrSites();
+  if (!name) return fail("Name is required.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Enter a valid email (this is the login).");
+  if (pass.length < 6) return fail("Password must be at least 6 characters.");
+  if (!sites.length) return fail("Select at least one assigned site.");
+  if (!fbOk || !db) return fail("Firestore not connected — cannot save.");
+  if (teamManagersList.some(function(m){ return (m.email||"").toLowerCase() === email; }))
+    return fail("A manager with that email already exists.");
+
+  ok("Creating login…");
+  createManagerAuthAccount(email, pass)
+    .then(function() {
+      var adminEmail = (firebase.auth().currentUser && firebase.auth().currentUser.email) || "Admin";
+      return db.collection("teamManagers").add({
+        name:name, email:email, phone:phone, sites:sites, active:true,
+        createdAt:Date.now(), createdBy:adminEmail
+      });
+    })
+    .then(function() {
+      ok("✓ Manager created: " + name);
+      ["mgrName","mgrEmail","mgrPhone","mgrPass"].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=""; });
+      document.querySelectorAll(".mgr-site-cb").forEach(function(cb){ cb.checked=false; });
+      toast("👔 Team manager added: " + name, "t-ok");
+    })
+    .catch(function(e) {
+      var m = (e && e.code === "auth/email-already-in-use")
+        ? "That email already has a login. Use a different email, or deactivate the old record."
+        : (e && e.message) || String(e);
+      fail("Failed: " + m);
+    });
+}
+
+function renderManagersList() {
+  var wrap = document.getElementById("managersList");
+  if (!wrap) return;
+  if (!teamManagersList.length) {
+    wrap.innerHTML = '<div style="font-size:.8rem;color:var(--ink3);padding:8px 2px">No team managers yet — add one above.</div>';
+    return;
+  }
+  wrap.innerHTML = teamManagersList.map(function(m){
+    var inactive = m.active === false;
+    var sites = (m.sites||[]).map(function(s){ return '<span style="font-size:.7rem;background:#eff6ff;color:var(--blue);border-radius:20px;padding:1px 8px;margin-right:4px;white-space:nowrap">'+sanitizeHtml(s)+'</span>'; }).join("");
+    return '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;'+(inactive?'opacity:.55;background:#fafafa':'')+'">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'
+      +   '<div style="min-width:0">'
+      +     '<div style="font-weight:700;font-size:.9rem;color:var(--ink)">'+sanitizeHtml(m.name)+(inactive?' <span style="font-size:.7rem;color:var(--red)">(deactivated)</span>':'')+'</div>'
+      +     '<div style="font-size:.76rem;color:var(--ink3);font-family:var(--mono)">'+sanitizeHtml(m.email)+(m.phone?' · '+sanitizeHtml(m.phone):'')+'</div>'
+      +     '<div style="margin-top:6px">'+(sites||'<span style="font-size:.72rem;color:var(--red)">no sites assigned</span>')+'</div>'
+      +   '</div>'
+      +   '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +     '<button class="tb-btn" onclick="editManagerSites(\''+sanitizeHtml(m.id)+'\')">✏️ Sites</button>'
+      +     '<button class="tb-btn" onclick="toggleManagerActive(\''+sanitizeHtml(m.id)+'\')">'+(inactive?'✅ Reactivate':'🚫 Deactivate')+'</button>'
+      +     '<button class="tb-btn" style="color:#b91c1c;border-color:#fca5a5" onclick="deleteManagerRecord(\''+sanitizeHtml(m.id)+'\')">🗑 Delete</button>'
+      +   '</div>'
+      + '</div></div>';
+  }).join("");
+}
+
+function editManagerSites(id) {
+  var m = teamManagersList.find(function(x){ return x.id === id; });
+  if (!m) return;
+  var current = (m.sites||[]).join(", ");
+  var input = prompt("Edit assigned site(s) for " + m.name + "\n\nComma-separated, must match site names exactly:\n\n" + _mgrSiteNames().join("\n"), current);
+  if (input === null) return;
+  var sites = input.split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+  var valid = _mgrSiteNames();
+  var bad = sites.filter(function(s){ return valid.indexOf(s) === -1; });
+  if (bad.length) { toast("Unknown site(s): " + bad.join(", "), "t-err"); return; }
+  if (!sites.length) { toast("Assign at least one site.", "t-err"); return; }
+  db.collection("teamManagers").doc(id).update({ sites:sites })
+    .then(function(){ toast("✓ Sites updated for " + m.name, "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message||e), "t-err"); });
+}
+
+function toggleManagerActive(id) {
+  var m = teamManagersList.find(function(x){ return x.id === id; });
+  if (!m) return;
+  var next = !(m.active === false) ? false : true;
+  db.collection("teamManagers").doc(id).update({ active:next })
+    .then(function(){ toast((next?"✅ Reactivated ":"🚫 Deactivated ") + m.name, "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message||e), "t-err"); });
+}
+
+function deleteManagerRecord(id) {
+  var m = teamManagersList.find(function(x){ return x.id === id; });
+  if (!m) return;
+  if (!confirm("Delete manager record for " + m.name + "?\n\n⚠️ Their LOGIN account cannot be removed from here (that needs the Firebase Console). Deleting only removes them from the dropdown and manager list. To fully block access, prefer Deactivate and/or reset their password in the Firebase Console.")) return;
+  db.collection("teamManagers").doc(id).delete()
+    .then(function(){ toast("Removed manager: " + m.name, "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message||e), "t-err"); });
+}
+
+// ── HR notification email (v6.52) — stored in manpowerConfig/appSettings ──
+var hrNotifyEmail = "";
+
+function loadHrEmail() {
+  var input = document.getElementById("hrEmailInput");
+  if (!fbOk || !db) { if (input) input.value = hrNotifyEmail; return; }
+  db.collection("manpowerConfig").doc("appSettings").get()
+    .then(function(doc){
+      hrNotifyEmail = (doc.exists && doc.data().hrEmail) ? doc.data().hrEmail : "";
+      if (input) input.value = hrNotifyEmail;
+    })
+    .catch(function(e){ console.warn("loadHrEmail:", e); });
+}
+
+function saveHrEmail() {
+  var input = document.getElementById("hrEmailInput");
+  var msg   = document.getElementById("hrEmailMsg");
+  var val   = (input ? input.value : "").trim();
+  function set(t,c){ if(msg){ msg.style.color=c; msg.textContent=t; } }
+  if (val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) { set("Enter a valid email (or leave blank).", "var(--red)"); return; }
+  if (!fbOk || !db) { hrNotifyEmail = val; set("Saved locally.", "#15803d"); return; }
+  db.collection("manpowerConfig").doc("appSettings").set({ hrEmail: val }, { merge:true })
+    .then(function(){ hrNotifyEmail = val; set(val?("✓ HR email saved: "+val):"✓ HR email cleared.", "#15803d"); toast("📧 HR email updated", "t-ok"); })
+    .catch(function(e){ set("Failed: "+(e.message||e), "var(--red)"); });
+}
+
 function addCustomSite() {
   var msg  = document.getElementById("sitesFormMsg");
   function fail(t){ if(msg){ msg.style.color="var(--red)"; msg.textContent=t; } }
@@ -10393,8 +10662,40 @@ function showLeaveSection(show) {
   var rc = document.getElementById("resultCard"); if(rc) rc.style.display = "none";
 }
 
+// ── Leave form: site-filtered manager dropdown (v6.52) ──
+function onLeaveSiteChange() {
+  var site = (document.getElementById("leaveSite")||{}).value || "";
+  var sel  = document.getElementById("leaveManager");
+  var hint = document.getElementById("leaveManagerHint");
+  if (!sel) return;
+  if (!site) {
+    sel.disabled = true;
+    sel.innerHTML = '<option value="">— Select your work site first —</option>';
+    if (hint) hint.style.display = "none";
+    return;
+  }
+  var mgrs = (typeof managersForSite === "function") ? managersForSite(site) : [];
+  if (!mgrs.length) {
+    sel.disabled = true;
+    sel.innerHTML = '<option value="">— No manager set for this site —</option>';
+    if (hint) { hint.style.display = "block"; hint.textContent = "⚠️ No team manager is set for this site yet. Please contact your admin before applying."; }
+    return;
+  }
+  if (hint) hint.style.display = "none";
+  sel.disabled = false;
+  sel.innerHTML = '<option value="">— Select your team manager —</option>'
+    + mgrs.map(function(m){ return '<option value="'+sanitizeHtml(m.id)+'">'+sanitizeHtml(m.name)+' — '+sanitizeHtml(site)+'</option>'; }).join("");
+}
+
+// Re-run when the manager list streams in after the form is already open.
+function refreshLeaveManagerDropdown() {
+  var sel = document.getElementById("leaveManager");
+  if (sel && document.getElementById("leaveSite") && document.getElementById("leaveSite").value) onLeaveSiteChange();
+}
+
 // ── Init Leave Form ─────────────────────────────────
 function initLeaveForm() {
+  if (typeof loadTeamManagers === "function" && !teamManagersList.length) loadTeamManagers();
   // Populate site dropdown
   var sel = document.getElementById("leaveSite");
   if (sel) {
@@ -10431,6 +10732,7 @@ function initLeaveForm() {
     ei.value = sess.empId.replace(/^[Ee][Nn][Gg]/i, "");
   }
   if (sess && sess.empName && en && !en.value) en.value = sess.empName;
+  onLeaveSiteChange(); // reset manager dropdown to disabled state
 }
 
 // ── Calculate Leave Days ────────────────────────────
@@ -10847,6 +11149,11 @@ function submitLeave() {
   var empName  = sanitize((document.getElementById("leaveEmpName")||{}).value||"", 60);
   var empEmail = ((document.getElementById("leaveEmail")||{}).value||"").trim();
   var site     = (document.getElementById("leaveSite")||{}).value||"";
+  var managerSel  = document.getElementById("leaveManager");
+  var managerId   = managerSel ? managerSel.value : "";
+  var managerObj  = teamManagersList.find(function(m){ return m.id === managerId; }) || null;
+  var managerName = managerObj ? managerObj.name : "";
+  var managerEmail= managerObj ? managerObj.email : "";
   var leaveType= (document.getElementById("leaveType")||{}).value||"";
   var fromDate = (document.getElementById("leaveFrom")||{}).value||"";
   var toDate   = (document.getElementById("leaveTo")||{}).value||"";
@@ -10857,6 +11164,7 @@ function submitLeave() {
   if (!empEmail){ showLeaveError("Email address is required — the decision will be sent here."); return; }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(empEmail)) { showLeaveError("Email format is invalid. Example: john@company.com"); return; }
   if (!site)     { showLeaveError("Please select your Work Site."); return; }
+  if (!managerId || !managerObj) { showLeaveError("Please select your Site Team Manager. If none is listed, contact your admin."); return; }
   if (!leaveType){ showLeaveError("Please select a Leave Type."); return; }
   if (!fromDate) { showLeaveError("Please select the From Date."); return; }
   if (!toDate)   { showLeaveError("Please select the To Date."); return; }
@@ -10924,7 +11232,7 @@ function submitLeave() {
           if (btn2) { btn2.disabled = false; btn2.innerHTML = "📩 Submit Leave Application"; }
           return;
         }
-        _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now);
+        _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now, managerId, managerName, managerEmail);
       };
 
       if (fbOk && db) {
@@ -10943,26 +11251,27 @@ function submitLeave() {
             });
             doSubmit(used);
           })
-          .catch(function() { _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now); });
+          .catch(function() { _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now, managerId, managerName, managerEmail); });
       } else {
         // No Firebase: use in-memory leaveRecs if available
         doSubmit(_anComputeUsed(empId, year, leaveType));
       }
     } else {
       // No entitlement configured for this leave type — allow submission
-      _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now);
+      _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now, managerId, managerName, managerEmail);
     }
   }); // end _anFetchEntitlement
   }); // end _checkOverlapThenContinue
 }  // end submitLeave — actual write is in _doActualLeaveSubmit below
 
 // ── Actual Firestore write (called after entitlement check passes) ──
-function _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now) {
+function _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now, managerId, managerName, managerEmail) {
   // ── No Firebase: save locally ────────────────────
   if (!fbOk || !db) {
     var ll = JSON.parse(localStorage.getItem("at_leaves")||"[]");
     var localRec = {
       id:"local_"+Date.now(), empId:empId, empName:empName, empEmail:empEmail, site:site,
+      managerId:managerId||"", managerName:managerName||"", managerEmail:managerEmail||"",
       leaveType:leaveType, fromDate:fromDate, toDate:toDate, numDays:numDays, reason:reason,
       attachmentName:leaveAttachment.name, attachmentBase64:leaveAttachment.base64,
       status:"pending", appliedAt:now.getTime(),
@@ -10985,6 +11294,7 @@ function _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDat
 
   var leaveRec = {
     empId:empId, empName:empName, empEmail:empEmail, site:site,
+    managerId:managerId||"", managerName:managerName||"", managerEmail:managerEmail||"",
     leaveType:leaveType, fromDate:fromDate, toDate:toDate, numDays:numDays,
     reason:reason,
     attachmentName:leaveAttachment.name, attachmentBase64:leaveAttachment.base64,
@@ -10999,6 +11309,7 @@ function _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDat
   db.collection("leaveApplications").add(leaveRec)
     .then(function(){
       clearLeaveError();
+      sendLeaveSubmittedEmail(leaveRec);
       if (btn) { btn.disabled=false; btn.innerHTML="📩 Submit Leave Application"; }
       toast("✅ Leave application submitted!", "t-ok");
       showLeaveSection(false);
@@ -11120,6 +11431,13 @@ function renderLeaveTable() {
 
     var leaveBdg = '<span class="bdg" style="color:'+ltColor+'">'+(r.leaveType||"—")+'</span>'+balBadge;
 
+    var assignedMgr = r.managerName ? sanitizeHtml(r.managerName) : "—";
+    var mineBadge = (typeof currentUserIsManager !== "undefined" && currentUserIsManager
+                     && currentManagerName && r.managerName === currentManagerName)
+      ? ' <span style="font-size:.68rem;background:#dcfce7;color:#15803d;border:1px solid #86efac;border-radius:20px;padding:1px 7px;white-space:nowrap">👤 Assigned to you</span>'
+      : '';
+    var assignedHtml = '<div style="font-size:.72rem;color:var(--ink3);margin-top:3px">Assigned to: <strong>' + assignedMgr + '</strong>' + mineBadge + '</div>';
+
     var actions = "";
     if (r.status==="pending") {
       actions = '<div style="display:flex;gap:6px;flex-wrap:wrap">'
@@ -11158,6 +11476,7 @@ function renderLeaveTable() {
       +'<div class="en">'+(r.empName||"—")+'</div>'
       +'<div class="eid">'+(r.empId||"—")+'</div>'
       +'<div style="font-size:.72rem;color:var(--ink3)">'+(r.empEmail||"—")+'</div>'
+      + assignedHtml
       +'</div></div></td>'
       +'<td>'+leaveBdg+'</td>'
       +'<td style="font-size:.8rem"><span style="font-family:var(--mono);background:#f3f4f6;padding:2px 6px;border-radius:4px">'+(r.fromDate||"—")+'</span><br>'
@@ -11193,12 +11512,13 @@ function approveLeave(id) {
 
   var user = (fbOk && firebase.auth().currentUser) ? firebase.auth().currentUser : null;
   var adminEmail = user ? user.email : "Admin";
+  var deciderName = (typeof currentUserIsManager !== "undefined" && currentUserIsManager && currentManagerName) ? currentManagerName : adminEmail;
   var now = new Date();
   var updates = {
     status: "approved",
     decidedAt: now.getTime(),
     decidedDate: now.toLocaleDateString("en-SG"),
-    decidedBy: adminEmail
+    decidedBy: deciderName
   };
 
   function onDone() {
@@ -11247,12 +11567,13 @@ function confirmReject() {
 
   var user = (fbOk && firebase.auth().currentUser) ? firebase.auth().currentUser : null;
   var adminEmail = user ? user.email : "Admin";
+  var deciderName = (typeof currentUserIsManager !== "undefined" && currentUserIsManager && currentManagerName) ? currentManagerName : adminEmail;
   var now = new Date();
   var updates = {
     status: "rejected",
     decidedAt: now.getTime(),
     decidedDate: now.toLocaleDateString("en-SG"),
-    decidedBy: adminEmail,
+    decidedBy: deciderName,
     rejectReason: reason
   };
 
@@ -11273,6 +11594,32 @@ function confirmReject() {
     renderLeaveTable(); updateLeaveStats();
     onDone();
   }
+}
+
+// ── Notify manager + admin of a NEW leave request (v6.52) ──
+function sendLeaveSubmittedEmail(rec) {
+  if (!emailjsReady) return; // email not configured; skip silently
+  var subject = "🗓️ New Leave Request — " + rec.empName + " (" + (rec.site||"") + ")";
+  var body = "A new leave application needs your review.\n\n"
+    + "Engineer    : " + rec.empName + " (" + rec.empId + ")\n"
+    + "Site        : " + (rec.site||"-") + "\n"
+    + "Leave Type  : " + rec.leaveType + "\n"
+    + "From        : " + rec.fromDate + "\n"
+    + "To          : " + rec.toDate + "\n"
+    + "Total Days  : " + rec.numDays + " day" + (rec.numDays!==1?"s":"") + "\n"
+    + "Reason      : " + (rec.reason||"-") + "\n\n"
+    + "Please log in to the Attendance System to Approve or Reject this request.\n\n"
+    + "If you do not recognize this engineer, you can reject the request (the engineer may have selected the wrong team manager).\n\n"
+    + "— Attendance System";
+  var html = "<pre style='font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;line-height:1.6'>" + body + "</pre>";
+  var recipients = [];
+  if (rec.managerEmail) recipients.push(rec.managerEmail);
+  var adminEmail = "";
+  try { adminEmail = (firebase.auth().currentUser && firebase.auth().currentUser.email) || ""; } catch(_){}
+  if (adminEmail && recipients.indexOf(adminEmail) === -1) recipients.push(adminEmail);
+  recipients.forEach(function(to){
+    _elasticSend(to, subject, html).catch(function(e){ console.warn("submit-notify failed for " + to + ":", e); });
+  });
 }
 
 // ── Send Leave Notification Email ───────────────────
@@ -11350,6 +11697,12 @@ function sendLeaveEmail(rec, status, rejectReason) {
         alert("❌ Email Error: " + (e.message || e) + "\n\nOpening email fallback so you can send manually.");
         showEmailFallback(rec.empEmail, subject, body);
       });
+    // v6.52: also notify HR (does not block the engineer email)
+    if (typeof hrNotifyEmail === "string" && hrNotifyEmail && hrNotifyEmail !== rec.empEmail) {
+      _elasticSend(hrNotifyEmail, subject, htmlBody)
+        .then(function(){ console.log("✅ HR copy sent"); })
+        .catch(function(e){ console.warn("HR copy failed:", e); });
+    }
   } else {
     showEmailFallback(rec.empEmail, subject, body);
   }
