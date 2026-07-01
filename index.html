@@ -1123,20 +1123,37 @@ tr.on-leave-row td{background:#f0f9ff!important}
 .an-hist-stat-lbl{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin-bottom:2px}
 .an-hist-stat-val{font-size:1.1rem;font-weight:800;font-family:var(--mono);color:var(--ink)}
 .an-hist-stat-sub{font-size:.68rem;color:var(--ink3)}
-/* ===== In-app help system (v6.54, additive) ===== */
-.help-dot{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:6px;border-radius:50%;border:1px solid #2563eb;color:#2563eb;background:#eff6ff;font-size:12px;font-weight:700;line-height:1;cursor:pointer;vertical-align:middle;user-select:none}
+/* ===== In-app help system (v6.55: responsive, scrollable, close button) ===== */
+.help-dot{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;margin-left:6px;border-radius:50%;border:1px solid #2563eb;color:#2563eb;background:#eff6ff;font-size:12px;font-weight:700;line-height:1;cursor:pointer;vertical-align:middle;user-select:none;flex:none}
 .help-dot:hover{background:#2563eb;color:#fff}
-.help-center-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;border:1px solid #2563eb;background:#eff6ff;color:#2563eb;font-weight:600;cursor:pointer}
+.help-center-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:8px;border:1px solid #2563eb;background:#eff6ff;color:#2563eb;font-weight:600;font-size:.85rem;cursor:pointer}
 .help-center-btn:hover{background:#2563eb;color:#fff}
-#helpModal .modal-box,#helpCenterModal .modal-box{max-width:560px;text-align:left}
+/* Help modal shell: centered card capped to the viewport with a scrollable body */
+#helpModal .modal-box,#helpCenterModal .modal-box{max-width:560px;width:100%;text-align:left;max-height:85vh;display:flex;flex-direction:column;padding:22px 22px 16px}
+#helpModalTitle,#helpCenterModal .modal-title{padding-right:38px;flex:none}
+#helpModalBody,#helpCenterList{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
+#helpCenterList{margin-top:2px}
+.help-modal-actions{display:flex;justify-content:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid #eef0f3;flex:none}
+.help-modal-actions button{padding:10px 22px;border-radius:9px;background:#2563eb;color:#fff;font-weight:700;font-size:.9rem;font-family:inherit;border:none;cursor:pointer}
+.help-modal-actions button:hover{background:#1d4ed8}
+/* Bigger, tappable close (X) on help modals only */
+#helpModal .modal-close,#helpCenterModal .modal-close{top:12px;right:12px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;line-height:1;border-radius:9px}
+#helpModal .modal-close:hover,#helpCenterModal .modal-close:hover{background:#f1f5f9}
 .help-steps{margin:8px 0 0;padding-left:22px}
 .help-steps li{margin:6px 0;line-height:1.5}
 .help-trouble{margin-top:14px;padding-top:12px;border-top:1px solid #e5e7eb}
 .help-trouble h4{margin:0 0 6px;font-size:14px;color:#b45309}
-.help-search{width:100%;padding:9px 12px;margin:4px 0 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px}
+.help-search{width:100%;padding:10px 12px;margin:6px 0 8px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;flex:none}
 .help-group-title{margin:14px 0 4px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#6b7280}
-.help-topic-row{display:block;width:100%;text-align:left;padding:9px 10px;border:0;border-radius:8px;background:transparent;cursor:pointer;font-size:14px}
+.help-topic-row{display:block;width:100%;text-align:left;padding:11px 10px;border:0;border-radius:8px;background:transparent;cursor:pointer;font-size:15px;color:var(--ink)}
 .help-topic-row:hover{background:#f1f5f9}
+@media(max-width:600px){
+  #helpModal .modal-box,#helpCenterModal .modal-box{max-height:90vh;padding:18px 16px 14px}
+  .help-dot{width:24px;height:24px;font-size:13px;margin-left:5px}
+  .help-topic-row{padding:13px 10px}
+  .help-search{font-size:16px}
+  #helpModal .modal-close,#helpCenterModal .modal-close{width:42px;height:42px;font-size:1.6rem}
+}
 </style>
 </head>
 <body>
@@ -1186,7 +1203,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
   <div class="topbar">
     <span class="tb-logo">AT</span>
     <span class="tb-title">Check Attendance</span>
-    <button class="help-center-btn" data-help-center title="Help Center">❓ Help</button>
+    <button class="help-center-btn" data-help-center data-help-scope="engineer" title="Help Center">❓ Help</button>
     <button class="tb-back" onclick="showScreen('landing')">← Back</button>
   </div>
   <div class="emp-wrap">
@@ -1545,7 +1562,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <span class="tb-title">Admin Dashboard</span>
     <span class="live-dot" style="margin-left:4px">LIVE</span>
     <button class="tb-analytics-btn" id="topbarAnalyticsBtn" onclick="dTabFromTopbar('analytics')" title="Open Analytics dashboard">📊 Analytics</button>
-    <button class="help-center-btn" data-help-center title="Help Center">❓ Help</button>
+    <button class="help-center-btn" data-help-center data-help-scope="all" title="Help Center">❓ Help</button>
     <button class="tb-back" onclick="doSignOut()" style="margin-left:auto">Sign Out</button>
     <button class="tb-hamburger" id="navHamburger" onclick="toggleNavMenu(event)" aria-label="Open menu" aria-expanded="false" title="Menu">☰</button>
     <div class="nav-menu" id="navMenu">
@@ -14746,7 +14763,7 @@ function confirmForceCheckout() {
     <button class="modal-close" onclick="document.getElementById('helpModal').style.display='none'">&times;</button>
     <h3 class="modal-title" id="helpModalTitle"></h3>
     <div id="helpModalBody"></div>
-    <div class="modal-actions"><button class="modal-btn-confirm" onclick="document.getElementById('helpModal').style.display='none'">Close</button></div>
+    <div class="help-modal-actions"><button type="button" onclick="document.getElementById('helpModal').style.display='none'">Close</button></div>
   </div>
 </div>
 <div id="helpCenterModal" class="modal-overlay" style="display:none">
@@ -14755,6 +14772,7 @@ function confirmForceCheckout() {
     <h3 class="modal-title">Help Center</h3>
     <input id="helpSearch" class="help-search" type="text" placeholder="Search help topics…" oninput="renderHelpCenter(this.value)">
     <div id="helpCenterList"></div>
+    <div class="help-modal-actions"><button type="button" onclick="document.getElementById('helpCenterModal').style.display='none'">Close</button></div>
   </div>
 </div>
 <script>
@@ -15359,19 +15377,26 @@ function openHelpTopic(key){
   document.getElementById('helpModal').style.display = 'flex';
 }
 
+// Which audiences the current Help Center may show. "engineer" = engineer topics
+// only (engineer screen); "all" = engineer + admin topics (admin dashboard).
+let _helpScope = 'all';
+
 function renderHelpCenter(filter){
   filter = (filter||'').toLowerCase();
+  const allowed = _helpScope === 'engineer' ? ['engineer'] : ['engineer','admin'];
   const groups = { engineer: [], admin: [] };
   Object.keys(HELP_TOPICS).forEach(k => {
     const t = HELP_TOPICS[k];
+    if(allowed.indexOf(t.audience) === -1) return;
     if(filter && !t.title.toLowerCase().includes(filter)) return;
     (groups[t.audience] || (groups.admin)).push({ key:k, title:t.title });
   });
   const label = { engineer:'Engineer', admin:'Admin' };
   let html = '';
-  ['engineer','admin'].forEach(g => {
+  allowed.forEach(g => {
     if(!groups[g].length) return;
-    html += '<div class="help-group-title">'+label[g]+'</div>';
+    // Only label groups when more than one is shown, to avoid a lone "Engineer" header.
+    if(allowed.length > 1) html += '<div class="help-group-title">'+label[g]+'</div>';
     groups[g].sort((a,b)=>a.title.localeCompare(b.title)).forEach(t => {
       html += '<button class="help-topic-row" data-help="'+t.key+'">'+t.title+'</button>';
     });
@@ -15379,7 +15404,8 @@ function renderHelpCenter(filter){
   document.getElementById('helpCenterList').innerHTML = html || '<p style="color:#6b7280">No matching topics.</p>';
 }
 
-function openHelpCenter(){
+function openHelpCenter(scope){
+  _helpScope = (scope === 'engineer') ? 'engineer' : 'all';
   document.getElementById('helpSearch').value='';
   renderHelpCenter('');
   document.getElementById('helpCenterModal').style.display='flex';
@@ -15389,7 +15415,7 @@ document.addEventListener('click', function(e){
   const dot = e.target.closest('[data-help]');
   if(dot){ e.preventDefault(); openHelpTopic(dot.getAttribute('data-help')); return; }
   const hc = e.target.closest('[data-help-center]');
-  if(hc){ e.preventDefault(); openHelpCenter(); }
+  if(hc){ e.preventDefault(); openHelpCenter(hc.getAttribute('data-help-scope')); }
 });
 </script>
 </body>
