@@ -1123,6 +1123,20 @@ tr.on-leave-row td{background:#f0f9ff!important}
 .an-hist-stat-lbl{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin-bottom:2px}
 .an-hist-stat-val{font-size:1.1rem;font-weight:800;font-family:var(--mono);color:var(--ink)}
 .an-hist-stat-sub{font-size:.68rem;color:var(--ink3)}
+/* ===== In-app help system (v6.54, additive) ===== */
+.help-dot{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:6px;border-radius:50%;border:1px solid #2563eb;color:#2563eb;background:#eff6ff;font-size:12px;font-weight:700;line-height:1;cursor:pointer;vertical-align:middle;user-select:none}
+.help-dot:hover{background:#2563eb;color:#fff}
+.help-center-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;border:1px solid #2563eb;background:#eff6ff;color:#2563eb;font-weight:600;cursor:pointer}
+.help-center-btn:hover{background:#2563eb;color:#fff}
+#helpModal .modal-box,#helpCenterModal .modal-box{max-width:560px;text-align:left}
+.help-steps{margin:8px 0 0;padding-left:22px}
+.help-steps li{margin:6px 0;line-height:1.5}
+.help-trouble{margin-top:14px;padding-top:12px;border-top:1px solid #e5e7eb}
+.help-trouble h4{margin:0 0 6px;font-size:14px;color:#b45309}
+.help-search{width:100%;padding:9px 12px;margin:4px 0 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px}
+.help-group-title{margin:14px 0 4px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#6b7280}
+.help-topic-row{display:block;width:100%;text-align:left;padding:9px 10px;border:0;border-radius:8px;background:transparent;cursor:pointer;font-size:14px}
+.help-topic-row:hover{background:#f1f5f9}
 </style>
 </head>
 <body>
@@ -1153,7 +1167,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
 ══════════════════════════════════════════ -->
 <div id="screen-admin-login" class="screen">
   <div class="login-card">
-    <div class="login-h">Dashboard Login</div>
+    <div class="login-h">Dashboard Login <span class="help-dot" data-help="admin-login" title="Help">?</span></div>
     <div class="login-sub">Enter your admin credentials</div>
     <div class="lf"><label>Email</label><input type="email" id="adminUser" placeholder="admin@yourcompany.com" autocomplete="off"/></div>
     <div class="lf"><label>Password</label><input type="password" id="adminPass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
@@ -1172,6 +1186,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
   <div class="topbar">
     <span class="tb-logo">AT</span>
     <span class="tb-title">Check Attendance</span>
+    <button class="help-center-btn" data-help-center title="Help Center">❓ Help</button>
     <button class="tb-back" onclick="showScreen('landing')">← Back</button>
   </div>
   <div class="emp-wrap">
@@ -1243,7 +1258,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="card">
         <div class="card-lbl">Engineer Details</div>
         <div class="field"><label>Full Name</label><input type="text" id="empName" placeholder="e.g. Ahmad Bin Ali" oninput="chkBtn()"/></div>
-        <div class="field"><label>Engineer ID <span id="engIdOptLabel" style="color:var(--ink3);font-size:.75rem;font-weight:400">(leave blank if forgotten — enter name &amp; email first)</span></label>
+        <div class="field"><label>Engineer ID <span class="help-dot" data-help="engineer-login" title="Help">?</span> <span id="engIdOptLabel" style="color:var(--ink3);font-size:.75rem;font-weight:400">(leave blank if forgotten — enter name &amp; email first)</span></label>
           <div style="display:flex;align-items:center;border:1.5px solid var(--border);border-radius:var(--r);overflow:hidden;background:#fafaf8;transition:border .2s,box-shadow .2s" id="engIdWrap">
             <span style="padding:11px 10px 11px 14px;font-weight:800;font-family:var(--mono);font-size:.95rem;color:var(--blue);background:#eff6ff;border-right:1.5px solid var(--border);white-space:nowrap;user-select:none">Eng</span>
             <input type="text" id="empId" placeholder="01 — or auto-filled from your account" inputmode="numeric" pattern="[0-9]*" maxlength="10"
@@ -1253,9 +1268,10 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <div id="engIdAutoFillHint" style="display:none;margin-top:5px;font-size:.8rem;color:var(--green);font-weight:600"></div>
           <div id="engIdAvailHint" style="display:none;margin-top:4px;padding:6px 10px;border-radius:8px;font-size:.78rem;font-weight:600;border:1.5px solid"></div>
         </div>
-        <div class="field"><label>Email Address <span style="color:var(--red);font-size:.75rem">REQUIRED</span></label>
+        <div class="field"><label>Email Address <span class="help-dot" data-help="email-otp" title="Help">?</span> <span style="color:var(--red);font-size:.75rem">REQUIRED</span></label>
           <input type="email" id="empEmail" placeholder="your.email@company.com" oninput="chkBtn()" onchange="chkBtn()" onblur="chkBtn()" autocomplete="email"/>
           <div id="emailBindStatus" style="margin-top:6px"></div>
+          <span class="help-dot" data-help="device-binding" title="Help">?</span>
           <button class="otp-verify-btn" id="otpVerifyBtn" style="display:none" onclick="sendOtp()">📧 Verify Email</button>
           <div class="otp-resend-timer" id="otpResendTimer" style="display:none"></div>
           <div class="otp-row" id="otpRow" style="display:none">
@@ -1273,7 +1289,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         </div>
       </div>
       <div class="card">
-        <div class="card-lbl">📍 Location Verification</div>
+        <div class="card-lbl">📍 Location Verification <span class="help-dot" data-help="gps-failed" title="Help">?</span></div>
         <div class="gps-net-note">
           <span class="gps-net-note-icon">📱</span>
           <div>
@@ -1288,7 +1304,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
       <button class="act-btn btn-ci" id="ciBtn" disabled onclick="doCheckin()">
         ✅ Check In
-      </button>
+      </button><span class="help-dot" data-help="check-in" title="Help">?</span>
     </div>
 
     <!-- Check-out section -->
@@ -1309,7 +1325,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       </div>
       <button class="act-btn btn-co" id="coBtn" disabled onclick="doCheckout()">
         🔴 Check Out
-      </button>
+      </button><span class="help-dot" data-help="check-out" title="Help">?</span>
 
       <!-- Admin force check-out reset banner -->
       <div style="margin-top:14px;text-align:center">
@@ -1343,7 +1359,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <div id="leaveSection" style="display:none">
 
       <div class="card">
-        <div class="card-lbl" style="color:var(--blue)">📋 Leave Application Form</div>
+        <div class="card-lbl" style="color:var(--blue)">📋 Leave Application Form <span class="help-dot" data-help="apply-leave" title="Help">?</span></div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div class="field">
@@ -1488,7 +1504,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
   <div class="sc-card-wrap">
     <div class="sc-inner-card">
       <div id="sc-big-icon" class="sc-big-icon">📍</div>
-      <div id="sc-card-title" class="sc-card-title">Location Verification</div>
+      <div id="sc-card-title" class="sc-card-title">Location Verification <span class="help-dot" data-help="spot-check" title="Help">?</span></div>
       <div id="sc-card-sub" class="sc-card-sub">Loading request…</div>
       <div id="sc-timer" class="sc-timer" style="display:none">30:00</div>
       <div id="sc-gps-wrap" style="display:none">
@@ -1529,6 +1545,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <span class="tb-title">Admin Dashboard</span>
     <span class="live-dot" style="margin-left:4px">LIVE</span>
     <button class="tb-analytics-btn" id="topbarAnalyticsBtn" onclick="dTabFromTopbar('analytics')" title="Open Analytics dashboard">📊 Analytics</button>
+    <button class="help-center-btn" data-help-center title="Help Center">❓ Help</button>
     <button class="tb-back" onclick="doSignOut()" style="margin-left:auto">Sign Out</button>
     <button class="tb-hamburger" id="navHamburger" onclick="toggleNavMenu(event)" aria-label="Open menu" aria-expanded="false" title="Menu">☰</button>
     <div class="nav-menu" id="navMenu">
@@ -1581,7 +1598,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       </div>
       <div class="tbl-wrap">
         <div class="tbl-hdr">
-          <span class="tbl-hdr-t">Attendance Records</span>
+          <span class="tbl-hdr-t">Attendance Records <span class="help-dot" data-help="live-status" title="Help">?</span></span>
           <span class="tbl-count" id="tblCount">0 records</span>
         </div>
         <div class="at-scroll">
@@ -1640,6 +1657,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <button class="tb-btn tb-out" onclick="startSlideshow()" title="Present charts as a slideshow" style="gap:6px">▶ Slideshow</button>
         <button class="tb-btn tb-pri" onclick="exportAnalyticsXLSX()" title="Download filtered dataset as Excel">⬇ Excel</button>
         <button class="tb-btn tb-out" onclick="analyticsClearFilters()">✕ Clear</button>
+        <span class="help-dot" data-help="analytics-kpi" title="Help">?</span>
       </div>
 
       <!-- ── KPI Cards ──────────────────────────────── -->
@@ -1914,6 +1932,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <option value="">All Sites</option>
         </select>
         <button class="tb-btn tb-out" onclick="calGoToday()">Today</button>
+        <span class="help-dot" data-help="calendar" title="Help">?</span>
       </div>
       <!-- ── Snapshot as of (used by Manpower Gap in Analytics) ── -->
       <div class="an-snapshot-hdr" style="margin:10px 0 4px">
@@ -1948,7 +1967,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
   <!-- Onboarding pane -->
   <div id="teamPane-onboarding">
     <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:flex-start">
-      <div style="font-weight:700;font-size:1rem;color:var(--ink)">📋 Engineer Onboarding</div>
+      <div style="font-weight:700;font-size:1rem;color:var(--ink)">📋 Engineer Onboarding <span class="help-dot" data-help="team" title="Help">?</span></div>
       <div style="position:relative;flex:1;min-width:200px;max-width:340px">
         <input id="onbSearchInput" type="text" autocomplete="off"
                placeholder="🔍 Search name, ID, email or phone…"
@@ -2054,7 +2073,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <!-- Leave Table -->
       <div class="tbl-wrap">
         <div class="tbl-hdr">
-          <span class="tbl-hdr-t">🗓️ Leave Applications</span>
+          <span class="tbl-hdr-t">🗓️ Leave Applications <span class="help-dot" data-help="leave-approval" title="Help">?</span></span>
           <span class="tbl-count" id="leaveCount">0 applications</span>
         </div>
         <div style="overflow-x:auto">
@@ -2087,7 +2106,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     <!-- v6.51 WAITING LIST TAB -->
     <div id="dTab-waitlist" style="display:none">
-      <h3 style="margin:0 0 4px">⏳ Manual Confirmation Waiting List</h3>
+      <h3 style="margin:0 0 4px">⏳ Manual Confirmation Waiting List <span class="help-dot" data-help="waitlist" title="Help">?</span></h3>
       <p style="margin:0 0 12px;color:var(--ink3);font-size:.86rem">
         Engineers whose GPS could not verify. Confirm to record their attendance at the time they submitted.
       </p>
@@ -2100,7 +2119,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div style="background:linear-gradient(135deg,#0d1117,#1a2233);border-radius:var(--r2);padding:18px 20px;margin-bottom:18px;display:flex;align-items:flex-start;gap:14px">
         <div style="font-size:2rem;flex-shrink:0">🔒</div>
         <div>
-          <div style="color:#fff;font-weight:800;font-size:1rem;margin-bottom:4px">Device–Engineer Binding</div>
+          <div style="color:#fff;font-weight:800;font-size:1rem;margin-bottom:4px">Device–Engineer Binding <span class="help-dot" data-help="device-audit" title="Help">?</span></div>
           <div style="color:#9ca3af;font-size:.83rem;line-height:1.6">Each phone is identified by a <strong style="color:#e5e7eb">random Device Token</strong> stored on that device the first time it is used — so two phones of the <strong style="color:#e5e7eb">same model</strong> (e.g. two identical iPhones) always get <strong style="color:#e5e7eb">different tokens</strong> and are never confused. A buddy punch is flagged only when <strong style="color:var(--orange)">one device token is used by more than one engineer on the same date</strong> — i.e. a single phone physically passed between people. A hardware-stable <strong style="color:#e5e7eb">Hardware ID</strong> (GPU, screen, CPU) is kept as a secondary signal for older records; same-model collisions on Hardware ID alone are no longer treated as buddy punches.</div>
         </div>
       </div>
@@ -2387,7 +2406,7 @@ service cloud.firestore {
     <!-- SETUP TAB -->
     <div id="dTab-setup" style="display:none">
       <div class="tbl-wrap" style="padding:28px">
-        <h2 style="font-size:1.2rem;margin-bottom:20px">⚙️ Setup Guide — Connect Firebase (Free)</h2>
+        <h2 style="font-size:1.2rem;margin-bottom:20px">⚙️ Setup Guide — Connect Firebase (Free) <span class="help-dot" data-help="firebase-setup" title="Help">?</span></h2>
 
         <div class="guide-step">
           <div class="gs-title">Step 1 — Create a Free Firebase Project</div>
@@ -2723,7 +2742,7 @@ service cloud.firestore {
 
         <!-- ── EMAILJS LIVE DIAGNOSTICS ── -->
         <div class="guide-step" style="border-left:4px solid #10b981;margin-top:4px">
-          <div class="gs-title">🔬 EmailJS Live Diagnostics</div>
+          <div class="gs-title">🔬 EmailJS Live Diagnostics <span class="help-dot" data-help="email-otp-setup" title="Help">?</span></div>
           <div class="gs-body">
             <p style="margin-bottom:12px">Use this to verify your setup <strong>right now</strong> — without approving a real leave.</p>
             <div id="ejDiagPanel" style="background:#0d1117;border-radius:10px;padding:16px;font-family:monospace;font-size:.8rem;line-height:1.9;margin-bottom:14px;min-height:60px">
@@ -2748,7 +2767,7 @@ service cloud.firestore {
 <div id="timesheetModal" class="modal-overlay">
   <div class="modal-box" style="max-width:480px">
     <button class="modal-close" onclick="closeTimesheetModal()">✕</button>
-    <div class="modal-title">📊 Export Timesheet</div>
+    <div class="modal-title">📊 Export Timesheet <span class="help-dot" data-help="timesheet-export" title="Help">?</span></div>
     <div class="modal-sub">Generates a coloured Excel timesheet using live attendance &amp; approved leave data. Singapore public holidays are auto-detected.</div>
     <div style="display:flex;gap:12px;margin-bottom:14px">
       <div style="flex:1">
@@ -2842,7 +2861,7 @@ service cloud.firestore {
 <div id="myLeavesModal" class="modal-overlay">
   <div class="modal-box" style="max-width:540px;max-height:90vh;overflow-y:auto">
     <button class="modal-close" onclick="document.getElementById('myLeavesModal').classList.remove('open')">✕</button>
-    <div class="modal-title">📁 My Leave Applications</div>
+    <div class="modal-title">📁 My Leave Applications <span class="help-dot" data-help="leave-balance" title="Help">?</span></div>
     <div class="modal-sub" id="myLeavesEmpInfo">Your leave applications</div>
 
     <!-- Security lock notice — shown when session is verified or blocked -->
@@ -2889,7 +2908,7 @@ service cloud.firestore {
 <div id="cancelLeaveModal" class="modal-overlay">
   <div class="modal-box">
     <button class="modal-close" onclick="document.getElementById('cancelLeaveModal').classList.remove('open')">✕</button>
-    <div class="modal-title" id="cancelLeaveTitle">Cancel Leave Application</div>
+    <div class="modal-title" id="cancelLeaveTitle">Cancel Leave Application <span class="help-dot" data-help="cancel-leave" title="Help">?</span></div>
     <div class="modal-sub" id="cancelLeaveSub">Are you sure you want to cancel this leave application?</div>
     <div class="ef-field" style="margin-bottom:14px">
       <div class="ef-label">Application</div>
@@ -2921,7 +2940,7 @@ service cloud.firestore {
 <div id="manpowerConfigModal" class="modal-overlay">
   <div class="modal-box" style="max-width:520px">
     <button class="modal-close" onclick="anCloseManpowerConfig()">✕</button>
-    <div class="modal-title">⚙️ Configure Required Manpower</div>
+    <div class="modal-title">⚙️ Configure Required Manpower <span class="help-dot" data-help="manpower-targets" title="Help">?</span></div>
     <div class="modal-sub">Set the target headcount for each site. Resource Status compares this against (Roster − On Leave) on the selected date.</div>
     <div id="manpowerConfigRows" style="max-height:50vh;overflow-y:auto;padding:6px 2px;margin-top:6px"></div>
     <div id="manpowerConfigStatus" style="font-size:.78rem;color:var(--ink3);margin-top:10px;font-family:var(--mono);min-height:18px"></div>
@@ -2936,7 +2955,7 @@ service cloud.firestore {
 <div id="sitesModal" class="modal-overlay">
   <div class="modal-box" style="max-width:560px;max-height:92vh;overflow-y:auto">
     <button class="modal-close" onclick="closeSitesModal()">✕</button>
-    <div class="modal-title">📍 Manage Work Sites</div>
+    <div class="modal-title">📍 Manage Work Sites <span class="help-dot" data-help="manage-sites" title="Help">?</span></div>
     <div class="modal-sub">Add your own sites with GPS coordinates. New sites appear in the check-in dropdown and every site filter automatically.</div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -3051,7 +3070,7 @@ service cloud.firestore {
 <div id="entitlementsModal" class="modal-overlay">
   <div class="modal-box" style="max-width:640px;max-height:90vh;overflow-y:auto">
     <button class="modal-close" onclick="anCloseEntitlements()">✕</button>
-    <div class="modal-title">⚙️ Leave Entitlements</div>
+    <div class="modal-title">⚙️ Leave Entitlements <span class="help-dot" data-help="leave-entitlements" title="Help">?</span></div>
     <div class="modal-sub">Set annual leave quotas and manual adjustments per engineer.</div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
@@ -6232,7 +6251,7 @@ function renderSpotCheckByLocation() {
 
   wrap.innerHTML =
     '<div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#f9fafb">'
-    + '<div style="font-weight:800;margin-bottom:8px">📍 Spot-Check by Location</div>'
+    + '<div style="font-weight:800;margin-bottom:8px">📍 Spot-Check by Location <span class="help-dot" data-help="spot-check-location" title="Help">?</span></div>'
     + rows
     + '</div>';
 }
@@ -14642,7 +14661,7 @@ function confirmForceCheckout() {
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
       <div style="width:38px;height:38px;border-radius:10px;background:#fef3c7;display:flex;align-items:center;justify-content:center;font-size:1.25rem">ðŸ”“</div>
       <div>
-        <div style="font-size:1rem;font-weight:700;color:var(--ink)">Admin Force Check-Out</div>
+        <div style="font-size:1rem;font-weight:700;color:var(--ink)">Admin Force Check-Out <span class="help-dot" data-help="force-checkout" title="Help">?</span></div>
         <div style="font-size:.78rem;color:var(--ink3)">Manually check out an engineer</div>
       </div>
       <button onclick="closeForceCoModal()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--ink3);line-height:1" title="Close">âœ•</button>
@@ -14721,5 +14740,657 @@ function confirmForceCheckout() {
     </div>
   </div>
 </div>
+<!-- ===== In-app help modals (v6.54, additive) ===== -->
+<div id="helpModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <button class="modal-close" onclick="document.getElementById('helpModal').style.display='none'">&times;</button>
+    <h3 class="modal-title" id="helpModalTitle"></h3>
+    <div id="helpModalBody"></div>
+    <div class="modal-actions"><button class="modal-btn-confirm" onclick="document.getElementById('helpModal').style.display='none'">Close</button></div>
+  </div>
+</div>
+<div id="helpCenterModal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <button class="modal-close" onclick="document.getElementById('helpCenterModal').style.display='none'">&times;</button>
+    <h3 class="modal-title">Help Center</h3>
+    <input id="helpSearch" class="help-search" type="text" placeholder="Search help topics…" oninput="renderHelpCenter(this.value)">
+    <div id="helpCenterList"></div>
+  </div>
+</div>
+<script>
+/* HELP_TOPICS_START */
+const HELP_TOPICS = {
+  "engineer-login": {
+    "audience": "engineer",
+    "title": "How to Log In as an Engineer",
+    "steps": [
+      "Open the app link in your mobile browser.",
+      "Tap the 'Engineer' card on the landing screen.",
+      "Enter your Full Name and Engineer ID (the number after 'Eng', e.g. enter 01 for Eng01).",
+      "Enter your company email address.",
+      "Select your Work Site from the dropdown.",
+      "Complete email verification with your OTP code before checking in."
+    ],
+    "troubleshooting": [
+      "If your Engineer ID shows as already taken by someone else, contact admin to confirm your assigned ID.",
+      "If the site dropdown is empty, Firebase may not be connected yet — admin must complete Setup Guide first.",
+      "If you cannot see the Check-In button, make sure all fields are filled and email OTP is verified."
+    ],
+    "manual": [
+      "The engineer login is not a traditional account login. Each time you open the app, you identify yourself by entering your name, Engineer ID, and email. The app recognises you by the combination of your Engineer ID and email, which are permanently linked after your first check-in.",
+      "Engineer IDs always start with 'Eng'. You only type the numeric or alphanumeric part after 'Eng' — the prefix is added automatically. If you forget your ID, you can leave the ID field blank and enter your name and email first; the app will attempt to auto-fill your ID from onboarding records.",
+      "The first time you use a device, your email must be verified with a one-time password (OTP). On returning visits from the same trusted device, re-verification is not required."
+    ]
+  },
+  "email-otp": {
+    "audience": "engineer",
+    "title": "Email OTP Verification",
+    "steps": [
+      "Fill in your Engineer ID, Full Name, and Email Address on the check-in form.",
+      "Select your Work Site.",
+      "Tap the 'Verify Email' button that appears below the email field.",
+      "Check your inbox for a 6-digit code from skysonaicontent@gmail.com.",
+      "Enter the code in the box and tap Confirm.",
+      "The 'Email verified' badge appears — you can now proceed to check in."
+    ],
+    "troubleshooting": [
+      "If the code does not arrive within two minutes, check your spam or junk folder.",
+      "The code is valid for a limited time. If it expires, tap 'Verify Email' again after the 60-second resend timer elapses.",
+      "If the Verify Email button does not appear, make sure Engineer ID, Full Name, and Email are all filled in first.",
+      "If you receive a 'Network error' message, check your internet connection and try again.",
+      "On a trusted device you have used before, the app may skip OTP automatically — the 'Email verified' badge will appear without you entering a code."
+    ],
+    "manual": [
+      "Email OTP verification confirms that the email address you entered belongs to you. A 6-digit one-time password is sent to your inbox via the n8n automation service and Brevo email platform. You must enter this code before the Check-In button becomes active.",
+      "Once your email is successfully verified on a device, the app records that device as trusted for your email address. On future visits from the same device with the same email, the OTP step is skipped automatically.",
+      "If your email address is already linked to a different Engineer ID in the system, the app will warn you. Each email can only be bound to one Engineer ID."
+    ]
+  },
+  "check-in": {
+    "audience": "engineer",
+    "title": "How to Check In",
+    "steps": [
+      "Open the app and tap Engineer on the landing screen.",
+      "Fill in your Full Name, Engineer ID, and Email, then verify your email with an OTP if prompted.",
+      "Select your Work Site from the dropdown.",
+      "Tap 'Tap to Verify My Location' and allow the browser to access your location.",
+      "Wait for the GPS fix. A green 'Within range' result means you are within 500 m of the site.",
+      "Tap the green 'Check In' button when it becomes active.",
+      "Confirm the success message showing your site name and check-in time."
+    ],
+    "troubleshooting": [
+      "If the Check-In button stays disabled, ensure GPS verification passed and OTP is confirmed.",
+      "If you are on approved leave today, check-in is blocked — contact admin if this is incorrect.",
+      "If GPS fails, see the 'GPS location failed or inaccurate' topic for fixes.",
+      "Use mobile data or a personal hotspot, not shared Wi-Fi, for the most accurate GPS fix."
+    ],
+    "manual": [
+      "Checking in records your arrival at a work site with a GPS-verified location and timestamp. The app requires your device to be within 500 metres of the selected site coordinates. If the GPS accuracy reading is worse than the geofence radius (500 m), the fix is rejected as unreliable.",
+      "The app collects multiple GPS samples over up to 20 seconds to detect Wi-Fi-based location spoofing. Positions that jump more than 2 km between samples, or that are more than 5 km from the site with suspiciously tight accuracy, are flagged as spoofed and rejected.",
+      "Your Engineer ID and email are permanently linked on your first check-in. The device you use is also recorded as a Device Token to support anti-buddy-punch monitoring. If you are on an approved leave today, check-in is automatically blocked."
+    ]
+  },
+  "gps-failed": {
+    "audience": "engineer",
+    "title": "GPS location failed or inaccurate",
+    "steps": [
+      "Make sure location permission is set to 'Allow' for this website in your browser settings.",
+      "Switch from shared Wi-Fi to mobile data or a personal hotspot.",
+      "Move outdoors or near a window — GPS signals are weak inside buildings.",
+      "Tap 'Tap to Verify My Location' again and wait up to 20 seconds for the reading to stabilise.",
+      "If the GPS still fails or shows you out of range, tap 'Confirm check-in/out manually' to submit to the admin waiting list."
+    ],
+    "troubleshooting": [
+      "'Accuracy too low' means the fix is wider than the 500 m geofence; wait for a sharper reading or move outdoors.",
+      "'Wi-Fi spoof detected' means the app suspects the location came from Wi-Fi rather than GPS; turn off Wi-Fi and retry on mobile data.",
+      "'Out of range' means your GPS position is more than 500 m from the site; confirm you are at the correct site, then retry.",
+      "If your browser asks 'Allow location?' every time, check that you have not set it to 'Block' for this site."
+    ],
+    "manual": [
+      "The app requires a genuine GPS fix with accuracy better than the 500 m site geofence. It collects multiple readings over up to 20 seconds, choosing the best sample. Wi-Fi and IP-based locations are rejected because they can place you kilometres from your actual position with misleadingly good accuracy figures.",
+      "If GPS cannot be obtained after all retries, the app offers a manual confirmation option. Tapping 'Confirm check-in/out manually' submits your attendance details (without a GPS coordinate) to the admin's Waiting List tab, where an admin can confirm your presence in person."
+    ]
+  },
+  "check-out": {
+    "audience": "engineer",
+    "title": "How to Check Out",
+    "steps": [
+      "Return to the app while your session is active (the Active Session badge should be visible).",
+      "In the 'Ready to Leave?' section, tap 'Tap to Verify My Location'.",
+      "Wait for the GPS fix to confirm you are still within 500 m of your site.",
+      "Tap the red 'Check Out' button.",
+      "Confirm the result card showing your check-out time and total duration."
+    ],
+    "troubleshooting": [
+      "If the Active Session badge is missing, you may have already been checked out by admin (force check-out). Tap 'Admin already checked you out? Tap here to reset' to clear the session.",
+      "If GPS fails at check-out, follow the same steps as the 'GPS location failed' topic.",
+      "If you see a duration that looks wrong, it means the check-out GPS fix took several seconds; the timestamp recorded is the moment the fix was accepted."
+    ],
+    "manual": [
+      "Checking out records your departure time and a second GPS-verified location. Duration is calculated automatically as the difference between check-in and check-out timestamps. Sessions over 9 hours are marked as overtime.",
+      "If an admin performs a force check-out on your session (from the dashboard), your local session state may not update immediately. Tapping the reset link clears the cached session so the form refreshes correctly.",
+      "Automatic system check-out applies after 12 hours if you have not checked out manually. This is recorded as an auto check-out with no GPS coordinates."
+    ]
+  },
+  "apply-leave": {
+    "audience": "engineer",
+    "title": "How to Apply for Leave",
+    "steps": [
+      "On the Engineer screen, tap 'Apply for Leave'.",
+      "Fill in your Engineer ID, Full Name, Email, and select your Work Site.",
+      "Choose your Site Team Manager from the dropdown (auto-populated from your site).",
+      "Select the Leave Type (e.g. Annual Leave, Sick Leave).",
+      "Set the From Date and To Date; the number of days is calculated automatically.",
+      "Upload a supporting document (leave form, MC slip, or photo) — this is mandatory.",
+      "Optionally add a reason or notes, then tap 'Submit Leave Application'."
+    ],
+    "troubleshooting": [
+      "If the Manager dropdown shows no options, your site may not have a manager assigned — contact admin.",
+      "If the attachment upload fails, check the file size (max 700 KB) and format (JPG, PNG, or PDF only).",
+      "If you have insufficient leave balance for the selected type, the app will show a warning with your remaining days.",
+      "If you have a pending or approved leave that overlaps the requested dates, the submission may be blocked — check your existing applications in 'My Leaves'."
+    ],
+    "manual": [
+      "Leave applications require a supporting document — a photo of your physical leave form, a Medical Certificate (MC) slip, or any other relevant document. This is mandatory and applications without an attachment will not be processed.",
+      "The app checks your leave balance when you select a leave type and date range. If the balance for that leave type has been configured by admin and you have insufficient days remaining, submission is blocked with an explanation message.",
+      "After submission, your application status is 'Pending' until the manager or admin approves or rejects it. You will receive an email notification when a decision is made. The application appears in the admin's Leave Management tab."
+    ]
+  },
+  "cancel-leave": {
+    "audience": "engineer",
+    "title": "How to Cancel or Edit a Leave Application",
+    "steps": [
+      "On the Engineer screen, tap 'My Leaves'.",
+      "Enter your Engineer ID and tap Search to load your applications.",
+      "Find the application you want to cancel or edit.",
+      "For a Pending application: tap 'Cancel' to cancel it immediately, or 'Edit' to change dates, type, or reason.",
+      "For an Approved application: tap 'Request Cancel' — this sends a cancellation request to admin for approval.",
+      "Confirm the action in the dialog that appears."
+    ],
+    "troubleshooting": [
+      "The Edit and Cancel buttons are only shown for Pending applications — once approved or rejected, only 'Request Cancel' is available for approved ones.",
+      "If the Cancel button does not appear, your Firestore rules may need updating — ask admin to re-paste Step 7 from the Setup Guide.",
+      "Cancellation of an approved leave requires admin confirmation; the leave status will change to 'cancel_requested' until admin acts."
+    ],
+    "manual": [
+      "Engineers can cancel or edit their own pending leave applications at any time before an admin decision. Editing allows changes to leave type, dates, and notes; the supporting attachment cannot be changed through the edit form.",
+      "For approved leave, engineers can request cancellation but cannot cancel directly. The request-cancel action changes the status to 'cancel_requested', alerting the admin in the Leave Management tab. The leave remains active until admin confirms the cancellation.",
+      "All cancellation and edit actions are logged with the updated status and timestamp in Firestore."
+    ]
+  },
+  "leave-balance": {
+    "audience": "engineer",
+    "title": "Checking Your Leave Balance",
+    "steps": [
+      "On the Engineer screen, tap 'My Leaves'.",
+      "Enter your Engineer ID and tap Search.",
+      "Your remaining leave balance for each leave type appears at the top of the results.",
+      "The balance shows quota (total days allowed), used days, and remaining days for the current year."
+    ],
+    "troubleshooting": [
+      "If no balance is shown, admin has not yet configured your leave entitlements — contact admin.",
+      "If the balance appears lower than expected, check whether any pending applications are counting against your quota.",
+      "Balance is calculated per calendar year. Entitlements reset at the start of each new year unless carried over by admin."
+    ],
+    "manual": [
+      "Leave balances are based on entitlement records set by admin in the Leave Entitlements configuration (per engineer, per year, per leave type). The balance shown deducts all approved leave for the current year.",
+      "If entitlements have not been configured for a specific leave type, the app allows submission without a balance check. Once entitlements are set, submissions that exceed the remaining balance are blocked.",
+      "Balance visibility in the My Leaves modal is read-only for engineers. Adjustments (such as carry-over or manual corrections) must be made by admin through the Entitlements modal in the Leave Management tab."
+    ]
+  },
+  "spot-check": {
+    "audience": "engineer",
+    "title": "Responding to a Spot-Check",
+    "steps": [
+      "When your admin sends a spot-check link, open it on your mobile device.",
+      "The app loads a Location Verification screen with a countdown timer.",
+      "Enter your Engineer ID number (the part after 'Eng') and tap Continue.",
+      "Use mobile data or a personal hotspot — avoid shared Wi-Fi.",
+      "Tap 'Tap to Verify My Location' and allow browser location access.",
+      "Wait for the GPS result. If verified, a green confirmation appears; if failed, a red result is shown.",
+      "You cannot re-submit once a result is recorded."
+    ],
+    "troubleshooting": [
+      "If the link shows 'Spot-Check Expired', the session window has passed — contact admin for a new link.",
+      "If the link shows 'Spot-Check Closed', admin has ended the session early.",
+      "If GPS verification fails, you will see a red result. The admin can see this in the Live Status tab and decide whether to follow up.",
+      "The spot-check must be completed within the time window shown (default 30 minutes). Once the timer expires, the session closes."
+    ],
+    "manual": [
+      "Spot-checks are used by admin to verify that checked-in engineers are physically on site. When admin generates a spot-check session for your site, one shared link is created and distributed (e.g. via WhatsApp). All engineers currently checked in at that site are expected to respond.",
+      "The spot-check screen requires you to identify yourself by Engineer ID and then verify your GPS location, applying the same 500 m geofence and anti-Wi-Fi-spoof rules as regular check-in. Your response is recorded in Firestore and the admin can see verified, failed, and non-responding engineers in real time.",
+      "Each engineer can only respond once per session. The session token expires after the configured window (15, 30, or 60 minutes) chosen by admin when generating the link."
+    ]
+  },
+  "device-binding": {
+    "audience": "engineer",
+    "title": "Device Binding and Trusted Devices",
+    "steps": [
+      "On your first check-in from a new device, the app silently creates a unique Device Token for that device.",
+      "This token is permanently linked to your Engineer ID and email in Firestore.",
+      "On future visits from the same device, the app recognises you automatically.",
+      "If you switch to a new device, check in normally — the new device token is added to your record.",
+      "If you lose a device or change phones, ask admin to reset your device bindings in Engineer Accounts."
+    ],
+    "troubleshooting": [
+      "If the app asks for OTP on every visit, your device token may have been cleared by admin — complete OTP once to re-bind.",
+      "If you see a 'buddy punch' warning on your record and you believe it is a mistake, contact admin to review and clear the flag.",
+      "If you cannot check in on a new device, confirm with admin that your previous device bindings have been reset."
+    ],
+    "manual": [
+      "Every device is assigned a random Device Token on its first use. This token is stored in the browser's local storage and in Firestore. It is distinct from the hardware ID (which is derived from GPU, screen, and CPU characteristics) and is unique even for two physically identical phones of the same model.",
+      "Device-engineer binding enables anti-buddy-punch detection. If the same Device Token is used by more than one Engineer ID on the same date, the system flags this as a potential buddy punch. Admin can review these flags in the Device Audit tab.",
+      "Device tokens also support the trusted-device OTP bypass. When your email OTP is confirmed on a device, that device is trusted for your email. If you clear your browser data or use a private/incognito window, the trust is lost and OTP will be required again."
+    ]
+  },
+  "firebase-setup": {
+    "audience": "admin",
+    "title": "Setting Up Firebase (First-Time Configuration)",
+    "steps": [
+      "Go to console.firebase.google.com, sign in, and create a new project named 'Attendance System' (disable Analytics).",
+      "Enable Firestore Database in production mode, selecting your nearest region.",
+      "Enable Authentication with Email/Password sign-in and create your admin user account.",
+      "In Project Settings, register a Web app and copy the firebaseConfig object.",
+      "Open index.html in a text editor and paste your config values into the FIREBASE_CONFIG block.",
+      "In the same file, update WORK_SITES with your site names and GPS coordinates.",
+      "In Firebase Console, go to Firestore Database → Rules and paste the complete rules block from Setup Guide Step 7.",
+      "Click Publish, wait 30 seconds, then reload the dashboard — the setup banner should disappear."
+    ],
+    "troubleshooting": [
+      "If the setup banner persists after pasting config, check that all six keys (apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId) are filled in correctly.",
+      "If engineer records do not appear in Engineer Accounts, the emailBindings read rule is missing — re-paste the full Step 7 rules block.",
+      "If Edit/Delete/Reset buttons fail with 'permission-denied', the empBindings or emailBindings write rules are missing — re-paste Step 7.",
+      "After publishing rules, wait 30 to 60 seconds and hard-refresh the dashboard (Ctrl+Shift+R) before testing."
+    ],
+    "manual": [
+      "Firebase is the cloud database and authentication backend for the attendance system. All attendance records, engineer accounts, leave applications, device bindings, and site configurations are stored in Firestore. Authentication uses Firebase Email/Password to secure the admin dashboard.",
+      "The app uses five Firestore collections: attendance, emailBindings, empBindings, leaveApplications, and manpowerConfig. All five require specific security rules. The complete rules block in Setup Guide Step 7 covers all collections — it must be pasted in full.",
+      "GPS coordinates for work sites can be obtained from Google Maps by right-clicking the site location. The first row shown is latitude, longitude. Sites added through the in-app Manage Sites modal are stored in Firestore and override the hardcoded WORK_SITES array.",
+      "Optional follow-up steps include restricting the Firebase API key to your hosting domain (Step 8), hosting the file on GitHub Pages for a shareable URL (Step 9), and configuring email notifications via the email service (Step 11)."
+    ]
+  },
+  "admin-login": {
+    "audience": "admin",
+    "title": "Logging In to the Admin Dashboard",
+    "steps": [
+      "Open the app link and tap 'Admin Dashboard' on the landing screen.",
+      "Enter your admin email address and password.",
+      "Tap 'Access Dashboard'.",
+      "The Live Status tab loads automatically upon successful login."
+    ],
+    "troubleshooting": [
+      "If login fails with 'wrong password', use the Firebase Console (Authentication → Users) to reset the password.",
+      "If login fails with 'user not found', confirm that an admin user was created in Firebase Authentication during setup.",
+      "If the dashboard loads but shows no data, Firebase may not be fully configured — check that FIREBASE_CONFIG is set and Firestore rules are published.",
+      "Team managers log in with the same screen using their own manager credentials created under Team → Team Managers."
+    ],
+    "manual": [
+      "Admin login uses Firebase Authentication (Email/Password). Credentials are never stored in the HTML file — they live in Firebase's secure authentication store. The admin email and password are created in Step 3 of the Setup Guide.",
+      "Team managers created in the Team Managers sub-tab also use this same login screen. Managers have access to all dashboard tabs except the Setup Guide tab, and can approve or reject leave for their assigned sites.",
+      "Signing out clears the authenticated session. The app returns to the landing screen. For shared computers, always sign out after use."
+    ]
+  },
+  "live-status": {
+    "audience": "admin",
+    "title": "Using the Live Status Tab",
+    "steps": [
+      "Log in to the admin dashboard. The Live Status tab opens by default.",
+      "The attendance table updates in real time as engineers check in and out.",
+      "Use the search box to filter by engineer name or ID.",
+      "Use the Site and Status dropdowns to narrow results to a specific site or status (Checked In / Checked Out).",
+      "Use the Date picker to view records for a past date.",
+      "Tap 'Force CO' on any currently checked-in row to perform an admin force check-out.",
+      "Tap the CSV button to download filtered records as a CSV file."
+    ],
+    "troubleshooting": [
+      "If the table is empty but engineers are checking in, confirm Firebase is connected and the attendance Firestore rules are published.",
+      "If the Spot-Check by Location panel is not visible, no engineers are currently checked in.",
+      "Real-time updates require a live internet connection — a lost connection will pause updates until it is restored."
+    ],
+    "manual": [
+      "The Live Status tab shows all attendance records across all sites in a single real-time table. Columns include engineer name and ID, site, check-in and check-out times, session duration, GPS coordinates for both check-in and check-out, device identifier, date, and spot-check response status.",
+      "The Spot-Check by Location panel appears at the top of the Live Status tab whenever engineers are currently checked in. It shows each occupied site, the number of engineers on site, and spot-check response tallies (verified, failed, no response). Admin can copy a spot-check link from here.",
+      "The Force CO button opens a modal where admin can set a specific check-out date and time and add an optional note. The forced check-out is written to Firestore and the engineer's local session is cleared via a signal in the empBindings collection."
+    ]
+  },
+  "analytics-kpi": {
+    "audience": "admin",
+    "title": "Analytics Dashboard and KPI Cards",
+    "steps": [
+      "Log in and click the 'Analytics' button in the top bar, or select Analytics from the hamburger menu.",
+      "Use the date range filters at the top to select a reporting period; tap 'Today' to reset to today.",
+      "Review the six KPI cards: Today's Check-ins, Total Engineers in System, Checked Out Today, Late Rate, On Leave, and Resource Status.",
+      "The Attendance Status by Site chart shows on-time, late, and absent engineers per site — click a bar for a detail breakdown.",
+      "Use 'Configure Manpower' to set headcount targets per site, which drive the Resource Status KPI.",
+      "Tap 'Excel' to export the filtered dataset; tap 'Slideshow' to present charts in fullscreen."
+    ],
+    "troubleshooting": [
+      "If KPI cards show 0 or dashes, no attendance data exists for the selected date range — widen the range or tap Today.",
+      "Resource Status shows a dash if manpower targets have not been configured; use 'Configure Manpower' to set targets.",
+      "The Late Rate KPI requires a standard start time to be inferred from attendance data — if no engineer has checked in, the rate cannot be calculated."
+    ],
+    "manual": [
+      "The Analytics tab provides historical and live analysis of attendance patterns across all sites. The six KPI cards update based on the selected date range and site filter. Resource Status compares available engineers (roster minus those on approved leave) against the configured manpower target for the selected date.",
+      "The Attendance Status by Site chart is the main visualisation. It breaks down engineers at each site into on-time, late, and absent categories for the selected period. Clicking a bar expands a detail list of affected engineers.",
+      "The Engineers on Leave panel and Leave by Period chart provide a breakdown of approved leave by type and period. These charts filter by the same date range as the KPI cards.",
+      "The Aggregated Breakdown table at the bottom shows per-site, per-date attendance counts. It can be exported to Excel. The Excel export includes all raw attendance and leave data for the filtered period.",
+      "The Manpower Gap History table records daily snapshots previously saved by admin; it shows available vs. required headcount trends over time."
+    ]
+  },
+  "calendar": {
+    "audience": "admin",
+    "title": "Leave Calendar",
+    "steps": [
+      "Log in and click the Calendar tab.",
+      "Use the left and right arrows to navigate between months.",
+      "Use the Site filter to narrow the calendar to engineers at one site.",
+      "Each day tile shows the names and leave types of engineers on approved leave that day.",
+      "Tap 'Today' to jump back to the current month."
+    ],
+    "troubleshooting": [
+      "If the calendar appears empty, no approved leave falls in the selected month.",
+      "If a site filter shows no engineers, confirm the site name matches what was used when the leave application was submitted.",
+      "The calendar only shows approved leave — pending or rejected applications do not appear."
+    ],
+    "manual": [
+      "The Leave Calendar provides a monthly overview of all approved leave across the organisation. Each date cell lists the engineers on leave and their leave type (colour-coded by type in the legend). This makes it easy to identify busy periods with high absence.",
+      "The calendar is read-only and updates automatically as leave is approved or cancelled. Site filtering is useful for managers who oversee one location and want to see availability at a glance.",
+      "The Snapshot as of date picker embedded in the Calendar tab header also drives the Manpower Gap calculation in Analytics; changing this date updates the Analytics Resource Status without navigating away."
+    ]
+  },
+  "manpower-targets": {
+    "audience": "admin",
+    "title": "Configuring Manpower Targets",
+    "steps": [
+      "Log in and open the Analytics tab.",
+      "Click the 'Configure Manpower' button in the toolbar.",
+      "In the modal, enter the required headcount for each site.",
+      "Click 'Save Targets' — targets are saved to Firestore immediately.",
+      "The Resource Status KPI card and Manpower Gap analysis update automatically."
+    ],
+    "troubleshooting": [
+      "If a site is not listed in the modal, it may not have any attendance records yet or has not been added to the site list.",
+      "If targets do not save, confirm you are signed in as admin (manager accounts can read but may not write to manpowerConfig depending on rules).",
+      "If the Resource Status KPI still shows a dash after saving, reload the dashboard to refresh the subscription."
+    ],
+    "manual": [
+      "Manpower targets define the minimum number of engineers required at each site on any given day. These targets are stored in the manpowerConfig Firestore collection and are used to calculate the Net Gap (Available minus Required) in the Analytics tab.",
+      "The Resource Status KPI card compares the number of available engineers (total roster minus those on approved leave for the selected date) against the sum of all site targets. A green result indicates sufficient coverage; red indicates a deficit.",
+      "Targets can be updated at any time and take effect immediately. Historical snapshots saved by admin in the Manpower Gap History are not retroactively updated — they record the target that was set at the time of the snapshot."
+    ]
+  },
+  "leave-entitlements": {
+    "audience": "admin",
+    "title": "Setting Leave Entitlements",
+    "steps": [
+      "Log in and go to the Leave Mgmt tab.",
+      "Click the 'Entitlements' button in the toolbar.",
+      "Select the engineer from the dropdown and choose the year.",
+      "Enter the quota (total days allowed) for each leave type.",
+      "Optionally enter a manual adjustment (positive or negative) for special cases.",
+      "Click 'Save Entitlements' — the settings are stored in Firestore for that engineer and year."
+    ],
+    "troubleshooting": [
+      "If an engineer is not listed in the dropdown, they have not yet been registered in the system (no check-in or onboarding record).",
+      "If an engineer submits leave and is not blocked despite insufficient balance, their entitlement for that leave type may not be set — the app only enforces balance when a quota is configured.",
+      "Entitlements are per-year; make sure the correct year is selected before saving."
+    ],
+    "manual": [
+      "Leave entitlements define how many days each engineer is allowed for each leave type in a given calendar year. Entitlements are stored in Firestore under the leaveEntitlements collection, keyed by engineer ID and year.",
+      "When an engineer submits a leave application, the app fetches their entitlement record and compares the requested days against the remaining balance (quota minus approved days used). If the balance is insufficient, submission is blocked with a message showing the remaining days.",
+      "The adjustment field allows manual overrides — for example, adding carry-over days from the previous year or correcting an error. Adjustments are added to the base quota to produce the effective allowance.",
+      "Leave types with no entitlement configured are treated as uncapped — engineers can apply for them without a balance check. To enforce a zero balance, set the quota to 0."
+    ]
+  },
+  "leave-approval": {
+    "audience": "admin",
+    "title": "Approving or Rejecting Leave Applications",
+    "steps": [
+      "Log in and go to the Leave Mgmt tab. The orange Pending badge shows how many applications await action.",
+      "Use the Status filter to show 'Pending' applications only.",
+      "Click the attachment icon to review the supporting document.",
+      "Click 'Approve' to approve — the status changes to Approved and a notification email is sent to the engineer.",
+      "Click 'Reject' to open a rejection reason dialog. Enter a reason and confirm. A notification email with the reason is sent to the engineer.",
+      "Approved leave is reflected in the calendar, analytics, and check-in block for that date."
+    ],
+    "troubleshooting": [
+      "If Approve/Reject buttons fail with a permission error, ensure you are signed in and that leaveApplications update rules are published from Setup Guide Step 7.",
+      "If the engineer does not receive a notification email, check that the email service (Brevo API key) is configured in the HTML file and run diagnostics from Setup Guide.",
+      "If an engineer requests cancellation of approved leave, the application status changes to 'cancel_requested' — review and confirm or deny the cancellation from the Leave Mgmt tab."
+    ],
+    "manual": [
+      "All leave applications submitted by engineers appear in the Leave Management tab. The pending badge on the tab header provides a real-time count of unactioned applications. Applications can be filtered by status, leave type, and date range.",
+      "When leave is approved, the engineer receives an email notification via the configured email service. The leave is also recorded in Firestore and the calendar immediately reflects the approval. If the approved leave falls on today's date, the engineer's check-in will be blocked from that point forward.",
+      "Rejection requires a reason, which is included in the notification email. Engineers can re-apply after reviewing the reason. Admins and managers can also cancel approved leave directly from this tab."
+    ]
+  },
+  "team": {
+    "audience": "admin",
+    "title": "Managing the Team (Onboarding, Accounts, and Managers)",
+    "steps": [
+      "Log in and go to the Team tab.",
+      "In the 'Onboarding' sub-tab, click '+ Add Engineer' to pre-record an engineer's details (ID, name, site, email, NRIC, phone).",
+      "In the 'Eng Accounts' sub-tab, view registered engineers. Use Edit to update details, Reset Devices to clear device bindings, or Delete to remove an account.",
+      "In the 'Team Managers' sub-tab, set an HR notification email, add a new team manager with their login credentials and assigned site(s), or view existing managers.",
+      "To export the onboarding list, click 'Export Excel' in the Onboarding sub-tab."
+    ],
+    "troubleshooting": [
+      "If Edit or Delete fails with 'permission denied', re-paste the Step 7 Firestore rules to ensure emailBindings and empBindings write rules are present.",
+      "If an engineer appears in Accounts but not Onboarding, they self-registered without an onboarding record — you can add one retroactively.",
+      "Creating a manager requires a valid email and password (minimum 6 characters). If creation fails, confirm the email is not already registered in Firebase Authentication."
+    ],
+    "manual": [
+      "The Team tab consolidates three functions: engineer onboarding (pre-registration), account management (post-registration), and team manager setup. Onboarding lets admin pre-enter engineer details before they first log in; the engineer's check-in form is auto-filled and validated against these records.",
+      "The Engineer Accounts sub-tab lists all engineers who have registered by completing at least one check-in or having their email bound. From here, admin can edit personal details, reset device fingerprints (so the engineer can check in from a new phone), or permanently delete the account and associated records.",
+      "Team Managers are separate Firebase Authentication accounts. They log in at the same admin login screen and see the full dashboard except Setup Guide. Managers can approve or reject leave only for the sites they are assigned. The HR notification email (set in Team Managers) receives a copy of every leave decision email."
+    ]
+  },
+  "device-audit": {
+    "audience": "admin",
+    "title": "Device Audit and Buddy-Punch Detection",
+    "steps": [
+      "Log in and go to the Device Audit tab.",
+      "Review buddy punch alerts at the top — these flag cases where one device was used by more than one engineer on the same date.",
+      "Review the Device-Engineer Registry table for any rows flagged as suspicious.",
+      "To investigate: note the Device ID, go to Live Status and search for the engineer IDs involved, and compare GPS coordinates and timestamps.",
+      "To clear a confirmed false positive, use the clear/resolve option on the alert.",
+      "In the Email-Device Binding Registry, review any devices whose email changed after initial binding and reset the binding if needed."
+    ],
+    "troubleshooting": [
+      "Same-model phones (e.g. two identical iPhones) do not cause false buddy-punch alerts because each device receives a unique random Device Token, not a hardware-based ID.",
+      "If an engineer changes phones, the new device token is registered automatically on their first check-in from the new device. The old token remains in history.",
+      "If a flag appears for two engineers who genuinely share a device (e.g. borrowing a company tablet), contact admin to review the timestamps and manually clear the alert."
+    ],
+    "manual": [
+      "The Device Audit tab monitors for buddy punching — when one physical device is used to check in as two different engineers on the same day. This is detected by comparing Device Tokens across same-day attendance records. A Device Token is a random string generated and stored in the browser's local storage on first use; two identical phones of the same model will always get different tokens.",
+      "In addition to Device Tokens, the system also records a Hardware ID derived from GPU, screen, and CPU characteristics. Hardware ID is kept as a secondary signal for older records but same-model Hardware ID collisions alone are no longer treated as buddy punches.",
+      "The Email-Device Binding Registry tracks which email address each device was first associated with. If a device later reports a different email (possible account sharing), the row is flagged. Admin can view the email history for the device and choose to reset the binding."
+    ]
+  },
+  "manage-sites": {
+    "audience": "admin",
+    "title": "Managing Work Sites",
+    "steps": [
+      "Log in and open the Analytics tab.",
+      "Click the 'Manage Sites' button in the toolbar.",
+      "To add a site, enter the site name, latitude, and longitude, then click '+ Add site'.",
+      "To get GPS coordinates automatically, click 'Use my current location' while physically at the site.",
+      "New sites appear immediately in the check-in dropdown for engineers and in all site filters.",
+      "To remove a custom site, click the delete button next to it in the custom sites list."
+    ],
+    "troubleshooting": [
+      "Built-in sites defined in the WORK_SITES array in the HTML file cannot be deleted from the modal — edit the HTML file directly to change them.",
+      "If a new site does not appear in the engineer's site dropdown, ask the engineer to refresh the page.",
+      "Latitude and longitude must be valid decimal numbers (e.g. 1.3521 and 103.8198). Wrong values will result in engineers always showing as out of range."
+    ],
+    "manual": [
+      "Work sites define the GPS coordinates that the geofence check-in uses. Engineers must be within 500 metres of the site coordinates to successfully check in or check out. Sites can be hardcoded in the WORK_SITES array in the HTML file or added dynamically through the Manage Sites modal.",
+      "Custom sites added through the modal are stored in the Firestore workSites collection. They are fetched and merged with the built-in list every time the engineer or admin page loads. This means all users see new sites immediately after they are added, without requiring an HTML file update.",
+      "GPS coordinates for any location can be obtained from Google Maps: right-click the map at the site location, and the first line shown is latitude, longitude. For interior locations, place the marker at the building entrance or the area closest to where engineers will check in from."
+    ]
+  },
+  "waitlist": {
+    "audience": "admin",
+    "title": "Manual Confirmation Waiting List",
+    "steps": [
+      "Log in and click the 'Waiting List' tab (or navigate via the hamburger menu). The orange badge shows the count of pending entries.",
+      "Each entry shows the engineer's name, ID, email, site, submitted time, and the GPS failure reason.",
+      "If you have confirmed the engineer is physically present on site, click 'Confirm' to record their attendance at the time they submitted.",
+      "If the engineer is not on site or the entry is invalid, click 'Reject' to dismiss it."
+    ],
+    "troubleshooting": [
+      "If the Waiting List tab shows no entries but engineers reported submitting, check that the pendingAttendance Firestore read rule allows admin access.",
+      "Confirming a waiting list entry records attendance at the time the engineer submitted the manual confirmation, not the time admin clicks Confirm.",
+      "If an engineer sees a 'Pending admin confirmation' banner on their screen and admin cannot see it in the Waiting List, the Firestore rule for the pendingAttendance collection may be missing — re-paste Step 7."
+    ],
+    "manual": [
+      "The Waiting List (Manual Confirmation) receives attendance entries from engineers whose GPS could not be verified. When GPS fails on the engineer's device, the app offers a 'Confirm check-in/out manually' option. Tapping it submits the engineer's details (name, ID, email, site, timestamp) to the pendingAttendance Firestore collection without GPS coordinates.",
+      "From the admin's Waiting List tab, the admin can physically verify the engineer is present on site and then click Confirm. This writes the attendance record to Firestore using the engineer's original submission timestamp. The engineer's 'Pending admin confirmation' banner disappears once the entry is confirmed or rejected.",
+      "This feature is a fallback for genuine GPS failure situations (indoor environments, poor signal). It is not a way to bypass GPS verification — admin is expected to physically verify presence before confirming."
+    ]
+  },
+  "force-checkout": {
+    "audience": "admin",
+    "title": "Admin Force Check-Out",
+    "steps": [
+      "Log in and go to the Live Status tab.",
+      "Find the engineer who is still checked in and needs to be checked out.",
+      "Click the 'Force CO' button on that row.",
+      "In the Force Check-Out modal, verify the engineer's name, site, and check-in time.",
+      "Set the check-out date and time (defaults to the current time).",
+      "Optionally enter a note (e.g. 'Engineer forgot to check out').",
+      "Click 'Confirm Force Check-Out' to write the record."
+    ],
+    "troubleshooting": [
+      "If the Force CO button is not visible, the engineer may already be checked out — verify the row status.",
+      "The force check-out records no GPS coordinates for the checkout (they are stored as null). This is expected behaviour.",
+      "After force check-out, if the engineer's app still shows an active session, they should tap 'Admin already checked you out? Tap here to reset' to clear their local session.",
+      "The system also performs an automatic force check-out after 12 continuous hours on site — this is recorded as an auto check-out by the system."
+    ],
+    "manual": [
+      "Admin force check-out is used when an engineer forgets to check out, leaves without checking out, or needs to have their session corrected. The admin sets the check-out time manually, which is written to the attendance record in Firestore. No GPS coordinates are recorded for a forced check-out.",
+      "The forced check-out also writes a signal to the engineer's empBindings document (forceCheckoutAt timestamp). The engineer's app detects this signal via a real-time Firestore listener and automatically resets their local session state, clearing the active session badge.",
+      "Duration and overtime are recalculated based on the chosen check-out time. Sessions exceeding 9 hours are marked as overtime. The admin who performed the force check-out and any notes are stored in the attendance record for audit purposes."
+    ]
+  },
+  "timesheet-export": {
+    "audience": "admin",
+    "title": "Exporting the Monthly Timesheet",
+    "steps": [
+      "Log in and go to the Leave Mgmt tab.",
+      "Click the 'Timesheet' button in the toolbar.",
+      "Select the Month and Year for the report.",
+      "Optionally select a Site to filter the report to one site (leave blank for all sites).",
+      "Click 'Download Excel' to generate and download the coloured timesheet file."
+    ],
+    "troubleshooting": [
+      "If the download fails silently, check that your browser allows file downloads from the app's URL.",
+      "If a leave type colour is missing, the leave type in the application may not match the standard types used by the colour map.",
+      "Singapore public holidays are auto-detected based on a built-in calendar. For non-Singapore deployments, holidays may not be accurate."
+    ],
+    "manual": [
+      "The monthly timesheet export generates a colour-coded Excel file combining attendance records and approved leave data for the selected month and year. Each day is a column and each engineer is a row. Days are colour-coded by status: MC (blue), Annual Leave (orange), Public Holiday (peach), Urgent Leave (purple), No Pay Leave (yellow). Present days show check-in time.",
+      "Singapore public holidays are automatically detected and highlighted in the timesheet. The file uses xlsx-js-style formatting for cell colours and borders, producing a print-ready document.",
+      "The site filter allows generating site-specific timesheets. When no site is selected, all engineers across all sites are included. The file is downloaded directly to the browser's default download folder."
+    ]
+  },
+  "email-otp-setup": {
+    "audience": "admin",
+    "title": "Configuring Email OTP and Notifications",
+    "steps": [
+      "Open index.html in a text editor.",
+      "Find the variables BREVO_API_KEY and BREVO_FROM near the bottom of the file and replace them with your Brevo API key and sender email.",
+      "For leave approval notification emails (Step 11 in Setup Guide), the same Brevo credentials are used — no additional setup is needed.",
+      "To test the email service, log in to the dashboard, go to the Setup Guide tab, and click 'Run Diagnostics', then 'Send Test Email'.",
+      "If you want to change the n8n OTP webhook URLs, find REQUEST_OTP_URL and VERIFY_OTP_URL in the file and update them."
+    ],
+    "troubleshooting": [
+      "If engineers report not receiving OTP emails, check the Brevo API key is valid and has sufficient daily sending quota.",
+      "If leave approval emails are not sent, run 'EmailJS Live Diagnostics' in Setup Guide to check the Brevo configuration.",
+      "If emails arrive but look like old templates, Brevo caches templates — wait 2 to 5 minutes and send a test again.",
+      "If the OTP request returns a network error, confirm that the n8n webhook URL is reachable and the n8n workflow is active."
+    ],
+    "manual": [
+      "The attendance system uses two email mechanisms. Engineer email OTP verification uses an n8n automation workflow hosted at skyaifactory.com. The workflow calls Brevo's transactional email API to send the 6-digit code. The admin must set BREVO_API_KEY and BREVO_FROM in the HTML file for this to work.",
+      "Leave approval and rejection notification emails are also sent via Brevo using the same API key and sender address. These are triggered when an admin approves or rejects a leave application and sent to the engineer's email address and the HR notification email configured in Team → Team Managers.",
+      "The Setup Guide tab includes a live diagnostics panel that checks API key validity, sender address, and sends a real test email. Use this to verify the setup without approving a real leave application.",
+      "If you prefer to use a different email provider for OTP, replace REQUEST_OTP_URL and VERIFY_OTP_URL with your own webhook endpoints that accept a POST request with { email } and respond with { success: true }."
+    ]
+  },
+  "spot-check-location": {
+    "audience": "admin",
+    "title": "Running a Spot-Check by Location",
+    "steps": [
+      "Log in and go to the Live Status tab. The 'Spot-Check by Location' panel appears when engineers are currently checked in.",
+      "Find the site you want to spot-check. Select a time window (15, 30, or 60 minutes) from the dropdown.",
+      "Click 'Copy link' to generate a spot-check session and copy the unique URL to your clipboard.",
+      "Share the link with all engineers at that site (e.g. via WhatsApp group).",
+      "Engineers tap the link, enter their Engineer ID, and verify their GPS location within the time window.",
+      "Monitor the tally in the panel: verified, failed, and no-response counts update in real time.",
+      "If a session is already open, click 'New link' to generate a replacement session."
+    ],
+    "troubleshooting": [
+      "If the Spot-Check by Location panel is not visible, no engineers are currently checked in at any site.",
+      "If engineers report the link shows 'Spot-Check Expired', the session window has closed — generate a new link.",
+      "If a response shows 'failed', the engineer's GPS could not verify their location within the geofence. Follow up in person.",
+      "If an engineer appears as 'not on roster', they responded to the spot-check but are not currently recorded as checked in at that site."
+    ],
+    "manual": [
+      "Spot-check by location is a real-time presence verification tool. When admin generates a session for a site, a single shared link is created and stored in Firestore under spotCheckSessions. All engineers currently checked in at that site are expected to open the link and verify their GPS within the session window.",
+      "The session window can be set to 15, 30, or 60 minutes. After the window expires, the session closes and no more responses are accepted. Generating a new link replaces the old session for that site.",
+      "The response tally in the Live Status panel shows: verified (GPS confirmed within 500 m), failed (GPS check failed or out of range), no response (engineer did not respond before expiry), and off-roster (responded but not currently checked in). This tally is live — it updates as engineers respond.",
+      "Spot-check results are also visible per-engineer in the Spot Check column of the attendance table, making it easy to identify engineers who did not respond or failed verification."
+    ]
+  }
+};
+/* HELP_TOPICS_END */
+
+function openHelpTopic(key){
+  const t = HELP_TOPICS[key];
+  if(!t){ return; }
+  document.getElementById('helpModalTitle').textContent = t.title;
+  let html = '<ol class="help-steps">' + (t.steps||[]).map(s => '<li>'+s+'</li>').join('') + '</ol>';
+  if(t.troubleshooting && t.troubleshooting.length){
+    html += '<div class="help-trouble"><h4>Troubleshooting</h4><ul class="help-steps">'
+         + t.troubleshooting.map(s => '<li>'+s+'</li>').join('') + '</ul></div>';
+  }
+  document.getElementById('helpModalBody').innerHTML = html;
+  document.getElementById('helpCenterModal').style.display = 'none';
+  document.getElementById('helpModal').style.display = 'flex';
+}
+
+function renderHelpCenter(filter){
+  filter = (filter||'').toLowerCase();
+  const groups = { engineer: [], admin: [] };
+  Object.keys(HELP_TOPICS).forEach(k => {
+    const t = HELP_TOPICS[k];
+    if(filter && !t.title.toLowerCase().includes(filter)) return;
+    (groups[t.audience] || (groups.admin)).push({ key:k, title:t.title });
+  });
+  const label = { engineer:'Engineer', admin:'Admin' };
+  let html = '';
+  ['engineer','admin'].forEach(g => {
+    if(!groups[g].length) return;
+    html += '<div class="help-group-title">'+label[g]+'</div>';
+    groups[g].sort((a,b)=>a.title.localeCompare(b.title)).forEach(t => {
+      html += '<button class="help-topic-row" data-help="'+t.key+'">'+t.title+'</button>';
+    });
+  });
+  document.getElementById('helpCenterList').innerHTML = html || '<p style="color:#6b7280">No matching topics.</p>';
+}
+
+function openHelpCenter(){
+  document.getElementById('helpSearch').value='';
+  renderHelpCenter('');
+  document.getElementById('helpCenterModal').style.display='flex';
+}
+
+document.addEventListener('click', function(e){
+  const dot = e.target.closest('[data-help]');
+  if(dot){ e.preventDefault(); openHelpTopic(dot.getAttribute('data-help')); return; }
+  const hc = e.target.closest('[data-help-center]');
+  if(hc){ e.preventDefault(); openHelpCenter(); }
+});
+</script>
 </body>
 </html>
