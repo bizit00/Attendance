@@ -1322,6 +1322,13 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <button class="act-btn btn-ci" id="ciBtn" disabled onclick="doCheckin()">
         ✅ Check In
       </button><span class="help-dot" data-help="check-in" title="Help">?</span>
+
+      <!-- v6.57: self-service recovery — replaces manually clearing browser data -->
+      <div style="margin-top:14px;text-align:center">
+        <button onclick="_resetAppData()" style="background:none;border:none;color:var(--ink3);font-size:.78rem;cursor:pointer;text-decoration:underline;font-family:var(--body);padding:4px 8px">
+          🔄 Having trouble? Tap to reset the app
+        </button>
+      </div>
     </div>
 
     <!-- Check-out section -->
@@ -1344,10 +1351,10 @@ tr.on-leave-row td{background:#f0f9ff!important}
         🔴 Check Out
       </button><span class="help-dot" data-help="check-out" title="Help">?</span>
 
-      <!-- Admin force check-out reset banner -->
+      <!-- v6.57: self-service recovery — replaces manually clearing browser data -->
       <div style="margin-top:14px;text-align:center">
-        <button onclick="adminResetSession()" style="background:none;border:none;color:var(--ink3);font-size:.78rem;cursor:pointer;text-decoration:underline;font-family:var(--body);padding:4px 8px">
-          Admin already checked you out? Tap here to reset
+        <button onclick="_resetAppData()" style="background:none;border:none;color:var(--ink3);font-size:.78rem;cursor:pointer;text-decoration:underline;font-family:var(--body);padding:4px 8px">
+          🔄 Having trouble? Tap to reset the app
         </button>
       </div>
     </div>
@@ -3348,9 +3355,25 @@ function verifyGps(dir) {
   document.getElementById(statId).innerHTML   = "";
   GPS[dir] = null;
   chkBtn();
+  console.log("[v6.57] GPS verify start:", dir);
 
   if (!navigator.geolocation) {
     setGpsUI(dir,"error","Geolocation not supported by this browser.",null); return;
+  }
+
+  // v6.57: if the site's location permission is stuck at "denied", watchPosition can
+  // spin forever with no callback. Detect it up front and give clear guidance instead.
+  if (navigator.permissions && navigator.permissions.query) {
+    try {
+      navigator.permissions.query({ name: "geolocation" }).then(function(status) {
+        console.log("[v6.57] geolocation permission:", status.state);
+        if (status.state === "denied") {
+          setGpsUI(dir, "error",
+            "Location is blocked for this site. Tap the padlock/site-settings icon in your browser's address bar, set Location to Allow, then tap “Refresh GPS”. If that doesn't help, use “Reset app” below.",
+            null);
+        }
+      }).catch(function(){});
+    } catch(e){}
   }
 
   var site;
@@ -3379,6 +3402,7 @@ function verifyGps(dir) {
 
   function finish(pos, forceSpoof) {
     if (finished) return; finished = true;
+    console.log("[v6.57] GPS verify finish:", dir, pos ? ("acc±" + Math.round(pos.coords.accuracy) + "m") : "no-fix");
     if (watcherId != null) { try { navigator.geolocation.clearWatch(watcherId); } catch(_){} }
     clearTimeout(timeoutTimer);
 
@@ -3449,7 +3473,7 @@ function verifyGps(dir) {
         }
       },
       function(err) {
-        var msgs = {1:"Permission denied. Enable location in your browser.",2:"Location unavailable.",3:"Request timed out."};
+        var msgs = {1:"Location is blocked for this site. Tap the padlock/site-settings icon in your browser's address bar, set Location to Allow, then tap “Refresh GPS”. If that doesn't help, use “Reset app” below.",2:"Location unavailable.",3:"Request timed out."};
         if (bestFix) finish(bestFix);
         else { finished = true; clearTimeout(timeoutTimer); setGpsUI(dir,"error", msgs[err.code]||"Location error.", null); }
       },
@@ -3766,7 +3790,7 @@ function setGpsUI(dir, state, name, dist, acc) {
         '• <b>Disconnect from WiFi</b> and use mobile data / hotspot<br>'+
         '• Move outdoors or near a window for clear sky<br>'+
         '• Make sure <b>Location Services</b> are on for your browser<br>'+
-        '• Wait a few seconds and tap "Refresh GPS" below — the GPS chip warms up over time'+
+        '• Wait a few seconds and tap “Refresh GPS” below — the GPS chip warms up over time'+
       '</div>'+refreshBtn+manualBtn;
   } else {
     btn.className="gps-btn fail";
@@ -3783,19 +3807,6 @@ function setSessDocId(id) { if(id) localStorage.setItem("at_sess_doc",id); else 
 
 // Real-time force-checkout listener (unsubscribe fn stored here)
 var _forceCoListener = null;
-
-// Called when engineer taps "Admin already checked you out? Tap here"
-function adminResetSession() {
-  if (!confirm("This will clear your current check-in session so you can check in at a new location.\n\nOnly do this if admin has already processed your check-out. Continue?")) return;
-  if (_forceCoListener) { try { _forceCoListener(); } catch(e){} _forceCoListener = null; }
-  setSess(null);
-  setSessDocId(null);
-  document.getElementById("ciForm").style.display    = "block";
-  document.getElementById("coSection").style.display = "none";
-  document.getElementById("sessBadge").style.display = "none";
-  document.getElementById("resultCard").style.display= "none";
-  toast("✅ Session cleared. You can now check in at your new location.", "t-ok");
-}
 
 // ══ v6.12 — SELF-HEAL STALE ENGINEER CACHE ══════════════════════════════
 // When admin deletes an engineer in "Team > Eng Accounts", their localStorage
@@ -4046,6 +4057,16 @@ document.addEventListener("DOMContentLoaded", function(){
   });
 });
 
+// v6.57: strip characters that browser autofill / mobile keyboard suggestions
+// silently inject (zero-width spaces, NBSP, stray whitespace) which .trim() misses,
+// so a clean-looking address like "example@gmail.com" no longer fails validation.
+function _normEmail(v) {
+  return String(v == null ? "" : v)
+    .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "") // zero-width chars + NBSP
+    .replace(/\s+/g, "")                          // any remaining whitespace
+    .toLowerCase();
+}
+
 function chkBtn() {
   var id    = getEngId("empId");
   var name  = (document.getElementById("empName") ||{}).value||"";
@@ -4053,8 +4074,17 @@ function chkBtn() {
 
   // Re-evaluate the ID availability hint now that email may have changed
   _refreshIdAvailHint(id);
-  var email = (document.getElementById("empEmail")||{}).value||"";
-  var emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  var _emailRaw = (document.getElementById("empEmail")||{}).value||"";
+  var email = _normEmail(_emailRaw);
+  var emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  // Diagnostic: a value that looks like an email (has @) but fails — log the char codes
+  // so we can see exactly what autofill/keyboard inserted.
+  if (!emailOk && _emailRaw.indexOf("@") !== -1) {
+    try {
+      console.log("[v6.57] email flagged invalid; char codes:",
+        Array.prototype.map.call(_emailRaw, function(c){ return c.charCodeAt(0); }).join(","));
+    } catch(e){}
+  }
 
   // Auto-fill Engineer ID if engineer types name + email first
   _maybeAutoFillEngId(name, email, emailOk);
@@ -4294,7 +4324,8 @@ function _onbValidateRegistration() {
       chkBtn();
     }
 
-    db.collection("engineerOnboarding").doc(empId).get().then(function(snap) {
+    console.log("[v6.57] onboarding read: start", empId);
+    _fsTimeout(db.collection("engineerOnboarding").doc(empId).get(), 8000, "onboarding").then(function(snap) {
       // Stale-guard: re-read form values after the async call
       var empIdNow = getEngId("empId");
       var emailNow = ((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase();
@@ -4421,17 +4452,37 @@ function _maybeCheckOtpForEmail(email, emailOk) {
 }
 
 // ── OTP Verification ───────────────────────────────
+// v6.57: bound a Firestore read so a wedged connection/IndexedDB can't hang the UI
+// indefinitely. Rejects with a timeout error the caller's .catch already handles.
+function _fsTimeout(promise, ms, label) {
+  return new Promise(function(resolve, reject) {
+    var done = false;
+    var t = setTimeout(function() {
+      if (done) return; done = true;
+      console.log("[v6.57] Firestore read timed out:", label);
+      reject(new Error("timeout:" + label));
+    }, ms);
+    promise.then(function(v) {
+      if (done) return; done = true; clearTimeout(t); resolve(v);
+    }, function(e) {
+      if (done) return; done = true; clearTimeout(t); reject(e);
+    });
+  });
+}
+
 function _isDeviceOtpVerified(email, deviceId) {
   // Don't short-circuit on _otpVerifiedCache — that cache is set per-session
   // but the engineer may have changed email, in which case we must re-check.
   if (!fbOk || !db) return Promise.resolve(false);
-  return db.collection("emailBindings").doc(email.toLowerCase()).get()
+  console.log("[v6.57] OTP device-check read: start", email);
+  return _fsTimeout(db.collection("emailBindings").doc(email.toLowerCase()).get(), 8000, "otp-device-check")
     .then(function(snap) {
+      console.log("[v6.57] OTP device-check read: resolved");
       if (!snap.exists) return false;
       var ids = snap.data().verifiedDeviceIds || [];
       return ids.indexOf(deviceId) !== -1;
     })
-    .catch(function() { return false; });
+    .catch(function() { return false; }); // timeout or error -> treat as not-yet-verified
 }
 
 function _checkOtpOnLoad(email, deviceId) {
@@ -4630,6 +4681,46 @@ function _esc(str) {
   return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
+// v6.57: one-tap recovery so engineers no longer have to clear browsing data by hand.
+// Deletes the app's IndexedDB stores (the likely-wedged Firebase/Firestore state) and
+// transient caches, then reloads. Firestore-backed data is safe on the server; the
+// engineer may need to re-verify their email via OTP once after a reset.
+function _resetAppData() {
+  if (!confirm("This clears this app's cached data on this device and reloads the page.\n\nUse it if check-in is stuck (no email tick, or location keeps detecting). You may need to verify your email again afterwards.\n\nContinue?")) return;
+  console.log("[v6.57] Reset app: clearing cached data");
+
+  // 1) Transient localStorage caches (keep nothing that could stay wedged).
+  ["at_email_bind_v2","at_emp_bind_v2","at_sess","at_sess_doc","at_recs"].forEach(function(k){
+    try { localStorage.removeItem(k); } catch(e){}
+  });
+
+  // 2) IndexedDB — delete all databases this origin owns (Firebase/Firestore stores).
+  function reloadNow() { try { location.reload(); } catch(e) { location.href = location.href; } }
+  function done(n) { console.log("[v6.57] Reset app: deleted", n, "IndexedDB store(s); reloading"); reloadNow(); }
+
+  try {
+    if (indexedDB && indexedDB.databases) {
+      indexedDB.databases().then(function(dbs){
+        var names = (dbs || []).map(function(d){ return d.name; }).filter(Boolean);
+        var left = names.length;
+        if (!left) return done(0);
+        names.forEach(function(name){
+          var req = indexedDB.deleteDatabase(name);
+          req.onsuccess = req.onerror = req.onblocked = function(){ if (--left <= 0) done(names.length); };
+        });
+      }).catch(function(){ done(0); });
+    } else {
+      // Older browsers without indexedDB.databases(): delete the known Firebase stores.
+      ["firebaseLocalStorageDb","firestore/[DEFAULT]/attendance-tracker/main","firebase-heartbeat-database","firebase-installations-database"]
+        .forEach(function(name){ try { indexedDB.deleteDatabase(name); } catch(e){} });
+      done(0);
+    }
+  } catch(e) { done(0); }
+
+  // Safety net: reload even if IndexedDB callbacks never fire.
+  setTimeout(reloadNow, 2500);
+}
+
 // ── Init engineer screen ───────────────────────────
 function initEmp() {
   // v6.49: browser autofill (saved email) often does NOT fire the 'input' event, so a stale
@@ -4639,9 +4730,18 @@ function initEmp() {
   var _ee = document.getElementById("empEmail");
   if (_ee && !_ee._autofillWired) {
     _ee._autofillWired = true;
+    // v6.57: after autofill or when the field loses focus, rewrite the field with the
+    // normalized value so any invisible injected characters are physically removed.
+    var _cleanEmailField = function() {
+      var cleaned = _normEmail(_ee.value);
+      if (cleaned !== _ee.value) _ee.value = cleaned;
+      chkBtn();
+    };
     _ee.addEventListener("animationstart", function(e){
-      if (e.animationName === "onAutoFillStart") chkBtn();
+      if (e.animationName === "onAutoFillStart") _cleanEmailField();
     });
+    _ee.addEventListener("change", _cleanEmailField);
+    _ee.addEventListener("blur", _cleanEmailField);
   }
 
   // OTP input: digits only (max 6) + Enter submits (ported from NGEMR OTP demo)
@@ -14880,13 +14980,13 @@ const HELP_TOPICS = {
       "Confirm the result card showing your check-out time and total duration."
     ],
     "troubleshooting": [
-      "If the Active Session badge is missing, you may have already been checked out by admin (force check-out). Tap 'Admin already checked you out? Tap here to reset' to clear the session.",
+      "If the Active Session badge is missing, you may have already been checked out by admin (force check-out) or by the automatic 12-hour check-out. Your app clears the session automatically — refresh the page if it still looks stuck.",
       "If GPS fails at check-out, follow the same steps as the 'GPS location failed' topic.",
       "If you see a duration that looks wrong, it means the check-out GPS fix took several seconds; the timestamp recorded is the moment the fix was accepted."
     ],
     "manual": [
       "Checking out records your departure time and a second GPS-verified location. Duration is calculated automatically as the difference between check-in and check-out timestamps. Sessions over 9 hours are marked as overtime.",
-      "If an admin performs a force check-out on your session (from the dashboard), your local session state may not update immediately. Tapping the reset link clears the cached session so the form refreshes correctly.",
+      "If an admin performs a force check-out on your session (from the dashboard), your app detects it in real time and clears the active session automatically, returning you to the check-in form.",
       "Automatic system check-out applies after 12 hours if you have not checked out manually. This is recorded as an auto check-out with no GPS coordinates."
     ]
   },
@@ -15282,7 +15382,7 @@ const HELP_TOPICS = {
     "troubleshooting": [
       "If the Force CO button is not visible, the engineer may already be checked out — verify the row status.",
       "The force check-out records no GPS coordinates for the checkout (they are stored as null). This is expected behaviour.",
-      "After force check-out, if the engineer's app still shows an active session, they should tap 'Admin already checked you out? Tap here to reset' to clear their local session.",
+      "After force check-out, the engineer's app clears the active session automatically via its real-time listener. If it still shows a session, ask them to refresh the page.",
       "The system also performs an automatic force check-out after 12 continuous hours on site — this is recorded as an auto check-out by the system."
     ],
     "manual": [
