@@ -3566,7 +3566,7 @@ function requestManualConfirm(dir) {
   var empId    = sanitize(getEngId("empId"), 20);
   var empName  = sanitize((document.getElementById("empName")||{}).value || "", 60);
   var siteIdx  = (document.getElementById("empSite")||{}).value;
-  var empEmail = sanitize((((document.getElementById("empEmail")||{}).value)||"").trim().toLowerCase(), 120);
+  var empEmail = sanitize(_normEmail(((document.getElementById("empEmail")||{}).value)||""), 120); // [v6.58] robust normalize
 
   if (!empId || empId === "Eng") { toast("Please enter your Engineer number", "t-err"); return; }
   if (!/^Eng[a-zA-Z0-9]+$/.test(empId)) { toast("Engineer ID must start with Eng (e.g. Eng01)", "t-err"); return; }
@@ -4061,10 +4061,21 @@ document.addEventListener("DOMContentLoaded", function(){
 // silently inject (zero-width spaces, NBSP, stray whitespace) which .trim() misses,
 // so a clean-looking address like "example@gmail.com" no longer fails validation.
 function _normEmail(v) {
-  return String(v == null ? "" : v)
-    .replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "") // zero-width chars + NBSP
-    .replace(/\s+/g, "")                          // any remaining whitespace
-    .toLowerCase();
+  // [v6.58] Robust normalization. The v6.57 enumerated strip missed characters
+  // that browser autofill / phone-keyboard suggestions inject, so a perfectly
+  // good saved email showed "Invalid email format". Two-stage clean:
+  //   1. NFKC folds compatibility / full-width look-alikes to ASCII
+  //      e.g. IME/autocorrect "\uFF20"\u2192"@", "\uFF0E"\u2192".", NBSP\u2192normal space.
+  //   2. strip EVERY Unicode control/format char \p{C}: zero-width joiners,
+  //      BOM, bidi marks, \u2026 and EVERY separator/space \p{Z} + whitespace.
+  v = String(v == null ? "" : v);
+  try { v = v.normalize("NFKC"); } catch (e) {}
+  try {
+    v = v.replace(/[\p{C}\p{Z}\s]/gu, "");        // comprehensive (modern engines)
+  } catch (e) {
+    v = v.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, "").replace(/\s+/g, ""); // fallback
+  }
+  return v.toLowerCase();
 }
 
 function chkBtn() {
@@ -4137,10 +4148,22 @@ function chkBtn() {
   _onbValidateRegistration();
 }
 
+// [v6.59] Lenient name match shared by ALL ID auto-fill paths (local cache +
+// Firestore emailBindings + onboarding) so the instant fast-path is exactly as
+// forgiving as the network path: matches on exact, OR either name contains the
+// other (handles "Ahmad" typed vs "Ahmad Bin Ali" on record, and vice-versa).
+function _nameMatches(storedName, typedName) {
+  var s = (storedName || "").trim().toLowerCase();
+  var t = (typedName  || "").trim().toLowerCase();
+  if (!s || !t) return false;
+  return s === t || s.indexOf(t) >= 0 || t.indexOf(s) >= 0;
+}
+
 // ── Engineer ID auto-fill (name + email → look up empId) ──────────────────
 // Called from chkBtn() each time name or email changes.
 // Only fills when: ID field is empty (or still showing our previous auto-fill)
-//                  AND name + email both match a registered emailBinding.
+//                  AND email matches a registered account AND the typed name
+//                  matches that account's name (via _nameMatches).
 function _maybeAutoFillEngId(name, email, emailOk) {
   var nameTrim  = name.trim().toLowerCase();
   var emailKey  = email.trim().toLowerCase();
@@ -4159,15 +4182,14 @@ function _maybeAutoFillEngId(name, email, emailOk) {
     return;
   }
 
-  // ① Fast path: check localStorage cache first
+  // ① Fast path: check localStorage cache first (instant, works offline).
+  // [v6.59] now uses the SAME lenient _nameMatches as the network path so a
+  // partial name no longer silently misses here and waits on Firestore.
   var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(e){}
   var cached = eb[emailKey];
-  if (cached && cached.empId) {
-    var cachedName = (cached.empName || "").trim().toLowerCase();
-    if (cachedName && cachedName === nameTrim) {
-      _doEngIdAutoFill(cached.empId);
-      return;
-    }
+  if (cached && cached.empId && _nameMatches(cached.empName, nameTrim)) {
+    _doEngIdAutoFill(cached.empId);
+    return;
   }
 
   // ② Slow path: Firestore lookup (debounced 600ms)
@@ -4184,9 +4206,7 @@ function _maybeAutoFillEngId(name, email, emailOk) {
 
       if (snap.exists) {
         var d = snap.data();
-        var storedName = (d.empName || "").trim().toLowerCase();
-        // Exact, or substring either way (handles full-name vs nickname)
-        if (storedName && (storedName === nameTrim || storedName.indexOf(nameTrim) >= 0 || nameTrim.indexOf(storedName) >= 0)) {
+        if (_nameMatches(d.empName, nameTrim)) {   // [v6.59] shared lenient match
           _doEngIdAutoFill(d.empId);
           return;
         }
@@ -4214,13 +4234,7 @@ function _tryAutoFillFromOnboarding(emailKey, nameTrim) {
       if (idNow && idNow !== _autoFilledEmpId) return;
 
       var d = qs.docs[0].data();
-      var storedName = (d.name || "").trim().toLowerCase();
-      var nameOk = storedName && (
-        storedName === nameTrim ||
-        storedName.indexOf(nameTrim) >= 0 ||
-        nameTrim.indexOf(storedName) >= 0
-      );
-      if (!nameOk) return;
+      if (!_nameMatches(d.name, nameTrim)) return;   // [v6.59] shared lenient match
       if (d.engId) _doEngIdAutoFill(d.engId);
     })
     .catch(function(e){ console.warn("[v6.14] onboarding lookup failed:", e); });
@@ -5535,7 +5549,7 @@ function doCheckin() {
   var empId   = sanitize(getEngId("empId"), 20);
   var empName = sanitize(document.getElementById("empName").value, 60);
   var siteIdx = document.getElementById("empSite").value;
-  var empEmail = sanitize(((document.getElementById("empEmail")||{}).value||"").trim().toLowerCase(), 120);
+  var empEmail = sanitize(_normEmail((document.getElementById("empEmail")||{}).value||""), 120); // [v6.58] robust normalize
 
   // Validate inputs
   if (!empId || empId === "Eng") { toast("Please enter your Engineer number", "t-err"); return; }
