@@ -109,34 +109,6 @@ input,select{font-family:var(--body);outline:none}
   border-radius:8px;padding:7px 14px;font-size:.82rem;font-weight:600;color:var(--ink2);transition:all .2s;
 }
 .tb-back:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
-/* ── Hamburger nav (shown on small screens) ── */
-.tb-hamburger{
-  display:none;position:relative;margin-left:auto;align-items:center;justify-content:center;
-  background:transparent;border:1.5px solid var(--border);border-radius:8px;
-  padding:6px 12px;font-size:1.15rem;line-height:1;color:var(--ink2);cursor:pointer;transition:all .2s;
-}
-.tb-hamburger:hover{background:var(--ink);color:#fff;border-color:var(--ink)}
-/* Red dot when any tab has a pending badge */
-.tb-hamburger.has-pending::after{
-  content:'';position:absolute;top:-4px;right:-4px;width:11px;height:11px;
-  border-radius:50%;background:var(--red);border:2px solid var(--bg,#f7f6f3);
-}
-.nav-menu{
-  display:none;position:absolute;top:calc(100% + 6px);right:14px;
-  background:var(--card);border:1px solid var(--border);border-radius:12px;
-  box-shadow:0 16px 44px rgba(0,0,0,.20);padding:6px;min-width:220px;max-height:80vh;overflow-y:auto;
-  z-index:200;flex-direction:column;gap:2px;
-}
-.nav-menu-item{
-  display:flex;align-items:center;gap:10px;text-align:left;width:100%;
-  background:transparent;border:none;border-radius:8px;padding:10px 14px;
-  font-size:.88rem;font-weight:600;color:var(--ink2);cursor:pointer;font-family:var(--body);transition:all .15s;
-}
-.nav-menu-item:hover{background:var(--bg2,#f3f4f6)}
-.nav-menu-item.on{background:var(--ink);color:#fff}
-.nav-menu-sep{height:1px;background:var(--border);margin:6px 6px}
-.nav-menu-signout{color:var(--red)}
-.nav-menu-signout:hover{background:#fef2f2;color:var(--red)}
 .live-dot{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;color:var(--green)}
 .live-dot::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.5s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.4)}}
@@ -287,6 +259,12 @@ input:-webkit-autofill,input:autofill{animation-name:onAutoFillStart;animation-d
 .dash-tabs{display:flex;gap:4px;margin-bottom:20px;background:var(--card);border-radius:var(--r);padding:4px;border:1px solid var(--border);width:fit-content}
 .dash-tab{padding:7px 18px;border-radius:8px;font-size:.85rem;font-weight:600;color:var(--ink3);cursor:pointer;transition:all .2s}
 .dash-tab.on{background:var(--ink);color:#fff}
+.mode-bar{display:flex;gap:6px;margin-bottom:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:4px;width:fit-content}
+.mode-seg{position:relative;display:inline-flex;align-items:center;gap:6px;padding:9px 20px;border:none;background:none;border-radius:9px;font-size:.9rem;font-weight:700;color:var(--ink3);cursor:pointer;font-family:var(--body);transition:all .2s}
+.mode-seg:hover{color:var(--ink)}
+.mode-seg.on{background:var(--ink);color:#fff}
+.mode-badge{background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;font-family:var(--mono);line-height:1.4}
+.dash-tab.mode-hidden{display:none !important}
 
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--card);border-radius:var(--r2);padding:14px 16px;margin-bottom:18px;border:1px solid var(--border);box-shadow:var(--sh)}
 .toolbar input,.toolbar select{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;background:#fafaf8;color:var(--ink);flex:1;min-width:110px;font-family:var(--body)}
@@ -825,8 +803,9 @@ tr.on-leave-row td{background:#f0f9ff!important}
 @media(max-width:900px){
   .dash-wrap{padding:16px 12px 60px}
   .stats-grid{grid-template-columns:repeat(2,1fr)}
-  .dash-tabs{flex-wrap:wrap;width:100%;gap:3px}
-  .dash-tab{font-size:.77rem;padding:6px 10px}
+  .dash-tabs{flex-wrap:nowrap;width:100%;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .dash-tabs::-webkit-scrollbar{display:none}
+  .dash-tab{flex:0 0 auto;white-space:nowrap;font-size:.77rem;padding:6px 10px}
   .toolbar{gap:8px}
   .toolbar input,.toolbar select{font-size:.82rem}
   .analytics-grid{grid-template-columns:1fr}
@@ -841,11 +820,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
   .stats-grid{gap:8px}
   .stat{padding:12px 14px}
   .stat-n{font-size:1.5rem}
-  /* Collapse the tab row + Sign Out into the hamburger menu */
-  .tb-hamburger{display:inline-flex}
-  .nav-menu.open{display:flex}
-  .topbar .tb-back{display:none}
-  .dash-tabs{display:none}
   .leave-act-btn{padding:4px 8px;font-size:.72rem}
   .modal-box{padding:18px 14px;border-radius:14px}
   .modal-actions{flex-direction:column}
@@ -938,21 +912,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
 .otp-resend-timer { margin-top:6px;font-size:.78rem;color:var(--ink3); }
 @media(max-width:768px){.cal-cell{min-height:64px;padding:4px}.cal-chip{font-size:.62rem;padding:1px 5px}}
 @media(max-width:500px){.cal-cell{min-height:48px}.cal-chip{display:none}.cal-day-num{font-size:.65rem}}
-.tb-analytics-btn {
-  background: var(--ink);
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 7px 16px;
-  font-size: .85rem;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: var(--body);
-  transition: all .2s;
-  white-space: nowrap;
-}
-.tb-analytics-btn:hover { background: #374151; }
-.tb-analytics-btn.active { background: var(--blue); }
 /* ── Slideshow ────────────────────────── */
 #slideshowModal {
   background: #0d1117;
@@ -1568,22 +1527,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <span class="tb-logo">AT</span>
     <span class="tb-title">Admin Dashboard</span>
     <span class="live-dot" style="margin-left:4px">LIVE</span>
-    <button class="tb-analytics-btn" id="topbarAnalyticsBtn" onclick="dTabFromTopbar('analytics')" title="Open Analytics dashboard">📊 Analytics</button>
     <button class="help-center-btn" data-help-center data-help-scope="all" title="Help Center">❓ Help</button>
     <button class="tb-back" onclick="doSignOut()" style="margin-left:auto">Sign Out</button>
-    <button class="tb-hamburger" id="navHamburger" onclick="toggleNavMenu(event)" aria-label="Open menu" aria-expanded="false" title="Menu">☰</button>
-    <div class="nav-menu" id="navMenu">
-      <button class="nav-menu-item" data-tab="live"     onclick="navMenuSelect('live')">📋 Live Status</button>
-      <button class="nav-menu-item" data-tab="feed"     onclick="navMenuSelect('feed')">📰 Activity Feed</button>
-      <button class="nav-menu-item" data-tab="calendar" onclick="navMenuSelect('calendar')">📅 Calendar</button>
-      <button class="nav-menu-item" data-tab="leave"    onclick="navMenuSelect('leave')">🏖️ Leave Mgmt</button>
-      <button class="nav-menu-item" data-tab="waitlist" onclick="navMenuSelect('waitlist')">⏳ Waiting List</button>
-      <button class="nav-menu-item" data-tab="device"   onclick="navMenuSelect('device')">🖥️ Device Audit</button>
-      <button class="nav-menu-item" data-tab="team"     onclick="navMenuSelect('team')">👥 Team</button>
-      <button class="nav-menu-item" id="setupNavItem" data-tab="setup"    onclick="navMenuSelect('setup')">⚙️ Setup Guide</button>
-      <div class="nav-menu-sep"></div>
-      <button class="nav-menu-item nav-menu-signout" onclick="doSignOut()">⎋ Sign Out</button>
-    </div>
   </div>
   <div class="dash-wrap">
 
@@ -1591,16 +1536,23 @@ tr.on-leave-row td{background:#f0f9ff!important}
       ⚙️ <strong>Setup needed:</strong> Replace <code>FIREBASE_CONFIG</code> in the script with your Firebase credentials for live data. Click <strong>Setup Guide</strong> tab below for instructions.
     </div>
 
+    <!-- Mode toggle -->
+    <div class="mode-bar" id="modeBar">
+      <button class="mode-seg on" data-mode="tracking" onclick="setMode('tracking')">📊 Tracking <span class="mode-badge" id="trackingModeBadge" style="display:none">!</span></button>
+      <button class="mode-seg" data-mode="admin" onclick="setMode('admin')">⚙️ Admin Tasks <span class="mode-badge" id="adminModeBadge" style="display:none">0</span></button>
+    </div>
+
     <!-- Tabs -->
     <div class="dash-tabs">
-      <div class="dash-tab on" onclick="dTab('live',this)">Live Status</div>
-      <div class="dash-tab" onclick="dTab('feed',this)">Activity Feed</div>
-      <div class="dash-tab" onclick="dTab('calendar',this)">Calendar</div>
-      <div class="dash-tab" onclick="dTab('leave',this)" id="leaveTabBtn">Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
-      <div class="dash-tab" onclick="dTab('waitlist',this)" id="waitlistTabBtn">⏳ Waiting List <span id="waitlistPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
-      <div class="dash-tab" onclick="dTab('device',this)">Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
-      <div class="dash-tab" onclick="dTab('team',this)">Team</div>
-      <div class="dash-tab" id="setupTabBtn" onclick="dTab('setup',this)">Setup Guide</div>
+      <div class="dash-tab" data-tab="analytics" onclick="dTab('analytics',this)">Analytics</div>
+      <div class="dash-tab on" data-tab="live" onclick="dTab('live',this)">Live Status</div>
+      <div class="dash-tab" data-tab="feed" onclick="dTab('feed',this)">Activity Feed</div>
+      <div class="dash-tab" data-tab="calendar" onclick="dTab('calendar',this)">Calendar</div>
+      <div class="dash-tab" data-tab="leave" onclick="dTab('leave',this)" id="leaveTabBtn">Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
+      <div class="dash-tab" data-tab="waitlist" onclick="dTab('waitlist',this)" id="waitlistTabBtn">⏳ Waiting List <span id="waitlistPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
+      <div class="dash-tab" data-tab="device" onclick="dTab('device',this)">Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
+      <div class="dash-tab" data-tab="team" onclick="dTab('team',this)">Team</div>
+      <div class="dash-tab" data-tab="setup" id="setupTabBtn" onclick="dTab('setup',this)">Setup Guide</div>
     </div>
 
     <!-- LIVE TAB -->
@@ -5836,9 +5788,7 @@ function applyRoleVisibility() {
   currentUserIsManager = !!mgr;
   currentManagerName = mgr ? mgr.name : "";
   var setupTab = document.getElementById("setupTabBtn");
-  var setupNav = document.getElementById("setupNavItem");
   if (setupTab) setupTab.style.display = currentUserIsManager ? "none" : "";
-  if (setupNav) setupNav.style.display = currentUserIsManager ? "none" : "";
   // If a manager somehow has the Setup tab open, bounce to Live Status.
   if (currentUserIsManager) {
     var setupPane = document.getElementById("dTab-setup");
@@ -5932,6 +5882,10 @@ function initDash() {
     var badge = document.getElementById("leavePendingBadge");
     if (badge) { badge.textContent = pc; badge.style.display = pc > 0 ? "inline" : "none"; }
   }
+
+  // Two-mode dashboard: fresh each login → Tracking / Analytics.
+  _lastTab = { tracking: MODE_DEFAULT.tracking, admin: MODE_DEFAULT.admin };
+  setMode("tracking");
 }
 
 // ── v6.43 DIAGNOSTIC helper ─────────────────────────────────────────────
@@ -6587,6 +6541,46 @@ function refreshDash() {
   toast("Refreshed","t-ok");
 }
 
+// ── Admin dashboard modes (Tracking / Admin Tasks) ─────────────────────
+var MODES = {
+  tracking: ["analytics","live","feed","calendar","device"],
+  admin:    ["leave","waitlist","team","setup"]
+};
+var MODE_DEFAULT = { tracking:"analytics", admin:"leave" };
+var _lastTab = { tracking:"analytics", admin:"leave" };
+var _curMode = "tracking";
+
+function _modeOfTab(id){
+  for (var m in MODES){ if (MODES[m].indexOf(id) !== -1) return m; }
+  return "tracking";
+}
+
+function _applyModeVisuals(mode){
+  _curMode = mode;
+  document.querySelectorAll(".dash-tab").forEach(function(btn){
+    var id = btn.getAttribute("data-tab");
+    btn.classList.toggle("mode-hidden", MODES[mode].indexOf(id) === -1);
+  });
+  document.querySelectorAll(".mode-seg").forEach(function(s){
+    s.classList.toggle("on", s.getAttribute("data-mode") === mode);
+  });
+  if (typeof updateModeBadges === "function") updateModeBadges();
+}
+
+function setMode(mode){
+  if (!MODES[mode]) return;
+  _applyModeVisuals(mode);
+  var want = _lastTab[mode] || MODE_DEFAULT[mode];
+  var btn  = document.querySelector('.dash-tab[data-tab="'+want+'"]');
+  // Fall back to the group default if the remembered tab is conditionally
+  // hidden (e.g. Setup Guide is hidden for managers via inline display:none).
+  if (!btn || btn.style.display === "none") {
+    want = MODE_DEFAULT[mode];
+    btn  = document.querySelector('.dash-tab[data-tab="'+want+'"]');
+  }
+  if (btn) dTab(want, btn);
+}
+
 // ── Dashboard tabs ─────────────────────────────────
 function dTab(id, el) {
   ["live","feed","analytics","calendar","leave","waitlist","device","team","setup"].forEach(function(t){
@@ -6594,9 +6588,6 @@ function dTab(id, el) {
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
   if (el) el.classList.add("on");
-  // Keep topbar Analytics button in sync
-  var topBtn = document.getElementById("topbarAnalyticsBtn");
-  if (topBtn) topBtn.classList.toggle("active", id === "analytics");
   if (id === "leave")     loadLeaves();
   if (id === "device")    { renderDeviceAudit(); _renderBuddyPunchAlerts(); }
   if (id === "team")      teamSubTab(_teamCurrentSub || "onboarding");
@@ -6613,6 +6604,11 @@ function dTab(id, el) {
     if (!leaveRecs.length && db) { loadLeaves(); }
     renderCalendar();
   }
+  // Remember the last tab per mode, and keep the mode toggle in sync no matter
+  // who called dTab (e.g. the manager Setup bounce calls dTab('live') directly).
+  var _m = _modeOfTab(id);
+  _lastTab[_m] = id;
+  if (_m !== _curMode) _applyModeVisuals(_m);
 }
 
 // ── Team tab sub-navigation ────────────────────────────────────────────
@@ -6647,101 +6643,45 @@ function teamSubTab(id) {
   if (id === "managers") { populateManagerSiteCheckboxes(); renderManagersList(); loadHrEmail(); }
 }
 
-function dTabFromTopbar(id) {
-  // Find the matching dash-tab element and delegate to dTab
-  var tabEl = null;
-  document.querySelectorAll(".dash-tab").forEach(function(el) {
-    if (el.getAttribute("onclick") && el.getAttribute("onclick").indexOf("'" + id + "'") !== -1) tabEl = el;
-  });
-  dTab(id, tabEl);
-  // Highlight the topbar button
-  var topBtn = document.getElementById("topbarAnalyticsBtn");
-  if (topBtn) topBtn.classList.add("active");
-}
-
-// ── Hamburger nav menu (small screens) ─────────────────────────────────
-function toggleNavMenu(e) {
-  if (e) e.stopPropagation();
-  var menu = document.getElementById("navMenu");
-  var btn  = document.getElementById("navHamburger");
-  if (!menu) return;
-  var open = menu.classList.toggle("open");
-  if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
-  if (open) {
-    _syncNavMenuActive();
-    // Defer so this same click doesn't immediately close it
-    setTimeout(function(){ document.addEventListener("click", _navMenuOutside); }, 0);
-  } else {
-    document.removeEventListener("click", _navMenuOutside);
+// Roll pending badges up onto the mode toggle: when a group has pending items
+// while its mode is INACTIVE, show a badge on that mode's segment. Watched via
+// MutationObserver so it stays in sync no matter which code path toggles a badge.
+var _MODE_BADGE_IDS = ["leavePendingBadge","waitlistPendingBadge","suspiciousBadge","buddyPunchBadge"];
+function updateModeBadges() {
+  function shown(id){ var e = document.getElementById(id); return !!(e && e.style.display !== "none"); }
+  function num(id){
+    var e = document.getElementById(id);
+    if (!e || e.style.display === "none") return 0;
+    var n = parseInt(e.textContent, 10);
+    return isNaN(n) ? 0 : n;
+  }
+  // Admin Tasks group → sum of pending leave + waitlist counts
+  var adminCount = num("leavePendingBadge") + num("waitlistPendingBadge");
+  var ab = document.getElementById("adminModeBadge");
+  if (ab) {
+    if (_curMode !== "admin" && adminCount > 0) { ab.textContent = adminCount; ab.style.display = ""; }
+    else ab.style.display = "none";
+  }
+  // Tracking group → suspicious / buddy-punch alert (dot)
+  var trackAlert = shown("suspiciousBadge") || shown("buddyPunchBadge");
+  var tb = document.getElementById("trackingModeBadge");
+  if (tb) {
+    if (_curMode !== "tracking" && trackAlert) { tb.textContent = "!"; tb.style.display = ""; }
+    else tb.style.display = "none";
   }
 }
-
-function _navMenuOutside(e) {
-  var menu = document.getElementById("navMenu");
-  var btn  = document.getElementById("navHamburger");
-  if (!menu) return;
-  if (menu.contains(e.target) || (btn && btn.contains(e.target))) return;
-  menu.classList.remove("open");
-  if (btn) btn.setAttribute("aria-expanded", "false");
-  document.removeEventListener("click", _navMenuOutside);
-}
-
-function navMenuSelect(id) {
-  // Find the matching desktop tab so its active ("on") state stays in sync
-  var tabEl = null;
-  document.querySelectorAll(".dash-tab").forEach(function(el) {
-    var oc = el.getAttribute("onclick") || "";
-    if (oc.indexOf("'" + id + "'") !== -1) tabEl = el;
-  });
-  dTab(id, tabEl);
-  var menu = document.getElementById("navMenu");
-  var btn  = document.getElementById("navHamburger");
-  if (menu) menu.classList.remove("open");
-  if (btn) btn.setAttribute("aria-expanded", "false");
-  document.removeEventListener("click", _navMenuOutside);
-  _syncNavMenuActive();
-}
-
-// Highlight the menu item for whichever tab is currently active
-function _syncNavMenuActive() {
-  var activeId = null;
-  document.querySelectorAll(".dash-tab").forEach(function(el) {
-    if (el.classList.contains("on")) {
-      var m = (el.getAttribute("onclick") || "").match(/dTab\('([^']+)'/);
-      if (m) activeId = m[1];
-    }
-  });
-  var topBtn = document.getElementById("topbarAnalyticsBtn");
-  if (topBtn && topBtn.classList.contains("active")) activeId = "analytics";
-  document.querySelectorAll("#navMenu .nav-menu-item").forEach(function(it) {
-    var did = it.getAttribute("data-tab");
-    it.classList.toggle("on", !!did && did === activeId);
-  });
-}
-
-// Show a red dot on the hamburger whenever any tab badge (leave / device /
-// buddy-punch) is visible. Watched via MutationObserver so it stays in sync no
-// matter which code path toggles a badge.
-var _HAM_BADGE_IDS = ["leavePendingBadge","suspiciousBadge","buddyPunchBadge"];
-function updateHamburgerPending() {
-  var pending = _HAM_BADGE_IDS.some(function(id){
+function _initModeBadgeWatch() {
+  if (typeof MutationObserver === "undefined") { updateModeBadges(); return; }
+  var obs = new MutationObserver(updateModeBadges);
+  _MODE_BADGE_IDS.forEach(function(id){
     var el = document.getElementById(id);
-    return el && el.style.display !== "none";
+    // Watch style (show/hide) AND text (count changes while already visible).
+    if (el) obs.observe(el, { attributes:true, attributeFilter:["style"], childList:true, characterData:true, subtree:true });
   });
-  var h = document.getElementById("navHamburger");
-  if (h) h.classList.toggle("has-pending", pending);
+  updateModeBadges();
 }
-function _initHamburgerPendingWatch() {
-  if (typeof MutationObserver === "undefined") { updateHamburgerPending(); return; }
-  var obs = new MutationObserver(updateHamburgerPending);
-  _HAM_BADGE_IDS.forEach(function(id){
-    var el = document.getElementById(id);
-    if (el) obs.observe(el, { attributes:true, attributeFilter:["style"] });
-  });
-  updateHamburgerPending();
-}
-if (document.readyState !== "loading") _initHamburgerPendingWatch();
-else document.addEventListener("DOMContentLoaded", _initHamburgerPendingWatch);
+if (document.readyState !== "loading") _initModeBadgeWatch();
+else document.addEventListener("DOMContentLoaded", _initModeBadgeWatch);
 
 // ── CSV export ─────────────────────────────────────
 function exportCSV() {
