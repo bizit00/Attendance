@@ -3102,6 +3102,10 @@ service cloud.firestore {
       <div class="ef-label">To</div>
       <div class="ef-value" id="efTo">—</div>
     </div>
+    <div class="ef-field" id="efCcField" style="display:none">
+      <div class="ef-label">Cc</div>
+      <div class="ef-value" id="efCc">—</div>
+    </div>
     <div class="ef-field">
       <div class="ef-label">Subject</div>
       <div class="ef-value" id="efSubject">—</div>
@@ -5866,8 +5870,9 @@ function initDash() {
           + "  (Most common cause: Firestore Security Rules are denying this account's read.)");
       });
     initSpotCheckSessionListener();
-    // Pre-load leave pending count for badge
-    db.collection("leaveApplications").where("status","==","pending")
+    // Pre-load leave action-needed count for badge (v6.61: include cancel requests
+    // so admin is alerted to pending applications AND cancellation requests).
+    db.collection("leaveApplications").where("status","in",["pending","cancel_requested"])
       .onSnapshot(function(snap){
         var count = snap.size;
         var badge = document.getElementById("leavePendingBadge");
@@ -5876,9 +5881,9 @@ function initDash() {
   } else {
     allRecs = localRecs.slice().reverse();
     renderAll();
-    // load local leaves for badge
+    // load local leaves for badge (v6.61: count cancel requests too)
     var ll = JSON.parse(localStorage.getItem("at_leaves")||"[]");
-    var pc = ll.filter(function(r){ return r.status==="pending"; }).length;
+    var pc = ll.filter(function(r){ return r.status==="pending" || r.status==="cancel_requested"; }).length;
     var badge = document.getElementById("leavePendingBadge");
     if (badge) { badge.textContent = pc; badge.style.display = pc > 0 ? "inline" : "none"; }
   }
@@ -11374,16 +11379,19 @@ function renderLeaveTable() {
 
 // ── Update Leave Stats ──────────────────────────────
 function updateLeaveStats() {
-  var pending  = leaveRecs.filter(function(r){return r.status==="pending";}).length;
-  var approved = leaveRecs.filter(function(r){return r.status==="approved";}).length;
-  var rejected = leaveRecs.filter(function(r){return r.status==="rejected";}).length;
+  var pending   = leaveRecs.filter(function(r){return r.status==="pending";}).length;
+  var cancelReq = leaveRecs.filter(function(r){return r.status==="cancel_requested";}).length;
+  var approved  = leaveRecs.filter(function(r){return r.status==="approved";}).length;
+  var rejected  = leaveRecs.filter(function(r){return r.status==="rejected";}).length;
   var el;
   el=document.getElementById("ls-pending");  if(el) el.textContent=pending;
   el=document.getElementById("ls-approved"); if(el) el.textContent=approved;
   el=document.getElementById("ls-rejected"); if(el) el.textContent=rejected;
   el=document.getElementById("ls-total");    if(el) el.textContent=leaveRecs.length;
+  // v6.61: badge = items needing admin action = pending applications + cancellation requests.
+  var actionNeeded = pending + cancelReq;
   var badge = document.getElementById("leavePendingBadge");
-  if (badge) { badge.textContent=pending; badge.style.display=pending>0?"inline":"none"; }
+  if (badge) { badge.textContent=actionNeeded; badge.style.display=actionNeeded>0?"inline":"none"; }
 }
 
 // ── Admin: Approve Leave ────────────────────────────
@@ -11564,46 +11572,82 @@ function sendLeaveEmail(rec, status, rejectReason) {
   }
   body += "This is an automated notification from the Attendance System.\n\nBest regards,\nAttendance System";
 
-  // MANUAL MODE (TESTING): always open the email fallback modal so admin can send manually.
-  if (EMAIL_MODE === "manual") {
-    showEmailFallback(rec.empEmail, subject, body);
-  } else if (emailjsReady) {
-    var htmlBody = "<pre style='font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;line-height:1.6'>" + body + "</pre>";
-    _elasticSend(rec.empEmail, subject, htmlBody)
-      .then(function() {
-        console.log("✅ Email sent OK");
-        toast("📧 Notification email sent to " + rec.empEmail, "t-ok");
-      })
-      .catch(function(e) {
-        console.error("Brevo send failed:", e);
-        alert("❌ Email Error: " + (e.message || e) + "\n\nOpening email fallback so you can send manually.");
-        showEmailFallback(rec.empEmail, subject, body);
-      });
-    // v6.52: also notify HR (does not block the engineer email)
-    if (typeof hrNotifyEmail === "string" && hrNotifyEmail && hrNotifyEmail !== rec.empEmail) {
-      _elasticSend(hrNotifyEmail, subject, htmlBody)
-        .then(function(){ console.log("✅ HR copy sent"); })
-        .catch(function(e){ console.warn("HR copy failed:", e); });
+  // v6.61: dispatch the notification to the engineer AND HR, in whichever email mode is active.
+  // hrCc is HR's address (blank if unset or same as the engineer).
+  function _dispatch(hrEmail) {
+    var hrCc = (typeof hrEmail === "string" && hrEmail && hrEmail !== rec.empEmail) ? hrEmail : "";
+    // MANUAL MODE (TESTING): open the fallback modal, addressed to engineer with HR on Cc.
+    if (EMAIL_MODE === "manual") {
+      showEmailFallback(rec.empEmail, subject, body, hrCc);
+    } else if (emailjsReady) {
+      var htmlBody = "<pre style='font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;line-height:1.6'>" + body + "</pre>";
+      _elasticSend(rec.empEmail, subject, htmlBody)
+        .then(function() {
+          console.log("✅ Email sent OK");
+          toast("📧 Notification email sent to " + rec.empEmail + (hrCc ? " (HR copied)" : ""), "t-ok");
+        })
+        .catch(function(e) {
+          console.error("Brevo send failed:", e);
+          alert("❌ Email Error: " + (e.message || e) + "\n\nOpening email fallback so you can send manually.");
+          showEmailFallback(rec.empEmail, subject, body, hrCc);
+        });
+      // v6.52: also notify HR (does not block the engineer email)
+      if (hrCc) {
+        _elasticSend(hrCc, subject, htmlBody)
+          .then(function(){ console.log("✅ HR copy sent to " + hrCc); })
+          .catch(function(e){ console.warn("HR copy failed:", e); });
+      }
+    } else {
+      showEmailFallback(rec.empEmail, subject, body, hrCc);
     }
+  }
+
+  // Use the HR email already loaded; otherwise fetch it once so HR is always copied
+  // regardless of whether an admin or a site manager approved (managers may not have
+  // opened Settings, so the global may still be empty when they decide).
+  if (typeof hrNotifyEmail === "string" && hrNotifyEmail) {
+    _dispatch(hrNotifyEmail);
+  } else if (fbOk && db) {
+    db.collection("manpowerConfig").doc("appSettings").get()
+      .then(function(doc){
+        var hr = (doc.exists && doc.data().hrEmail) ? doc.data().hrEmail : "";
+        if (hr) hrNotifyEmail = hr;
+        _dispatch(hr);
+      })
+      .catch(function(){ _dispatch(""); });
   } else {
-    showEmailFallback(rec.empEmail, subject, body);
+    _dispatch("");
   }
 }
 
 // ── Email Fallback Modal ────────────────────────────
-function showEmailFallback(toEmail, subject, body) {
+function showEmailFallback(toEmail, subject, body, ccEmail) {
   var modal = document.getElementById("emailFallbackModal");
   document.getElementById("efTo").textContent      = toEmail;
   document.getElementById("efSubject").textContent = subject;
   document.getElementById("efBody").textContent    = body;
-  document.getElementById("efMailto").href = "mailto:"+toEmail
+  // v6.61: show HR (or any Cc) so admin/site-manager sends to engineer AND HR.
+  var ccField = document.getElementById("efCcField");
+  var ccVal   = document.getElementById("efCc");
+  if (ccEmail) {
+    if (ccVal)   ccVal.textContent = ccEmail;
+    if (ccField) ccField.style.display = "";
+  } else {
+    if (ccVal)   ccVal.textContent = "";
+    if (ccField) ccField.style.display = "none";
+  }
+  var href = "mailto:"+toEmail
     +"?subject="+encodeURIComponent(subject)
     +"&body="+encodeURIComponent(body);
+  if (ccEmail) href += "&cc="+encodeURIComponent(ccEmail);
+  document.getElementById("efMailto").href = href;
   if (modal) modal.classList.add("open");
 }
 
 function copyEmailContent() {
+  var cc = document.getElementById("efCc").textContent;
   var txt = "To: " + document.getElementById("efTo").textContent
+    + (cc ? "\nCc: " + cc : "")
     + "\nSubject: " + document.getElementById("efSubject").textContent
     + "\n\n" + document.getElementById("efBody").textContent;
   navigator.clipboard.writeText(txt)
