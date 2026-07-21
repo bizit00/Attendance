@@ -1222,11 +1222,18 @@ tr.on-leave-row td{background:#f0f9ff!important}
       </div>
     </div>
 
-    <!-- v6.51 — engineer pending-confirmation banner -->
-    <div id="manualPendingBanner" style="display:none;margin:14px 0;padding:14px 16px;border-radius:12px;
-         background:#fffbeb;border:1px solid #fcd34d;color:#92400e;font-size:.9rem;line-height:1.6">
-      <div style="font-weight:700;margin-bottom:4px">⏳ Pending admin confirmation</div>
-      <div id="mpb-text"></div>
+    <!-- v6.61 — engineer pending-confirmation SCREEN (full, centered) -->
+    <div id="manualPendingBanner" style="display:none">
+      <div style="max-width:440px;margin:28px auto;padding:34px 26px;border-radius:18px;
+           background:#fffbeb;border:1.5px solid #fcd34d;color:#92400e;text-align:center;
+           box-shadow:0 12px 34px rgba(146,64,14,.14)">
+        <div style="font-size:3.4rem;line-height:1;margin-bottom:14px">⏳</div>
+        <div style="font-weight:800;font-size:1.4rem;margin-bottom:12px;color:#78350f;line-height:1.3">Pending Admin Confirmation</div>
+        <div id="mpb-text" style="font-size:.95rem;line-height:1.7"></div>
+        <div style="margin-top:20px;font-size:.83rem;color:#b45309;background:#fef3c7;border-radius:10px;padding:11px 14px;line-height:1.6">
+          📱 Keep this page open. It updates automatically once an admin verifies you on site.
+        </div>
+      </div>
     </div>
 
     <!-- Check-in form -->
@@ -2075,7 +2082,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       </div>
 
       <!-- Firestore Rules Reminder -->
-      <div style="background:#fffbeb;border-radius:var(--r);padding:14px 16px;border:1px solid #fde68a;font-size:.82rem;color:#78350f;margin-top:16px">
+      <div id="leaveRulesReminder" style="background:#fffbeb;border-radius:var(--r);padding:14px 16px;border:1px solid #fde68a;font-size:.82rem;color:#78350f;margin-top:16px">
         <strong>⚙️ Remember:</strong> The <code style="background:#fef3c7;padding:1px 5px;border-radius:4px;font-family:var(--mono)">leaveApplications</code> Firestore rules are included in the Setup Guide → Step 7 unified rules block. If approve/reject fails, re-paste Step 7.
       </div>
     </div>
@@ -3607,7 +3614,12 @@ function _hidePendingBanner() {
 function _showPendingState(pendingId, dir) {
   var banner = document.getElementById("manualPendingBanner");
   var txt    = document.getElementById("mpb-text");
+  // v6.61: take over the whole engineer screen so the pending state is unmistakable.
+  ["ciForm","coSection","sessBadge","resultCard"].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = "none";
+  });
   if (banner) banner.style.display = "block";
+  try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch(_) { window.scrollTo(0,0); }
 
   if (_pendingUnsub) { try { _pendingUnsub(); } catch(_){} _pendingUnsub = null; }
   if (!fbOk || !db) {
@@ -3657,6 +3669,13 @@ function _showPendingState(pendingId, dir) {
       }
     } else if (e.status === "rejected") {
       var reason = e.rejectReason ? (" Reason: " + e.rejectReason) : "";
+      // v6.61: pending screen hid everything — restore the right section so the engineer can retry.
+      if (dir === "in") {
+        var ciF2 = document.getElementById("ciForm"); if (ciF2) ciF2.style.display = "block";
+      } else {
+        var coS2 = document.getElementById("coSection"); if (coS2) coS2.style.display = "block";
+        var sb3  = document.getElementById("sessBadge");  if (sb3)  sb3.style.display  = "block";
+      }
       toast("❌ Not confirmed by admin." + reason, "t-err");
       alert("❌ Your manual confirmation was not approved." + reason + "\n\nPlease try verifying your GPS again or contact admin.");
     }
@@ -5040,37 +5059,19 @@ function recordDeviceCheckin(empId) {
 // Queries Firestore for today's check-ins by this empId from a different hardware.
 // If found, it means someone else (or another device) already checked in as this engineer.
 function _checkCrossDeviceDuplicate(empId, myDevId, callback) {
-  var today = new Date().toLocaleDateString("en-SG");
-  var myHw  = getHwId();
-
-  function findConflict(recs) {
-    var conflict = null;
-    recs.forEach(function(r) {
-      if (conflict) return;
-      if (r.empId !== empId) return;
-      // Compare by hardware-stable ID (cross-browser proof)
-      if (myHw && !myHw.startsWith("tmp_") && r.hwId && r.hwId !== myHw) { conflict = r; return; }
-      // Legacy fallback — compare by deviceId when no hwId available
-      if ((!myHw || myHw.startsWith("tmp_")) && r.deviceId && r.deviceId !== myDevId) { conflict = r; return; }
-    });
-    callback(conflict || null);
-  }
-
-  if (fbOk && db) {
-    db.collection("attendance")
-      .where("empId", "==", empId)
-      .where("checkinDate", "==", today)
-      .get()
-      .then(function(snap) {
-        findConflict(snap.docs.map(function(d) { return d.data(); }));
-      })
-      .catch(function() { callback(null); }); // non-blocking on network error
-  } else {
-    // localStorage fallback
-    var localToday = (JSON.parse(localStorage.getItem("at_recs") || "[]"))
-      .filter(function(r) { return r.empId === empId && r.checkinDate === today; });
-    findConflict(localToday);
-  }
+  // v6.61 — DEV-03 fix. This check only ever compared records of the SAME engineer ID, so the
+  // only thing it could flag was one engineer re-checking-in from a device/browser whose
+  // fingerprint differed from an earlier check-in that day. Because the device fingerprint /
+  // hwId is NOT stable across browsers on the same phone, this produced a false "buddy punch"
+  // whenever a legitimate engineer simply switched browsers (e.g. after clearing data — see
+  // DEV-03). By this point the engineer has already passed OTP verification proving they own the
+  // account, so a same-account re-check-in is not a buddy punch.
+  //
+  // Genuine buddy punches — ONE physical device used by TWO+ DIFFERENT engineer IDs on the same
+  // day — are still detected independently in the Device Audit tab (updateDeviceBadge /
+  // renderDeviceAudit, which require empIds.length >= 2). So we no longer flag the same engineer
+  // here; we always report "no conflict".
+  callback(null);
 }
 
 // Writes a buddy punch alert to Firestore so admin sees it immediately.
@@ -5784,6 +5785,14 @@ var fbUnsub = null;
 // ── Role detection (v6.52): manager = login email in active teamManagers ──
 var currentUserIsManager = false;
 var currentManagerName    = "";
+var currentManagerSites   = [];   // v6.61: sites this manager is assigned to (empty for full admin)
+
+// v6.61: true if the current user may act on leave for `site`.
+// Full admins (not a manager) may act on any site; managers only on their assigned sites.
+function _mgrCanActOnSite(site) {
+  if (!currentUserIsManager) return true;
+  return currentManagerSites.indexOf(site) !== -1;
+}
 
 function applyRoleVisibility() {
   var email = "";
@@ -5791,8 +5800,15 @@ function applyRoleVisibility() {
   var mgr = teamManagersList.find(function(m){ return m.active !== false && (m.email||"").toLowerCase() === email; }) || null;
   currentUserIsManager = !!mgr;
   currentManagerName = mgr ? mgr.name : "";
+  currentManagerSites = (mgr && Array.isArray(mgr.sites)) ? mgr.sites.slice() : [];   // v6.61
   var setupTab = document.getElementById("setupTabBtn");
   if (setupTab) setupTab.style.display = currentUserIsManager ? "none" : "";
+  // v6.61: the Firestore-rules reminder points to the Setup Guide, which managers cannot open — hide it for them.
+  var rulesNote = document.getElementById("leaveRulesReminder");
+  if (rulesNote) rulesNote.style.display = currentUserIsManager ? "none" : "";
+  // v6.61: re-render leave list/stats so manager site-scoping applies immediately after role is known.
+  if (typeof renderLeaveTable === "function") renderLeaveTable();
+  if (typeof updateLeaveStats === "function") updateLeaveStats();
   // If a manager somehow has the Setup tab open, bounce to Live Status.
   if (currentUserIsManager) {
     var setupPane = document.getElementById("dTab-setup");
@@ -9071,18 +9087,19 @@ function anOpenEntitlements() {
 
   var seen = {};
   leaveRecs.forEach(function(r) {
-    if (!seen[r.empId]) { seen[r.empId] = r.empName || r.empId; }
+    if (r.empId && !seen[r.empId]) { seen[r.empId] = r.empName || r.empId; }
   });
-  if (typeof adminAccData !== "undefined" && adminAccData) {
-    Object.keys(adminAccData).forEach(function(email) {
-      var a = adminAccData[email];
-      if (a && a.empId && !seen[a.empId]) seen[a.empId] = a.empName || a.empId;
-    });
-  }
+  // v6.61: also list onboarded engineers so admins can set quotas BEFORE the engineer's first
+  // leave application. engId is stored "Eng"-prefixed — the same format leave submissions use —
+  // so the leaveEntitlements key (empId_year) matches at submit time and the quota block fires.
+  (typeof _onbRecords !== "undefined" ? _onbRecords : []).forEach(function(o) {
+    var id = o.engId || o._id;
+    if (id && !seen[id]) seen[id] = o.name || id;
+  });
   Object.keys(seen).sort().forEach(function(empId) {
     var o = document.createElement("option");
     o.value = empId;
-    o.textContent = "Eng " + empId + " — " + seen[empId];
+    o.textContent = empId + " — " + seen[empId];   // empId already carries the "Eng" prefix
     sel.appendChild(o);
   });
 
@@ -11261,6 +11278,8 @@ function filteredLeaves() {
   var df = (document.getElementById("lDateFrom")  || {}).value || "";
   var dt = (document.getElementById("lDateTo")    || {}).value || "";
   return leaveRecs.filter(function(r) {
+    // v6.61: team managers only see leave for their assigned site(s).
+    if (currentUserIsManager && currentManagerSites.indexOf(r.site) === -1) return false;
     if (q  && !(r.empName||"").toLowerCase().includes(q.toLowerCase()) &&
                !(r.empId||"").toLowerCase().includes(q.toLowerCase())) return false;
     if (st && r.status !== st) return false;
@@ -11379,15 +11398,19 @@ function renderLeaveTable() {
 
 // ── Update Leave Stats ──────────────────────────────
 function updateLeaveStats() {
-  var pending   = leaveRecs.filter(function(r){return r.status==="pending";}).length;
-  var cancelReq = leaveRecs.filter(function(r){return r.status==="cancel_requested";}).length;
-  var approved  = leaveRecs.filter(function(r){return r.status==="approved";}).length;
-  var rejected  = leaveRecs.filter(function(r){return r.status==="rejected";}).length;
+  // v6.61: managers only tally leave for their assigned site(s) so their badges are accurate.
+  var base = (currentUserIsManager)
+    ? leaveRecs.filter(function(r){ return currentManagerSites.indexOf(r.site) !== -1; })
+    : leaveRecs;
+  var pending   = base.filter(function(r){return r.status==="pending";}).length;
+  var cancelReq = base.filter(function(r){return r.status==="cancel_requested";}).length;
+  var approved  = base.filter(function(r){return r.status==="approved";}).length;
+  var rejected  = base.filter(function(r){return r.status==="rejected";}).length;
   var el;
   el=document.getElementById("ls-pending");  if(el) el.textContent=pending;
   el=document.getElementById("ls-approved"); if(el) el.textContent=approved;
   el=document.getElementById("ls-rejected"); if(el) el.textContent=rejected;
-  el=document.getElementById("ls-total");    if(el) el.textContent=leaveRecs.length;
+  el=document.getElementById("ls-total");    if(el) el.textContent=base.length;
   // v6.61: badge = items needing admin action = pending applications + cancellation requests.
   var actionNeeded = pending + cancelReq;
   var badge = document.getElementById("leavePendingBadge");
@@ -11398,8 +11421,26 @@ function updateLeaveStats() {
 function approveLeave(id) {
   var rec = leaveRecs.find(function(r){return r.id===id;});
   if (!rec) return;
-  if (!confirm("✅ Approve leave for "+rec.empName+"?\n"+rec.leaveType+"\n"+rec.fromDate+" → "+rec.toDate+" ("+rec.numDays+" day"+(rec.numDays!==1?"s":"") +")")) return;
+  // v6.61: team managers may only approve leave for their assigned site(s).
+  if (!_mgrCanActOnSite(rec.site)) { alert("⛔ You can only approve leave for your assigned site(s)."); return; }
 
+  // v6.61: check the engineer's configured quota BEFORE approving, and warn admin on over-quota approvals.
+  var _year = parseInt((rec.fromDate||"").slice(0,4),10) || new Date().getFullYear();
+  _anFetchEntitlement(rec.empId, _year, function(entDoc){
+    var bal     = _anGetBalance(entDoc, rec.leaveType, rec.empId, _year);
+    var reqDays = parseInt(rec.numDays,10) || 0;
+    var overMsg = "";
+    if (bal.balance !== null && reqDays > bal.balance) {
+      overMsg = "⚠️ OVER QUOTA — "+rec.empName+" has only "+bal.balance+" day(s) of "+rec.leaveType
+              + " left ("+bal.used+"/"+(bal.quota + bal.adjustment)+" used). This application is "+reqDays
+              + " day(s), which puts them "+(reqDays-bal.balance)+" day(s) over quota.\n\n";
+    }
+    if (!confirm(overMsg + "✅ Approve leave for "+rec.empName+"?\n"+rec.leaveType+"\n"+rec.fromDate+" → "+rec.toDate+" ("+reqDays+" day"+(reqDays!==1?"s":"") +")")) return;
+    _doApproveLeave(id, rec);
+  });
+}
+
+function _doApproveLeave(id, rec) {
   var user = (fbOk && firebase.auth().currentUser) ? firebase.auth().currentUser : null;
   var adminEmail = user ? user.email : "Admin";
   var deciderName = (typeof currentUserIsManager !== "undefined" && currentUserIsManager && currentManagerName) ? currentManagerName : adminEmail;
@@ -11432,6 +11473,8 @@ function approveLeave(id) {
 function promptReject(id) {
   var rec = leaveRecs.find(function(r){return r.id===id;});
   if (!rec) return;
+  // v6.61: team managers may only reject leave for their assigned site(s).
+  if (!_mgrCanActOnSite(rec.site)) { alert("⛔ You can only manage leave for your assigned site(s)."); return; }
   rejectTargetId = id;
   var info = document.getElementById("rejectEmpInfo");
   if (info) info.textContent = rec.empName + " (" + rec.empId + ") — " + rec.leaveType + " · " + rec.fromDate + " → " + rec.toDate;
@@ -13494,6 +13537,8 @@ function confirmCancelLeave() {
 function adminCancelLeave(id) {
   var rec = leaveRecs.find(function(r){ return r.id===id; });
   if (!rec) return;
+  // v6.61: team managers may only manage leave for their assigned site(s).
+  if (!_mgrCanActOnSite(rec.site)) { alert("⛔ You can only manage leave for your assigned site(s)."); return; }
   var info = document.getElementById("cancelLeaveInfo");
   if (info) info.textContent = (rec.empName||"—") + " (" + (rec.empId||"—") + ") · " + rec.leaveType + " · " + rec.fromDate + " → " + rec.toDate;
 
@@ -13556,6 +13601,9 @@ function adminConfirmCancel() {
 
 function adminKeepLeave(id) {
   // Admin decides to keep the approved leave despite engineer's cancel request
+  // v6.61: team managers may only manage leave for their assigned site(s).
+  var _kr = leaveRecs.find(function(r){ return r.id===id; });
+  if (_kr && !_mgrCanActOnSite(_kr.site)) { alert("⛔ You can only manage leave for your assigned site(s)."); return; }
   var now = new Date();
   var updates = { status: "approved", cancelRequestReason: null, cancelRequestedAt: null, keepNote: "Admin kept leave approved on " + now.toLocaleDateString("en-SG") };
   if (fbOk && db) {
@@ -14358,7 +14406,7 @@ function adminAccConfirmResetDev() {
 
   function afterReset() {
     // Sync local cache
-    _accData[recIdx] = Object.assign({}, _accData[recIdx], { deviceIds: [] });
+    _accData[recIdx] = Object.assign({}, _accData[recIdx], { deviceIds: [], verifiedDeviceIds: [] });
     // Sync localStorage mirror
     var eb = {}; try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
     if (eb[emailKey]) { eb[emailKey].deviceIds = []; localStorage.setItem("at_email_bind_v2", JSON.stringify(eb)); }
@@ -14390,7 +14438,11 @@ function adminAccConfirmResetDev() {
 
   if (fbOk && db) {
     db.collection("emailBindings").doc(emailKey)
-      .update({ deviceIds: [], deviceResetAt: new Date().getTime(), deviceResetByAdmin: true })
+      // v6.61 (TEM-02): also clear verifiedDeviceIds — the OTP auto-skip on load checks THIS list
+      // (_isDeviceOtpVerified). Clearing only deviceIds left the device OTP-trusted, so a reset did
+      // not actually force re-verification. Clearing both makes "Reset Devices" reliably require a
+      // fresh OTP on the next visit regardless of browser (Chrome, Brave, etc.).
+      .update({ deviceIds: [], verifiedDeviceIds: [], deviceResetAt: new Date().getTime(), deviceResetByAdmin: true })
       .then(afterReset)
       .catch(onError);
   } else {
@@ -14623,7 +14675,7 @@ function ssExit() {
 // ══ END SLIDESHOW ═════════════════════════════════════════════════════
 
 
-// â•â• ADMIN FORCE CHECK-OUT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ══ ADMIN FORCE CHECK-OUT ═════════════════════════════════════════════
 var _fcoDocId = null;
 var _fcoCheckinTs = 0;
 var _fcoEmpName = "";
@@ -14767,19 +14819,19 @@ function confirmForceCheckout() {
       if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "✅ Confirm Force Check-Out"; }
     });
 }
-// â•â• END ADMIN FORCE CHECK-OUT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ══ END ADMIN FORCE CHECK-OUT ═════════════════════════════════════════
 </script>
-<!-- â•â• ADMIN FORCE CHECK-OUT MODAL â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<!-- ══ ADMIN FORCE CHECK-OUT MODAL ══════════════════════════════════ -->
 <div id="fcoModal" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.7);z-index:8500;align-items:center;justify-content:center" onclick="if(event.target===this)closeForceCoModal()">
   <div style="background:#fff;border-radius:16px;padding:28px 28px 24px;max-width:440px;width:94%;box-shadow:0 8px 40px rgba(0,0,0,.22);position:relative">
     <!-- Header -->
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
-      <div style="width:38px;height:38px;border-radius:10px;background:#fef3c7;display:flex;align-items:center;justify-content:center;font-size:1.25rem">ðŸ”“</div>
+      <div style="width:38px;height:38px;border-radius:10px;background:#fef3c7;display:flex;align-items:center;justify-content:center;font-size:1.25rem">🔓</div>
       <div>
         <div style="font-size:1rem;font-weight:700;color:var(--ink)">Admin Force Check-Out <span class="help-dot" data-help="force-checkout" title="Help">?</span></div>
         <div style="font-size:.78rem;color:var(--ink3)">Manually check out an engineer</div>
       </div>
-      <button onclick="closeForceCoModal()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--ink3);line-height:1" title="Close">âœ•</button>
+      <button onclick="closeForceCoModal()" style="margin-left:auto;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--ink3);line-height:1" title="Close">✕</button>
     </div>
 
     <!-- Engineer info -->
@@ -14796,7 +14848,7 @@ function confirmForceCheckout() {
 
     <!-- Warning banner -->
     <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:9px 12px;margin-bottom:16px;font-size:.8rem;color:#92400e;display:flex;gap:8px;align-items:flex-start">
-      <span style="font-size:1rem;line-height:1.3">âš ï¸</span>
+      <span style="font-size:1rem;line-height:1.3">⚠️</span>
       <span>This action will mark the engineer as <strong>checked out</strong>. No GPS will be recorded. Use only when the engineer genuinely forgot to check out.</span>
     </div>
 
@@ -14816,13 +14868,13 @@ function confirmForceCheckout() {
     <!-- Actions -->
     <div style="display:flex;gap:10px;justify-content:flex-end">
       <button onclick="closeForceCoModal()" style="background:#f1f5f9;color:var(--ink2);border:none;border-radius:8px;padding:9px 18px;font-size:.87rem;font-weight:600;cursor:pointer">Cancel</button>
-      <button id="fcoConfirmBtn" onclick="confirmForceCheckout()" style="background:#f59e0b;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:.87rem;font-weight:700;cursor:pointer">âœ… Confirm Force Check-Out</button>
+      <button id="fcoConfirmBtn" onclick="confirmForceCheckout()" style="background:#f59e0b;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:.87rem;font-weight:700;cursor:pointer">✅ Confirm Force Check-Out</button>
     </div>
   </div>
 </div>
-<!-- â•â• END ADMIN FORCE CHECK-OUT MODAL â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<!-- ══ END ADMIN FORCE CHECK-OUT MODAL ══════════════════════════════ -->
 
-<!-- â•â• CHART SLIDESHOW OVERLAY â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<!-- ══ CHART SLIDESHOW OVERLAY ══════════════════════════════════════ -->
 <!-- ══ 9-HOUR LONG-SHIFT ALERT ══════════════════════ -->
 <div id="nineHrModal" style="display:none;position:fixed;inset:0;background:rgba(8,10,14,.7);z-index:8700;align-items:center;justify-content:center;overflow-y:auto;padding:20px 0" onclick="if(event.target===this)closeNineHrModal()">
   <div style="background:#fff;border-radius:14px;max-width:460px;width:92%;margin:auto;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
@@ -14839,7 +14891,7 @@ function confirmForceCheckout() {
   <div id="slideshowModal">
     <div class="ss-progress"><div class="ss-progress-bar" id="ssProgressBar"></div></div>
     <div class="ss-header">
-      <span class="ss-title" id="ssTitle">â€”</span>
+      <span class="ss-title" id="ssTitle">—</span>
       <span class="ss-counter" id="ssCounter">1 / 4</span>
     </div>
     <div class="ss-body">
@@ -14847,9 +14899,9 @@ function confirmForceCheckout() {
     </div>
     <div class="ss-dots" id="ssDots"></div>
     <div class="ss-footer">
-      <button class="ss-btn ss-nav" onclick="ssPrev()" title="Previous (â†)">&#9664;</button>
+      <button class="ss-btn ss-nav" onclick="ssPrev()" title="Previous (←)">&#9664;</button>
       <button class="ss-btn" onclick="ssPlayPause()" id="ssPlayBtn">&#9646;&#9646; Pause</button>
-      <button class="ss-btn ss-nav" onclick="ssNext()" title="Next (â†’)">&#9654;</button>
+      <button class="ss-btn ss-nav" onclick="ssNext()" title="Next (→)">&#9654;</button>
       <div style="width:1px;height:24px;background:#2d3748;margin:0 4px"></div>
       <button class="ss-btn ss-exit" onclick="ssExit()" title="Exit (ESC)">&#10005; Exit</button>
     </div>
