@@ -1945,6 +1945,9 @@ tr.on-leave-row td{background:#f0f9ff!important}
     </button>
     <button id="teamSubBtnManagers" onclick="teamSubTab('managers')"
             style="background:none;border:none;padding:10px 4px;font-weight:700;font-size:.9rem;cursor:pointer;color:var(--ink3);border-bottom:2px solid transparent;font-family:var(--body)">👔 Team Managers</button>
+    <!-- v6.62: site management reachable from Admin Tasks mode (opens the same modal) -->
+    <button id="teamSubBtnSites" onclick="openSitesModal()"
+            style="background:none;border:none;padding:10px 4px;margin-left:auto;font-weight:700;font-size:.9rem;cursor:pointer;color:var(--ink3);border-bottom:2px solid transparent;font-family:var(--body)">📍 Work Sites</button>
   </div>
 
   <!-- Onboarding pane -->
@@ -2305,8 +2308,16 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
-    // Custom work sites — admin adds sites (name + GPS); everyone reads for the dropdown
+    // Work sites — admins/managers add, edit and remove sites (name + GPS);
+    // everyone reads so the engineer check-in dropdown works before login
     match /workSites/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // App-level config — holds the one-time site-migration flag (v6.62).
+    // Read is open so the engineer page knows which site list to trust.
+    match /appConfig/{doc} {
       allow read: if true;
       allow write: if request.auth != null;
     }
@@ -2453,7 +2464,7 @@ service cloud.firestore {
         <div class="guide-step">
           <div class="gs-title">Step 6 — Update Your Work Sites</div>
           <div class="gs-body">
-            <p>In the same file, find <code>const WORK_SITES = [...]</code> and edit each entry with your actual site names and GPS coordinates.</p>
+            <p>You no longer need to edit site coordinates in this file. Log in as an admin, open <strong>Admin Tasks → Team → 📍 Work Sites</strong>, click <strong>Import built-in sites</strong> once, then add, rename or remove sites directly in that modal. The <code>var WORK_SITES = [...]</code> array in this file is now only an offline fallback used when Firestore is unreachable.</p>
             <p style="margin-top:6px">To get GPS coordinates: open <strong>Google Maps</strong> → right-click on your site location → the first line shown is <code>latitude, longitude</code>.</p>
           </div>
         </div>
@@ -2577,8 +2588,16 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
-    // Custom work sites — admin adds sites (name + GPS); everyone reads for the dropdown
+    // Work sites — admins/managers add, edit and remove sites (name + GPS);
+    // everyone reads so the engineer check-in dropdown works before login
     match /workSites/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // App-level config — holds the one-time site-migration flag (v6.62).
+    // Read is open so the engineer page knows which site list to trust.
+    match /appConfig/{doc} {
       allow read: if true;
       allow write: if request.auth != null;
     }
@@ -2939,9 +2958,24 @@ service cloud.firestore {
   <div class="modal-box" style="max-width:560px;max-height:92vh;overflow-y:auto">
     <button class="modal-close" onclick="closeSitesModal()">✕</button>
     <div class="modal-title">📍 Manage Work Sites <span class="help-dot" data-help="manage-sites" title="Help">?</span></div>
-    <div class="modal-sub">Add your own sites with GPS coordinates. New sites appear in the check-in dropdown and every site filter automatically.</div>
+    <div class="modal-sub" id="sitesModalSub">Add, edit or remove work sites (name + GPS). Changes appear in the check-in dropdown and every site filter automatically.</div>
+
+    <!-- v6.62: one-time import of the 14 built-in sites into Firestore so they become editable -->
+    <div id="siteMigrateBanner" style="display:none;border:1px solid var(--orange);background:rgba(249,115,22,.07);border-radius:9px;padding:11px 13px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:.83rem;color:var(--ink);margin-bottom:3px">⬇ Built-in sites are not yet editable</div>
+      <div style="font-size:.76rem;color:var(--ink2);line-height:1.5;margin-bottom:9px">
+        The original sites are stored in the app code, so they can't be renamed or removed here.
+        Import them into the database once to unlock full editing. This only adds site definitions —
+        no attendance or leave record is changed.
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="tb-btn tb-pri" onclick="importBuiltInSites()" id="siteMigrateBtn" style="white-space:nowrap">⬇ Import built-in sites</button>
+        <span id="siteMigrateMsg" style="font-size:.76rem;color:var(--ink3);font-family:var(--mono)"></span>
+      </div>
+    </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <input type="hidden" id="editSiteId"/>
       <div class="field" style="grid-column:1/-1">
         <label>Site name <span style="color:var(--red)">*</span></label>
         <input type="text" id="newSiteName" placeholder="e.g. Site N - Changi Clinic" maxlength="60"/>
@@ -2957,15 +2991,16 @@ service cloud.firestore {
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
       <button class="tb-btn tb-out" onclick="siteUseMyLocation()" style="white-space:nowrap">📡 Use my current location</button>
+      <button class="tb-btn tb-out" id="siteCancelEditBtn" onclick="siteCancelEdit()" style="white-space:nowrap;display:none">✕ Cancel edit</button>
       <span id="sitesFormMsg" style="font-size:.78rem;color:var(--ink3);font-family:var(--mono)"></span>
     </div>
     <div class="modal-actions">
       <button class="modal-btn-cancel" onclick="closeSitesModal()">Close</button>
-      <button class="modal-btn-confirm" onclick="addCustomSite()">＋ Add site</button>
+      <button class="modal-btn-confirm" id="siteSaveBtn" onclick="saveSite()">＋ Add site</button>
     </div>
 
     <div style="border-top:1px solid var(--border);margin:18px 0 12px"></div>
-    <div style="font-weight:700;font-size:.85rem;color:var(--ink2);margin-bottom:8px">Your custom sites</div>
+    <div style="font-weight:700;font-size:.85rem;color:var(--ink2);margin-bottom:8px" id="sitesListHdr">Work sites</div>
     <div id="customSitesList" style="max-height:34vh;overflow-y:auto"></div>
   </div>
 </div>
@@ -3303,8 +3338,8 @@ function resetGps(dir) {
 }
 
 function verifyGps(dir) {
-  var siteIdx = document.getElementById("empSite").value;
-  if (dir==="in" && siteIdx==="") { toast("Please select a work site first","t-err"); return; }
+  var siteVal = document.getElementById("empSite").value;   // v6.62: name, not index
+  if (dir==="in" && siteVal==="") { toast("Please select a work site first","t-err"); return; }
 
   var btnId  = dir==="in" ? "gpsCiBtn"    : "gpsCoBtnEl";
   var iconId = dir==="in" ? "gpsCiIcon"   : "gpsCoIcon";
@@ -3340,7 +3375,10 @@ function verifyGps(dir) {
   }
 
   var site;
-  if (dir==="in") { site = WORK_SITES[parseInt(siteIdx)]; }
+  if (dir==="in") {
+    site = siteByName(siteVal);
+    if (!site) { setGpsUI(dir,"error","That work site no longer exists — pick another from the list.",null); return; }
+  }
   else {
     var sess = getSess();
     site = sess ? WORK_SITES.find(function(s){ return s.name===sess.site; }) : null;
@@ -3457,7 +3495,7 @@ function refreshGps(dir) {
 // v6.51 — pending draft frozen when the card opens (time = confirmation time, not admin time).
 var _manualDraft = null;
 
-// Fill + show the manual-confirmation card. `info` = { dir, empId, empName, empEmail, site, siteIdx, devId, linkedAttendanceId }
+// Fill + show the manual-confirmation card. `info` = { dir, empId, empName, empEmail, site, devId, linkedAttendanceId }
 function openManualCard(info) {
   var now = new Date();
   var fix = lastGpsFix[info.dir] || {};
@@ -3528,16 +3566,16 @@ function requestManualConfirm(dir) {
   // dir === "in": mirror doCheckin's validation + gauntlet, then open the card.
   var empId    = sanitize(getEngId("empId"), 20);
   var empName  = sanitize((document.getElementById("empName")||{}).value || "", 60);
-  var siteIdx  = (document.getElementById("empSite")||{}).value;
+  var siteVal  = (document.getElementById("empSite")||{}).value;   // v6.62: name, not index
   var empEmail = sanitize(_normEmail(((document.getElementById("empEmail")||{}).value)||""), 120); // [v6.58] robust normalize
 
   if (!empId || empId === "Eng") { toast("Please enter your Engineer number", "t-err"); return; }
   if (!/^Eng[a-zA-Z0-9]+$/.test(empId)) { toast("Engineer ID must start with Eng (e.g. Eng01)", "t-err"); return; }
   if (!empName || empName.length < 2) { toast("Please enter a valid full name", "t-err"); return; }
   if (!empEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(empEmail)) { toast("Please enter a valid email address", "t-err"); return; }
-  if (siteIdx === "" || siteIdx == null) { toast("Please choose your site", "t-err"); return; }
-  var siteObj = WORK_SITES[parseInt(siteIdx)];
-  if (!siteObj) { toast("Site not found", "t-err"); return; }
+  if (siteVal === "" || siteVal == null) { toast("Please choose your site", "t-err"); return; }
+  var siteObj = siteByName(siteVal);
+  if (!siteObj) { toast("That work site no longer exists — pick another from the list", "t-err"); return; }
   if (!otpVerified) { toast("Please verify your email with the OTP code first", "t-err"); return; }
   if (_onbValidated === false) { toast("Your details don't match onboarding records — contact admin", "t-err"); return; }
 
@@ -3561,7 +3599,7 @@ function requestManualConfirm(dir) {
             if (exists) { _showPendingState(doc.id, "in"); return; }
             openManualCard({
               dir: "in", empId: empId, empName: empName, empEmail: empEmail,
-              site: siteObj.name, siteIdx: siteIdx, devId: devId
+              site: siteObj.name, devId: devId
             });
           });
         });
@@ -4764,7 +4802,8 @@ function initEmp() {
   // Populate site dropdown
   var sel = document.getElementById("empSite");
   sel.innerHTML = '<option value="">— Select your work site —</option>';
-  WORK_SITES.forEach(function(s,i){ var o=document.createElement("option"); o.value=i; o.textContent=s.name; sel.appendChild(o); });
+  // v6.62: name-valued (was index) — sites are deletable Firestore docs now.
+  WORK_SITES.forEach(function(s){ var o=document.createElement("option"); o.value=s.name; o.textContent=s.name; sel.appendChild(o); });
 
   // Reset leave banner
   var lb = document.getElementById("leaveActiveBanner"); if(lb) lb.style.display="none";
@@ -5505,7 +5544,7 @@ function doCheckin() {
   // Build full Engineer ID with "Eng" prefix
   var empId   = sanitize(getEngId("empId"), 20);
   var empName = sanitize(document.getElementById("empName").value, 60);
-  var siteIdx = document.getElementById("empSite").value;
+  var siteVal = document.getElementById("empSite").value;   // v6.62: name, not index
   var empEmail = sanitize(_normEmail((document.getElementById("empEmail")||{}).value||""), 120); // [v6.58] robust normalize
 
   // Validate inputs
@@ -5573,7 +5612,7 @@ function doCheckin() {
             return;
           }
           // All checks passed — save the check-in
-          _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn);
+          _saveCheckin(empId, empName, siteVal, empEmail, devId, btn);
         });
       });
     });
@@ -5581,10 +5620,11 @@ function doCheckin() {
 }
 
 // ── Save the attendance record (called after identity + leave checks pass) ──
-function _saveCheckin(empId, empName, siteIdx, empEmail, devId, btn) {
+function _saveCheckin(empId, empName, siteVal, empEmail, devId, btn) {
   btn.innerHTML = '<span class="spin"></span> Saving…';
 
-  var site   = WORK_SITES[parseInt(siteIdx)];
+  var site   = siteByName(siteVal);   // v6.62: lookup by name (indexes shift when sites are deleted)
+  if (!site) { btn.innerHTML = "✅ Check In"; toast("That work site no longer exists — pick another from the list", "t-err"); return; }
   var gps    = GPS.in;
   var now    = new Date();
   var isLate = now.getHours() >= WORK_HOUR_LATE;
@@ -5809,6 +5849,8 @@ function applyRoleVisibility() {
   // v6.61: re-render leave list/stats so manager site-scoping applies immediately after role is known.
   if (typeof renderLeaveTable === "function") renderLeaveTable();
   if (typeof updateLeaveStats === "function") updateLeaveStats();
+  // v6.62: site rows and the import banner are role-dependent — redraw once the role is known.
+  if (typeof renderCustomSitesList === "function") renderCustomSitesList();
   // If a manager somehow has the Setup tab open, bounce to Live Status.
   if (currentUserIsManager) {
     var setupPane = document.getElementById("dTab-setup");
@@ -10131,18 +10173,64 @@ function toggleSameModelSection() { _sameModelExpanded = !_sameModelExpanded; if
 // ══════════════════════════════════════════════════════════════════════
 var customSitesList = [];
 var _fbSitesUnsub = null;
+// v6.62: once the 14 built-in sites have been imported into Firestore, the
+// collection becomes the single source of truth and _BASE_WORK_SITES is kept
+// only as an offline fallback (see _rebuildWorkSites).
+var _sitesMigrated  = false;
+var _fbSiteMigUnsub = null;
+// True when Firestore refused to read appConfig/siteMigration — i.e. the
+// deployed rules are older than v6.62 and need the appConfig block added.
+var _siteRulesMissing = false;
+
+// Deterministic doc id from a site name, so importing twice overwrites the same
+// 14 documents instead of creating duplicates.
+function _siteSlug(name) {
+  var s = (name || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return s || ("site-" + Date.now());
+}
+
+// Rebuild WORK_SITES from whatever we currently know.
+//  • migrated      → Firestore only (built-ins are real documents now)
+//  • not migrated  → built-ins + custom, exactly as v6.41 did
+//  • no Firestore  → built-ins only (offline fallback, check-in still works)
+function _rebuildWorkSites() {
+  var custom = customSitesList.map(function(s){
+    return { name:s.name, lat:s.lat, lng:s.lng, id:s.id, custom:true };
+  });
+  if (_sitesMigrated) WORK_SITES = custom.slice();
+  else                WORK_SITES = _BASE_WORK_SITES.concat(custom);
+  if (!WORK_SITES.length) WORK_SITES = _BASE_WORK_SITES.slice();   // never leave check-in with an empty dropdown
+  refreshAllSiteDropdowns();
+  renderCustomSitesList();
+}
 
 function loadCustomSites() {
   if (!fbOk || !db) return;
+  // Migration flag first — it decides how the snapshot below is interpreted.
+  if (!_fbSiteMigUnsub) {
+    _fbSiteMigUnsub = db.collection("appConfig").doc("siteMigration")
+      .onSnapshot(function(doc){
+        _siteRulesMissing = false;
+        _sitesMigrated = !!(doc.exists && doc.data() && doc.data().done);
+        _rebuildWorkSites();
+      }, function(err){
+        // Most likely cause: the deployed Firestore rules predate v6.62 and have
+        // no appConfig match block. Remember it so the modal can say so plainly
+        // instead of leaving the admin with a bare "insufficient permissions".
+        _siteRulesMissing = (err && (err.code === "permission-denied" ||
+                             /insufficient permissions/i.test(err.message||"")));
+        console.warn("[AT] siteMigration listener:", err);
+        _rebuildWorkSites();
+      });
+  }
   if (_fbSitesUnsub) _fbSitesUnsub();
   _fbSitesUnsub = db.collection("workSites").onSnapshot(function(snap) {
     customSitesList = snap.docs
       .map(function(d){ return Object.assign({ id:d.id }, d.data()); })
-      .sort(function(a,b){ return (a.createdAt||0) - (b.createdAt||0); });
-    var custom = customSitesList.map(function(s){ return { name:s.name, lat:s.lat, lng:s.lng, custom:true }; });
-    WORK_SITES = _BASE_WORK_SITES.concat(custom);   // built-ins first, custom appended (stable indexes)
-    refreshAllSiteDropdowns();
-    renderCustomSitesList();
+      .sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); });
+    _rebuildWorkSites();
   }, function(err){ console.warn("[AT] workSites listener:", err); });
 }
 
@@ -10159,18 +10247,34 @@ function refreshAllSiteDropdowns() {
     WORK_SITES.forEach(function(s){ var o=document.createElement("option"); o.value=s.name; o.textContent=s.name; el.appendChild(o); });
     el.value = cur;
   });
-  // Engineer check-in select is index-valued
+  // v6.62: engineer check-in select is NAME-valued (was array index). Sites are
+  // deletable Firestore docs now, so an index no longer identifies a site stably.
   var es = document.getElementById("empSite");
   if (es) {
-    var curIdx = es.value;
+    var curName = es.value;
     es.innerHTML = '<option value="">— Select your work site —</option>';
-    WORK_SITES.forEach(function(s,i){ var o=document.createElement("option"); o.value=i; o.textContent=s.name; es.appendChild(o); });
-    es.value = curIdx;
+    WORK_SITES.forEach(function(s){ var o=document.createElement("option"); o.value=s.name; o.textContent=s.name; es.appendChild(o); });
+    es.value = curName;
   }
 }
 
-function openSitesModal()  { renderCustomSitesList(); var m=document.getElementById("sitesModal"); if(m) m.classList.add("open"); }
-function closeSitesModal() { var m=document.getElementById("sitesModal"); if(m) m.classList.remove("open"); var msg=document.getElementById("sitesFormMsg"); if(msg) msg.textContent=""; }
+// v6.62: resolve a site from the check-in dropdown value (a name).
+function siteByName(name) {
+  if (name == null || name === "") return null;
+  return WORK_SITES.find(function(s){ return s.name === name; }) || null;
+}
+
+function openSitesModal()  {
+  siteCancelEdit();
+  _refreshSiteMigrateBanner();
+  renderCustomSitesList();
+  var m=document.getElementById("sitesModal"); if(m) m.classList.add("open");
+}
+function closeSitesModal() {
+  var m=document.getElementById("sitesModal"); if(m) m.classList.remove("open");
+  var msg=document.getElementById("sitesFormMsg"); if(msg) msg.textContent="";
+  siteCancelEdit();
+}
 
 function siteUseMyLocation() {
   var msg = document.getElementById("sitesFormMsg");
@@ -10372,53 +10476,312 @@ function saveHrEmail() {
     .catch(function(e){ set("Failed: "+(e.message||e), "var(--red)"); });
 }
 
-function addCustomSite() {
+// ── v6.62: one-time import of the built-in sites into Firestore ─────────────
+// Deterministic doc ids mean a repeat run overwrites the same documents rather
+// than duplicating them. Names already present in the collection are skipped.
+function _refreshSiteMigrateBanner() {
+  var ban = document.getElementById("siteMigrateBanner");
+  if (!ban) return;
+  // Managers never migrate — this is a full-admin, one-time data operation.
+  ban.style.display = (!_sitesMigrated && fbOk && db && !currentUserIsManager) ? "block" : "none";
+  // Surface the stale-rules case up front, so the admin doesn't discover it by
+  // clicking Import and getting a bare permissions error.
+  var msg = document.getElementById("siteMigrateMsg");
+  var btn = document.getElementById("siteMigrateBtn");
+  if (_siteRulesMissing) {
+    if (msg) { msg.style.color = "var(--red)"; msg.textContent = _SITE_RULES_HINT; }
+    if (btn) btn.disabled = true;
+  } else if (btn) {
+    btn.disabled = false;
+  }
+}
+
+var _SITE_RULES_HINT = "Firestore rules need updating first — open the Setup Guide, "
+                     + "copy the rules, and publish them in Firebase Console (they must include the appConfig block).";
+
+function importBuiltInSites() {
+  var msg = document.getElementById("siteMigrateMsg");
+  var btn = document.getElementById("siteMigrateBtn");
+  function say(t, bad){ if(msg){ msg.style.color = bad ? "var(--red)" : "var(--ink3)"; msg.textContent = t; } }
+  if (!fbOk || !db) return say("Firestore not connected — cannot import.", true);
+  if (currentUserIsManager) return say("Only a full admin can import built-in sites.", true);
+
+  var existing = {};
+  customSitesList.forEach(function(s){ existing[(s.name||"").toLowerCase()] = true; });
+  var todo = _BASE_WORK_SITES.filter(function(s){ return !existing[s.name.toLowerCase()]; });
+
+  if (!confirm(
+      "Import " + todo.length + " built-in site(s) into the database?\n\n" +
+      "This makes them editable and removable here.\n\n" +
+      "It only adds site definitions — no attendance or leave record is changed.")) return;
+
+  if (btn) btn.disabled = true;
+  say("Importing…");
+  var who = (firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || "Admin";
+  var now = Date.now();
+  var batch = db.batch();
+  todo.forEach(function(s, i){
+    batch.set(db.collection("workSites").doc(_siteSlug(s.name)), {
+      name: s.name, lat: s.lat, lng: s.lng,
+      builtin: true, createdAt: now + i, createdBy: who
+    });
+  });
+  batch.set(db.collection("appConfig").doc("siteMigration"), {
+    done: true, at: now, atIso: new Date().toISOString(), by: who, count: todo.length
+  });
+  batch.commit()
+    .then(function(){
+      say("✓ Imported " + todo.length + " site(s).");
+      toast("📍 " + todo.length + " built-in site(s) imported — all sites are editable now", "t-ok");
+    })
+    .catch(function(e){
+      if (btn) btn.disabled = false;
+      var denied = e && (e.code === "permission-denied" || /insufficient permissions/i.test(e.message||""));
+      say(denied ? _SITE_RULES_HINT : ("Import failed: " + (e.message||e)), true);
+    });
+}
+
+// ── Edit-mode helpers ───────────────────────────────────────────────────────
+function siteCancelEdit() {
+  var f = document.getElementById("editSiteId"); if (f) f.value = "";
+  ["newSiteName","newSiteLat","newSiteLng"].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.value = "";
+  });
+  var save = document.getElementById("siteSaveBtn");   if (save) save.textContent = "＋ Add site";
+  var canc = document.getElementById("siteCancelEditBtn"); if (canc) canc.style.display = "none";
+  var msg  = document.getElementById("sitesFormMsg");  if (msg)  msg.textContent = "";
+}
+
+function editSite(id) {
+  var s = customSitesList.find(function(x){ return x.id === id; });
+  if (!s) return;
+  if (!_siteCanManage(s.name)) { toast("You can only edit sites you are assigned to.", "t-err"); return; }
+  document.getElementById("editSiteId").value  = id;
+  document.getElementById("newSiteName").value = s.name;
+  document.getElementById("newSiteLat").value  = s.lat;
+  document.getElementById("newSiteLng").value  = s.lng;
+  var save = document.getElementById("siteSaveBtn");       if (save) save.textContent = "💾 Save changes";
+  var canc = document.getElementById("siteCancelEditBtn"); if (canc) canc.style.display = "";
+  var msg  = document.getElementById("sitesFormMsg");
+  if (msg) { msg.style.color = "var(--ink3)"; msg.textContent = "Editing “" + s.name + "”"; }
+  var nameEl = document.getElementById("newSiteName"); if (nameEl) nameEl.focus();
+}
+
+// v6.62: managers may only manage sites they are assigned to; full admins, any site.
+function _siteCanManage(siteName) {
+  if (!currentUserIsManager) return true;
+  return currentManagerSites.indexOf(siteName) !== -1;
+}
+
+// ── Create / update ─────────────────────────────────────────────────────────
+function saveSite() {
   var msg  = document.getElementById("sitesFormMsg");
   function fail(t){ if(msg){ msg.style.color="var(--red)"; msg.textContent=t; } }
+  var editId = (document.getElementById("editSiteId").value||"").trim();
   var name = (document.getElementById("newSiteName").value||"").trim();
   var lat  = parseFloat((document.getElementById("newSiteLat").value||"").trim());
   var lng  = parseFloat((document.getElementById("newSiteLng").value||"").trim());
-  if (!name)                              return fail("Enter a site name.");
+  if (!name)                                 return fail("Enter a site name.");
   if (isNaN(lat) || lat < -90  || lat > 90)  return fail("Latitude must be a number between -90 and 90.");
   if (isNaN(lng) || lng < -180 || lng > 180) return fail("Longitude must be a number between -180 and 180.");
-  if (WORK_SITES.some(function(x){ return x.name.toLowerCase() === name.toLowerCase(); })) return fail("A site with that name already exists.");
-  if (!fbOk || !db)                       return fail("Firestore not connected — cannot save.");
-  var adminEmail = (firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || "Admin";
-  db.collection("workSites").add({ name:name, lat:lat, lng:lng, createdAt:Date.now(), createdBy:adminEmail })
+  if (!fbOk || !db)                          return fail("Firestore not connected — cannot save.");
+
+  // Name must stay unique — ignore the record being edited.
+  var clash = WORK_SITES.some(function(x){
+    return x.name.toLowerCase() === name.toLowerCase() && x.id !== editId;
+  });
+  if (clash) return fail("A site with that name already exists.");
+
+  var who = (firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || "Admin";
+
+  // ── UPDATE ──
+  if (editId) {
+    var prev = customSitesList.find(function(x){ return x.id === editId; });
+    if (!prev) return fail("That site no longer exists — it may have been removed.");
+    if (!_siteCanManage(prev.name)) return fail("You can only edit sites you are assigned to.");
+    var renamed = prev.name !== name;
+    if (renamed && !confirm(
+        "Rename “" + prev.name + "” to “" + name + "”?\n\n" +
+        "Manpower targets, team-manager assignments and engineer default sites " +
+        "will be updated to the new name.\n\n" +
+        "Past attendance and leave records keep the OLD name, so historical " +
+        "reports stay exactly as they were recorded.")) return;
+
+    if (msg) { msg.style.color="var(--ink3)"; msg.textContent="Saving…"; }
+    db.collection("workSites").doc(editId)
+      .set({ name:name, lat:lat, lng:lng, updatedAt:Date.now(), updatedBy:who }, { merge:true })
+      .then(function(){
+        if (!renamed) {
+          if(msg){ msg.style.color="#15803d"; msg.textContent="✓ Updated "+name; }
+          toast("📍 Site updated: "+name, "t-ok");
+          siteCancelEdit();
+          return;
+        }
+        return _cascadeSiteRename(prev.name, name).then(function(n){
+          if(msg){ msg.style.color="#15803d"; msg.textContent="✓ Renamed — "+n+" linked record(s) updated"; }
+          toast("📍 Renamed to "+name+" · "+n+" linked record(s) updated", "t-ok");
+          siteCancelEdit();
+        }).catch(function(e){
+          // The site itself was renamed; only the cascade failed. Say so plainly.
+          toast("Site renamed, but linked records failed to update: "+(e.message||e), "t-err");
+          if(msg){ msg.style.color="var(--red)"; msg.textContent="Renamed, but cascade failed — retry by renaming again."; }
+        });
+      })
+      .catch(function(e){ fail("Failed to save: "+(e.message||e)); });
+    return;
+  }
+
+  // ── CREATE ──
+  db.collection("workSites").doc(_siteSlug(name))
+    .set({ name:name, lat:lat, lng:lng, createdAt:Date.now(), createdBy:who })
     .then(function(){
       if(msg){ msg.style.color="#15803d"; msg.textContent="✓ Added "+name; }
       document.getElementById("newSiteName").value="";
       document.getElementById("newSiteLat").value="";
       document.getElementById("newSiteLng").value="";
       toast("📍 Site added: "+name, "t-ok");
+      // A manager who adds a site is given access to it, otherwise they would
+      // immediately lose the ability to edit what they just created.
+      if (currentUserIsManager) _grantManagerSite(name);
     })
     .catch(function(e){ fail("Failed to save: "+(e.message||e)); });
 }
 
+// Add a newly created site to the current manager's own assignment list.
+function _grantManagerSite(siteName) {
+  var email = "";
+  try { email = (firebase.auth().currentUser && firebase.auth().currentUser.email || "").toLowerCase(); } catch(_){}
+  var mgr = teamManagersList.find(function(m){ return (m.email||"").toLowerCase() === email; });
+  if (!mgr || !mgr.id) return;
+  var next = (Array.isArray(mgr.sites) ? mgr.sites.slice() : []);
+  if (next.indexOf(siteName) === -1) next.push(siteName);
+  db.collection("teamManagers").doc(mgr.id).set({ sites: next }, { merge:true })
+    .catch(function(e){ console.warn("[AT] grant manager site:", e); });
+}
+
+// ── Rename cascade ──────────────────────────────────────────────────────────
+// Keeps the collections that must track the CURRENT site name in sync.
+// Historical attendance/leave records are deliberately left alone so past
+// reports continue to read exactly as they were recorded.
+function _cascadeSiteRename(oldName, newName) {
+  var updated = 0;
+  var jobs = [];
+
+  // 1. Manpower targets — a name-keyed map on a single doc.
+  jobs.push(
+    db.collection("manpowerConfig").doc("sites").get().then(function(doc){
+      if (!doc.exists) return;
+      var data  = doc.data() || {};
+      var sites = (data.sites && typeof data.sites === "object") ? data.sites : {};
+      if (!(oldName in sites)) return;
+      sites[newName] = sites[oldName];
+      delete sites[oldName];
+      updated++;
+      return db.collection("manpowerConfig").doc("sites")
+        .set({ sites: sites, updatedAt: Date.now(), updatedAtIso: new Date().toISOString() }, { merge:true });
+    })
+  );
+
+  // 2. Team-manager site assignments — an array of names per doc.
+  jobs.push(
+    db.collection("teamManagers").get().then(function(snap){
+      var writes = [];
+      snap.docs.forEach(function(d){
+        var arr = (d.data() || {}).sites;
+        if (!Array.isArray(arr) || arr.indexOf(oldName) === -1) return;
+        var next = arr.map(function(s){ return s === oldName ? newName : s; })
+                      .filter(function(s, i, a){ return a.indexOf(s) === i; });   // de-dupe
+        updated++;
+        writes.push(d.ref.set({ sites: next }, { merge:true }));
+      });
+      return Promise.all(writes);
+    })
+  );
+
+  // 3. Engineer default site on onboarding records.
+  jobs.push(
+    db.collection("onboarding").where("defaultSite", "==", oldName).get().then(function(snap){
+      var writes = [];
+      snap.docs.forEach(function(d){
+        updated++;
+        writes.push(d.ref.set({ defaultSite: newName }, { merge:true }));
+      });
+      return Promise.all(writes);
+    })
+  );
+
+  return Promise.all(jobs).then(function(){ return updated; });
+}
+
+// ── Delete ──────────────────────────────────────────────────────────────────
 function removeCustomSite(id) {
   var site = customSitesList.find(function(x){ return x.id === id; });
-  var nm = site ? site.name : "this site";
+  if (!site) return;
+  var nm = site.name;
   if (!fbOk || !db) return;
-  if (!confirm("Remove site \""+nm+"\"?\n\nExisting check-in records that used this site are NOT changed.")) return;
+  if (!_siteCanManage(nm)) { toast("You can only remove sites you are assigned to.", "t-err"); return; }
+
+  // Tell the admin what will detach before they commit to it.
+  var warn = [];
+  if (_anManpower && _anManpower[nm] != null) warn.push("• a manpower target is set for this site");
+  var mgrs = teamManagersList.filter(function(m){ return Array.isArray(m.sites) && m.sites.indexOf(nm) !== -1; });
+  if (mgrs.length) warn.push("• " + mgrs.length + " team manager(s) are assigned to it");
+
+  if (!confirm(
+      "Remove site \"" + nm + "\"?\n\n" +
+      (warn.length ? warn.join("\n") + "\n\n" : "") +
+      "Engineers will no longer be able to check in here.\n" +
+      "Existing attendance and leave records are NOT changed.")) return;
+
   db.collection("workSites").doc(id).delete()
-    .then(function(){ toast("Site removed: "+nm, "t-ok"); })
+    .then(function(){
+      toast("Site removed: "+nm, "t-ok");
+      var editing = (document.getElementById("editSiteId")||{}).value;
+      if (editing === id) siteCancelEdit();
+    })
     .catch(function(e){ toast("Failed: "+(e.message||e), "t-err"); });
 }
 
+// ── List ────────────────────────────────────────────────────────────────────
 function renderCustomSitesList() {
   var wrap = document.getElementById("customSitesList");
   if (!wrap) return;
-  if (!customSitesList.length) {
-    wrap.innerHTML = '<div style="font-size:.8rem;color:var(--ink3);padding:8px 2px">No custom sites yet — add one above. Built-in sites are always available.</div>';
+  _refreshSiteMigrateBanner();
+
+  var hdr = document.getElementById("sitesListHdr");
+  if (hdr) hdr.textContent = _sitesMigrated ? "Work sites (all editable)" : "Your custom sites";
+
+  // Before migration the built-ins are still code, so show them as locked rows
+  // rather than hiding them — otherwise the list looks wrong next to the dropdowns.
+  var locked = _sitesMigrated ? [] : _BASE_WORK_SITES;
+  var rows = [];
+
+  locked.forEach(function(s){
+    rows.push(_siteRow(s.name, s.lat, s.lng, null, "Built-in — import to edit"));
+  });
+  customSitesList.forEach(function(s){
+    var can = _siteCanManage(s.name);
+    rows.push(_siteRow(s.name, s.lat, s.lng, can ? s.id : null, can ? null : "Not assigned to you"));
+  });
+
+  if (!rows.length) {
+    wrap.innerHTML = '<div style="font-size:.8rem;color:var(--ink3);padding:8px 2px">No sites yet — add one above.</div>';
     return;
   }
-  wrap.innerHTML = customSitesList.map(function(s){
-    return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px">'
-      + '<div style="min-width:0"><div style="font-weight:600;font-size:.85rem;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+sanitizeHtml(s.name)+'</div>'
-      + '<div style="font-size:.72rem;color:var(--ink3);font-family:var(--mono)">'+s.lat+', '+s.lng+'</div></div>'
-      + '<button class="tb-btn" onclick="removeCustomSite(\''+s.id+'\')" style="white-space:nowrap;color:#b91c1c;border-color:#fca5a5">🗑 Remove</button>'
-      + '</div>';
-  }).join("");
+  wrap.innerHTML = rows.join("");
+}
+
+// One row. `id` null => read-only row, `lockNote` explains why.
+function _siteRow(name, lat, lng, id, lockNote) {
+  var actions = id
+    ? '<button class="tb-btn" onclick="editSite(\''+_esc(id)+'\')" style="white-space:nowrap">✏️ Edit</button>'
+      + '<button class="tb-btn" onclick="removeCustomSite(\''+_esc(id)+'\')" style="white-space:nowrap;color:#b91c1c;border-color:#fca5a5">🗑 Remove</button>'
+    : '<span style="font-size:.7rem;color:var(--ink3);white-space:nowrap">🔒 '+sanitizeHtml(lockNote||"Read-only")+'</span>';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px">'
+    + '<div style="min-width:0"><div style="font-weight:600;font-size:.85rem;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+sanitizeHtml(name)+'</div>'
+    + '<div style="font-size:.72rem;color:var(--ink3);font-family:var(--mono)">'+lat+', '+lng+'</div></div>'
+    + '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0">'+actions+'</div>'
+    + '</div>';
 }
 
 function loadClearedDeviceCases() {
@@ -15379,21 +15742,26 @@ const HELP_TOPICS = {
     "audience": "admin",
     "title": "Managing Work Sites",
     "steps": [
-      "Log in and open the Analytics tab.",
-      "Click the 'Manage Sites' button in the toolbar.",
+      "Open the modal from either 'Admin Tasks -> Team -> Work Sites' or the 'Manage Sites' button on the Analytics tab.",
+      "First time only: click 'Import built-in sites' in the orange banner. This copies the 14 original sites into the database so they become editable. It only adds site definitions — no attendance or leave record is changed.",
       "To add a site, enter the site name, latitude, and longitude, then click '+ Add site'.",
       "To get GPS coordinates automatically, click 'Use my current location' while physically at the site.",
-      "New sites appear immediately in the check-in dropdown for engineers and in all site filters.",
-      "To remove a custom site, click the delete button next to it in the custom sites list."
+      "To change a site, click 'Edit' on its row. The form switches to edit mode — adjust the name or coordinates and click 'Save changes'.",
+      "To remove a site, click 'Remove' on its row. You are warned first if a manpower target or a team manager is attached to it.",
+      "All changes appear immediately in the engineer check-in dropdown and in every site filter."
     ],
     "troubleshooting": [
-      "Built-in sites defined in the WORK_SITES array in the HTML file cannot be deleted from the modal — edit the HTML file directly to change them.",
+      "Until the built-in sites are imported, they show in the list as read-only rows marked 'Built-in — import to edit'. Click 'Import built-in sites' to unlock them.",
+      "Importing twice is safe: each site is written to a document whose id is derived from its name, so a repeat import overwrites the same records instead of creating duplicates.",
+      "Renaming a site updates manpower targets, team-manager assignments and engineer default sites. Past attendance and leave records deliberately keep the OLD name so historical reports stay exactly as they were recorded.",
+      "Team managers can only edit or remove sites they are assigned to. Other rows show a padlock. Only a full admin can import the built-in sites.",
       "If a new site does not appear in the engineer's site dropdown, ask the engineer to refresh the page.",
       "Latitude and longitude must be valid decimal numbers (e.g. 1.3521 and 103.8198). Wrong values will result in engineers always showing as out of range."
     ],
     "manual": [
-      "Work sites define the GPS coordinates that the geofence check-in uses. Engineers must be within 500 metres of the site coordinates to successfully check in or check out. Sites can be hardcoded in the WORK_SITES array in the HTML file or added dynamically through the Manage Sites modal.",
-      "Custom sites added through the modal are stored in the Firestore workSites collection. They are fetched and merged with the built-in list every time the engineer or admin page loads. This means all users see new sites immediately after they are added, without requiring an HTML file update.",
+      "Work sites define the GPS coordinates that the geofence check-in uses. Engineers must be within 500 metres of the site coordinates to successfully check in or check out.",
+      "Sites are stored in the Firestore workSites collection and streamed live, so every user sees an addition, rename or removal immediately without an HTML file update. The WORK_SITES array still exists in the page source but is used only as an offline fallback, so check-in keeps working if Firestore is unreachable.",
+      "Renaming cascades to the collections that must track the current name — manpower targets, team-manager site assignments, and engineer default sites on onboarding records. Historical attendance and leave records are left untouched by design.",
       "GPS coordinates for any location can be obtained from Google Maps: right-click the map at the site location, and the first line shown is latitude, longitude. For interior locations, place the marker at the building entrance or the area closest to where engineers will check in from."
     ]
   },
