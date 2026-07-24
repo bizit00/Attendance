@@ -265,6 +265,22 @@ input:-webkit-autofill,input:autofill{animation-name:onAutoFillStart;animation-d
 .mode-seg.on{background:var(--ink);color:#fff}
 .mode-badge{background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;font-family:var(--mono);line-height:1.4}
 .dash-tab.mode-hidden{display:none !important}
+/* v6.63: Team sub-tab bar — pane-switching tabs vs modal-opening actions */
+.team-subbar{display:flex;align-items:center;gap:6px;margin-bottom:18px;border-bottom:2px solid var(--border);padding-bottom:0}
+.team-sub-tab{padding:7px 18px;border:none;background:none;font-size:.87rem;font-weight:700;color:var(--ink3);border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;font-family:var(--body);transition:color .2s}
+.team-sub-tab:hover{color:var(--ink)}
+.team-sub-div{width:1px;align-self:stretch;background:var(--border);margin:6px 10px}
+.team-sub-acts{display:flex;align-items:center;gap:6px}
+/* Same styling as .team-sub-tab by request — these open modals rather than switching
+   panes, so they never receive the blue active underline that teamSubTab() applies. */
+.team-sub-act{padding:7px 18px;border:none;background:none;font-size:.87rem;font-weight:700;color:var(--ink3);border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;font-family:var(--body);transition:color .2s}
+.team-sub-act:hover{color:var(--ink)}
+@media(max-width:700px){
+  .team-subbar{flex-wrap:wrap;row-gap:10px;padding-bottom:10px}
+  .team-sub-div{display:none}
+  .team-sub-acts{flex-basis:100%;flex-wrap:wrap;row-gap:8px}
+  .team-sub-act{margin-bottom:0}
+}
 
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--card);border-radius:var(--r2);padding:14px 16px;margin-bottom:18px;border:1px solid var(--border);box-shadow:var(--sh)}
 .toolbar input,.toolbar select{padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;background:#fafaf8;color:var(--ink);flex:1;min-width:110px;font-family:var(--body)}
@@ -1753,8 +1769,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
             <div class="chart-card-sub" id="anGapSub">Reallocation based on available vs required — as of today</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
-            <button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()" title="Set required manpower per site" style="font-size:.78rem;padding:6px 12px">⚙️ Configure Manpower</button>
-            <button class="tb-btn tb-out" onclick="openSitesModal()" title="Add or remove work sites (name + GPS)" style="font-size:.78rem;padding:6px 12px">📍 Manage Sites</button>
+            <!-- v6.63: Configure Manpower / Manage Sites moved to Admin Tasks → Team -->
             <span class="an-live-badge">LIVE</span>
           </div>
         </div>
@@ -1933,21 +1948,21 @@ tr.on-leave-row td{background:#f0f9ff!important}
 <!-- ONBOARDING TAB -->
 <!-- ══ TEAM TAB (Onboarding + Accounts merged) ══════════════════════ -->
 <div id="dTab-team" style="display:none">
-  <!-- Sub-tab bar -->
-  <div style="display:flex;gap:6px;margin-bottom:18px;border-bottom:2px solid var(--border);padding-bottom:0">
-    <button id="teamSubBtnOnboarding" onclick="teamSubTab('onboarding')"
-      style="padding:7px 18px;border:none;background:none;font-size:.87rem;font-weight:700;color:var(--blue);border-bottom:2px solid var(--blue);margin-bottom:-2px;cursor:pointer;font-family:var(--body)">
-      📋 Onboarding
-    </button>
-    <button id="teamSubBtnAccounts" onclick="teamSubTab('accounts')"
-      style="padding:7px 18px;border:none;background:none;font-size:.87rem;font-weight:700;color:var(--ink3);border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;font-family:var(--body)">
-      👷 Eng Accounts
-    </button>
-    <button id="teamSubBtnManagers" onclick="teamSubTab('managers')"
-            style="background:none;border:none;padding:10px 4px;font-weight:700;font-size:.9rem;cursor:pointer;color:var(--ink3);border-bottom:2px solid transparent;font-family:var(--body)">👔 Team Managers</button>
-    <!-- v6.62: site management reachable from Admin Tasks mode (opens the same modal) -->
-    <button id="teamSubBtnSites" onclick="openSitesModal()"
-            style="background:none;border:none;padding:10px 4px;margin-left:auto;font-weight:700;font-size:.9rem;cursor:pointer;color:var(--ink3);border-bottom:2px solid transparent;font-family:var(--body)">📍 Work Sites</button>
+  <!-- Sub-tab bar — v6.63: tabs left, divider, config actions right -->
+  <div class="team-subbar">
+    <!-- inline style = the pre-JS active state; teamSubTab() writes these same two properties. Do not move it into the class or the bar renders with no tab highlighted until first click. -->
+    <button id="teamSubBtnOnboarding" class="team-sub-tab" onclick="teamSubTab('onboarding')"
+            style="color:var(--blue);border-bottom:2px solid var(--blue)">📋 Onboarding</button>
+    <button id="teamSubBtnAccounts" class="team-sub-tab" onclick="teamSubTab('accounts')">👷 Eng Accounts</button>
+    <button id="teamSubBtnManagers" class="team-sub-tab" onclick="teamSubTab('managers')">👔 Team Managers</button>
+    <span class="team-sub-div" aria-hidden="true"></span>
+    <!-- v6.63: both admin config actions live here; they open modals, they do not switch panes -->
+    <div class="team-sub-acts">
+      <button id="teamSubBtnManpower" class="team-sub-act" onclick="anOpenManpowerConfig()"
+              title="Set required manpower per site">⚙️ Configure Manpower</button>
+      <button id="teamSubBtnSites" class="team-sub-act" onclick="openSitesModal()"
+              title="Add, edit or remove work sites (name + GPS)">📍 Work Sites</button>
+    </div>
   </div>
 
   <!-- Onboarding pane -->
@@ -8919,7 +8934,7 @@ function _anRenderGapTable(gaps, plan) {
   // ── Compact gap rows ──────────────────────────────
   if (cards) {
     if (!gaps.length) {
-      cards.innerHTML = '<div class="empty" style="padding:28px 20px"><div class="empty-icon">⚖️</div><div class="empty-t">No site data yet</div><div>Engineers must check in or have leave records to appear here.</div><button class="tb-btn tb-pri" onclick="anOpenManpowerConfig()" style="margin-top:12px">⚙️ Configure Manpower</button></div>';
+      cards.innerHTML = '<div class="empty" style="padding:28px 20px"><div class="empty-icon">⚖️</div><div class="empty-t">No site data yet</div><div>Engineers must check in or have leave records to appear here.</div><div style="margin-top:12px;font-size:.82rem;color:var(--ink3)">Set required headcount in <strong>Admin Tasks → Team → ⚙️ Configure Manpower</strong>.</div></div>';
     } else {
       var rowCls   = { deficit:"gr-deficit",  surplus:"gr-surplus",  ontarget:"gr-ontarget",  noreq:"gr-noreq" };
       var badgeCls = { deficit:"gr-badge-deficit", surplus:"gr-badge-surplus", ontarget:"gr-badge-ontarget", noreq:"gr-badge-noreq" };
@@ -15592,12 +15607,12 @@ const HELP_TOPICS = {
       "Use the date range filters at the top to select a reporting period; tap 'Today' to reset to today.",
       "Review the six KPI cards: Today's Check-ins, Total Engineers in System, Checked Out Today, Late Rate, On Leave, and Resource Status.",
       "The Attendance Status by Site chart shows on-time, late, and absent engineers per site — click a bar for a detail breakdown.",
-      "Use 'Configure Manpower' to set headcount targets per site, which drive the Resource Status KPI.",
+      "Set headcount targets per site from 'Admin Tasks -> Team -> Configure Manpower'; these drive the Resource Status KPI.",
       "Tap 'Excel' to export the filtered dataset; tap 'Slideshow' to present charts in fullscreen."
     ],
     "troubleshooting": [
       "If KPI cards show 0 or dashes, no attendance data exists for the selected date range — widen the range or tap Today.",
-      "Resource Status shows a dash if manpower targets have not been configured; use 'Configure Manpower' to set targets.",
+      "Resource Status shows a dash if manpower targets have not been configured; set them from 'Admin Tasks -> Team -> Configure Manpower'.",
       "The Late Rate KPI requires a standard start time to be inferred from attendance data — if no engineer has checked in, the rate cannot be calculated."
     ],
     "manual": [
@@ -15633,8 +15648,8 @@ const HELP_TOPICS = {
     "audience": "admin",
     "title": "Configuring Manpower Targets",
     "steps": [
-      "Log in and open the Analytics tab.",
-      "Click the 'Configure Manpower' button in the toolbar.",
+      "Log in and switch the dashboard to Admin Tasks mode, then open the Team tab.",
+      "Click the 'Configure Manpower' button in the Team sub-tab bar.",
       "In the modal, enter the required headcount for each site.",
       "Click 'Save Targets' — targets are saved to Firestore immediately.",
       "The Resource Status KPI card and Manpower Gap analysis update automatically."
@@ -15742,7 +15757,7 @@ const HELP_TOPICS = {
     "audience": "admin",
     "title": "Managing Work Sites",
     "steps": [
-      "Open the modal from either 'Admin Tasks -> Team -> Work Sites' or the 'Manage Sites' button on the Analytics tab.",
+      "Open the modal from 'Admin Tasks -> Team -> Work Sites'.",
       "First time only: click 'Import built-in sites' in the orange banner. This copies the 14 original sites into the database so they become editable. It only adds site definitions — no attendance or leave record is changed.",
       "To add a site, enter the site name, latitude, and longitude, then click '+ Add site'.",
       "To get GPS coordinates automatically, click 'Use my current location' while physically at the site.",
