@@ -513,13 +513,16 @@ tr:hover td{background:#fafdf8}
 @keyframes sp{to{transform:rotate(360deg)}}
 
 /* Toast */
+/* v6.64: centred toast (was bottom-anchored). Screen-centre so it isn't missed
+   under the fold; opacity+scale for show/hide since it no longer slides off-screen. */
 #toast{
-  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(100px);
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.85);
   background:var(--ink);color:#fff;padding:12px 24px;border-radius:30px;
-  font-size:.9rem;font-weight:600;box-shadow:var(--sh2);
-  transition:transform .4s cubic-bezier(.34,1.56,.64,1);z-index:9999;white-space:nowrap;max-width:90vw;
+  font-size:.9rem;font-weight:600;box-shadow:var(--sh2);text-align:center;
+  opacity:0;pointer-events:none;
+  transition:transform .32s cubic-bezier(.34,1.56,.64,1),opacity .25s ease;z-index:9999;white-space:nowrap;max-width:90vw;
 }
-#toast.show{transform:translateX(-50%) translateY(0)}
+#toast.show{transform:translate(-50%,-50%) scale(1);opacity:1}
 #toast.t-ok{background:linear-gradient(135deg,#00c896,#00a878)}
 #toast.t-err{background:linear-gradient(135deg,#ff3b5c,#e02040)}
 
@@ -3507,6 +3510,36 @@ function refreshGps(dir) {
   verifyGps(dir);
 }
 
+// v6.64 — GPS resume recovery.
+// verifyGps runs ONCE and only when the user taps the GPS / Refresh button. On
+// mobile the browser often backgrounds or evicts the tab, so the single fix is lost
+// and the Check-In button stays greyed until the page reloads — which is the ONLY
+// reason locking/unlocking the phone ever "fixed" it (the reload re-ran GPS against
+// a now-warmed chip; refresh/clear-cache/tap-to-reset didn't wait for a new fix).
+// Here we re-run the check-in GPS verify automatically when the tab returns to the
+// foreground. It re-runs the SAME anti-spoof gauntlet unchanged — no threshold is
+// relaxed; it just gives the button a fresh, legitimate chance to satisfy them.
+var _gpsResumeTimer = null;
+function _maybeResumeGps() {
+  if (document.visibilityState && document.visibilityState !== "visible") return;
+  var scr = document.getElementById("screen-engineer");
+  if (!scr || !scr.classList.contains("active")) return;      // not on the engineer screen
+  var ciForm = document.getElementById("ciForm");
+  if (!ciForm || ciForm.style.display === "none") return;      // not in check-in mode (checked-out/checked-in)
+  var siteVal = (document.getElementById("empSite") || {}).value || "";
+  if (!siteVal) return;                                        // verifyGps("in") needs a site (would just toast)
+  if (GPS.in && GPS.in.ok) return;                            // already have a good fix — leave it
+  var gbtn = document.getElementById("gpsCiBtn");
+  if (gbtn && /\bchecking\b/.test(gbtn.className)) return;      // a verify is already running
+  clearTimeout(_gpsResumeTimer);                              // debounce rapid lock/unlock toggles
+  _gpsResumeTimer = setTimeout(function(){
+    console.log("[v6.64] tab resumed → auto re-verifying check-in GPS");
+    verifyGps("in");
+  }, 400);
+}
+document.addEventListener("visibilitychange", _maybeResumeGps);
+window.addEventListener("pageshow", _maybeResumeGps);
+
 // v6.51 — pending draft frozen when the card opens (time = confirmation time, not admin time).
 var _manualDraft = null;
 
@@ -4658,17 +4691,10 @@ function confirmOtp() {
       var empId = getEngId("empId");
       var name  = ((document.getElementById("empName")||{}).value||"").trim();
 
-      // Mark onboarding record active (preserved from v6.52)
-      if (empId && window.db) {
-        db.collection("engineerOnboarding").doc(empId).get().then(function(snap) {
-          if (snap.exists && snap.data().status !== "active") {
-            db.collection("engineerOnboarding").doc(empId).update({
-              status: "active",
-              activatedAt: new Date().toISOString()
-            }).catch(function(){});
-          }
-        }).catch(function(){});
-      }
+      // Mark onboarding record active (preserved from v6.52; v6.64: routed through
+      // _activateOnboarding so it looks the record up by the engId FIELD, not the
+      // doc id — the doc id goes stale if an admin edits the engineer's ID.)
+      _activateOnboarding(empId);
 
       // Remember this device so OTP isn't needed again (preserved from v6.52)
       computeFingerprint().then(function(devId) {
@@ -5634,6 +5660,25 @@ function doCheckin() {
   });
 }
 
+// v6.64: Flip a pre-registered engineer's onboarding record to "active".
+// Looks the record up by the engId FIELD, not the doc id: onbSave keys the doc by
+// (editId || engId), so editing an engineer's ID leaves the doc id at the OLD id
+// while the engId field changes — a doc-id lookup then silently misses (the old
+// code's error was swallowed by an empty .catch, leaving the record "Pending").
+// Called on the real activation signal (a successful check-in) and after OTP verify.
+function _activateOnboarding(empId) {
+  if (!empId || !fbOk || !window.db) return;
+  db.collection("engineerOnboarding").where("engId", "==", empId).limit(1).get()
+    .then(function(qs) {
+      if (qs.empty) return;
+      var d = qs.docs[0];
+      if (d.data().status !== "active") {
+        d.ref.update({ status: "active", activatedAt: new Date().toISOString() })
+          .catch(function(){});
+      }
+    }).catch(function(){});
+}
+
 // ── Save the attendance record (called after identity + leave checks pass) ──
 function _saveCheckin(empId, empName, siteVal, empEmail, devId, btn) {
   btn.innerHTML = '<span class="spin"></span> Saving…';
@@ -5668,6 +5713,11 @@ function _saveCheckin(empId, empName, siteVal, empEmail, devId, btn) {
 
       function onSaved(docId) {
         recordDeviceCheckin(empId);
+        // v6.64: a successful check-in is the real activation signal — flip the
+        // engineer's onboarding record Pending → Active here (previously this only
+        // ever happened on OTP verify, so an OTP-trusted engineer whose device
+        // skips OTP stayed "Pending" forever).
+        _activateOnboarding(empId);
         setSess(rec); setSessDocId(docId);
         btn.innerHTML = "✅ Check In";
         showResult("ci", rec, isLate, false);
@@ -14385,10 +14435,16 @@ function onbSave() {
 
   var docId = editId || engId;
 
+  // v6.64: on an EDIT, remember the pre-edit identity so we can push the change into
+  // the engineer's existing Eng Account (emailBindings/empBindings). Fixes "admin has
+  // to edit the same engineer twice" — Onboarding and Eng Accounts are separate stores.
+  var prev = editId ? (_onbRecords.find(function(r){ return r._id === editId; }) || null) : null;
+
   if (fbOk && db) {
     db.collection("engineerOnboarding").doc(docId).set(doc)
       .then(function() {
         if (statusEl) { statusEl.style.color="var(--green)"; statusEl.textContent="✅ Saved!"; }
+        if (prev) _syncEngAccountFromOnboarding(prev.email, prev.engId, engId, name, email);
         toast("Onboarding record saved", "t-ok");
         onbCloseForm();
         loadOnboarding();
@@ -14403,10 +14459,75 @@ function onbSave() {
     if (existing >= 0) _onbRecords[existing] = Object.assign({ _id: docId }, doc);
     else _onbRecords.unshift(Object.assign({ _id: docId }, doc));
     _onbRenderTable();
+    if (prev) _syncEngAccountFromOnboarding(prev.email, prev.engId, engId, name, email);
     if (statusEl) { statusEl.style.color="var(--green)"; statusEl.textContent="✅ Saved locally"; }
     toast("Saved locally (Firebase not connected)", "t-ok");
     onbCloseForm();
   }
+}
+
+// v6.64: One-way sync — when an admin edits an engineer in Onboarding, push the
+// identity change (ID / name / email) into their existing Eng Account so the admin
+// no longer has to edit the same person in two places. Mirrors adminAccSaveEdit's
+// cascade exactly: emailBindings is keyed by EMAIL and empBindings by ENGINEER ID,
+// so a changed key = delete-old + write-new, and the existing doc's fields
+// (deviceIds / verifiedDeviceIds / registeredAt) are carried over via Object.assign
+// so the engineer is NOT forced back through OTP. Only updates an account that
+// ALREADY exists (engineer has checked in / verified) — it never creates a phantom
+// account for a not-yet-active engineer.
+function _syncEngAccountFromOnboarding(oldEmail, oldEngId, newEngId, newName, newEmail) {
+  oldEmail = (oldEmail || "").toLowerCase();
+  newEmail = (newEmail || "").toLowerCase();
+  oldEngId = oldEngId || "";
+  if (!newEngId || !newEmail) return;
+  var ts = Date.now(), iso = new Date().toISOString();
+
+  // Keep the admin's local mirror in step with Firestore (Eng Accounts tab reads it
+  // when offline). `base` is the existing account row to preserve fields from.
+  function applyLocalMirror(base) {
+    var eb = {}, xb = {};
+    try { eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}"); } catch(_){}
+    try { xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}"); } catch(_){}
+    if (!base) base = eb[oldEmail];
+    if (!base) return;                                         // no existing account → nothing to mirror
+    var updated = Object.assign({}, base, {
+      empId:newEngId, empName:newName, email:newEmail,
+      lastSeenAt:ts, editedAt:ts, editedIso:iso, editedByAdmin:true
+    });
+    delete updated._docId; delete updated._orphan;
+    if (oldEmail && oldEmail !== newEmail) delete eb[oldEmail];
+    if (oldEngId && oldEngId !== newEngId) delete xb[oldEngId];
+    eb[newEmail] = updated;
+    xb[newEngId] = { empId:newEngId, email:newEmail, empName:newName, lastSeenAt:ts };
+    try {
+      localStorage.setItem("at_email_bind_v2", JSON.stringify(eb));
+      localStorage.setItem("at_emp_bind_v2",   JSON.stringify(xb));
+    } catch(_){}
+  }
+
+  if (!(fbOk && db)) { applyLocalMirror(null); return; }
+
+  // Find the existing account by its OLD email key; if the engineer has no account
+  // yet, there is nothing to sync (don't fabricate one).
+  db.collection("emailBindings").doc(oldEmail).get().then(function(snap) {
+    if (!snap.exists) { console.log("[v6.64] no Eng Account for", oldEmail, "— nothing to sync"); return; }
+    var existing = snap.data();
+    var updated = Object.assign({}, existing, {
+      empId:newEngId, empName:newName, email:newEmail,
+      lastSeenAt:ts, editedAt:ts, editedIso:iso, editedByAdmin:true
+    });
+    var batch = db.batch();
+    if (oldEmail && oldEmail !== newEmail) batch.delete(db.collection("emailBindings").doc(oldEmail));
+    if (oldEngId && oldEngId !== newEngId) batch.delete(db.collection("empBindings").doc(oldEngId));
+    batch.set(db.collection("emailBindings").doc(newEmail), updated);
+    batch.set(db.collection("empBindings").doc(newEngId), {
+      empId:newEngId, email:newEmail, empName:newName,
+      lastSeenAt:ts, lastSeenIso:iso, editedByAdmin:true
+    });
+    batch.commit()
+      .then(function(){ applyLocalMirror(existing); console.log("[v6.64] Eng Account synced from onboarding →", newEngId); })
+      .catch(function(e){ console.warn("[v6.64] Eng Account sync write failed:", e); });
+  }).catch(function(e){ console.warn("[v6.64] Eng Account sync lookup failed:", e); });
 }
 
 // ── Delete ────────────────────────────────────────────
