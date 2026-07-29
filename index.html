@@ -3381,15 +3381,17 @@ function _gpsRecover(dir) {
     requestManualConfirm("out");
     return;
   }
-  // dir === "in": guide the engineer to reset the app (their explicit choice via _resetAppData's confirm).
+  // dir === "in": after two failures, REPLACE the status with a single unified card — the
+  // location button above retries, this card offers reset-app, and the ask-admin fallback sits
+  // below. Replace (not append) keeps it to one message and is idempotent (no dedupe guard needed).
   var st = document.getElementById("gpsCiStatus");
-  if (st && !st.querySelector("[data-gps-recover]")) { // v6.65: guard against a duplicate callout
-    st.innerHTML += '<div data-gps-recover style="margin-top:10px;padding:12px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;color:#9a3412;font-size:.82rem;line-height:1.5">' +
-      '<b>Couldn\'t detect GPS after 2 tries.</b><br>' +
-      'Your app may be stuck. Resetting reloads the page and clears cached data (you may need to verify your email once after).' +
-      '<button type="button" onclick="_resetAppData()" style="margin-top:10px;width:100%;padding:11px 14px;background:#ea580c;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">🔄 Reset the app</button>' +
-      '<button type="button" onclick="refreshGps(\'in\')" style="margin-top:8px;width:100%;padding:10px 14px;background:#0ea5e9;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">🔄 Or try GPS again</button>' +
-      '</div>';
+  if (st) {
+    st.innerHTML =
+      '<div style="margin-top:8px;padding:11px 13px;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;color:#9a3412;font-size:.82rem;line-height:1.55">' +
+        '📍 <b>Still no GPS after 2 tries.</b> Tap the location button above to try once more, or reset the app (reloads &amp; clears cached data — you may need to verify your email again).' +
+        '<button type="button" onclick="_resetAppData()" style="margin-top:10px;width:100%;padding:11px 14px;background:#ea580c;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">🔄 Reset the app</button>' +
+      '</div>' +
+      '<button type="button" onclick="requestManualConfirm(\'in\')" style="margin-top:10px;width:100%;padding:10px 14px;background:#fff;color:#b45309;border:1px solid #f59e0b;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">✋ Can\'t verify? Request manual confirmation</button>';
   }
 }
 
@@ -3566,12 +3568,8 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
   }
 }
 
-// v6.7 — "Refresh GPS" handler: clears state and re-runs verification.
-// Surfaces a fresh fix without the user having to navigate away.
-function refreshGps(dir) {
-  GPS[dir] = null;
-  verifyGps(dir);
-}
+// v6.65 — refreshGps() removed: the main location button now re-runs verifyGps directly,
+// so the separate "Refresh GPS" handler/button is gone (one retry path).
 
 // v6.64 — GPS resume recovery.
 // verifyGps runs ONCE and only when the user taps the GPS / Refresh button. On
@@ -3861,22 +3859,23 @@ function setGpsUI(dir, state, name, dist, acc) {
   var tx  = document.getElementById(txtId);
   var st  = document.getElementById(statId);
 
-  // Accuracy badge — shown in OK/FAIL states so user sees how reliable the reading is
+  // Accuracy badge — shown in the OK state as positive confirmation of reading quality.
   var accBadge = "";
   if (acc != null) {
     var accCls = acc <= 50 ? "pill-ok" : (acc <= 200 ? "pill-warn" : "pill-bad");
     accBadge = '<div class="pill ' + accCls + '" style="margin-top:6px;font-size:.72rem">📡 GPS accuracy: ±' + acc + 'm</div>';
   }
 
-  // v6.7 — Reusable "Refresh GPS" button shown on any failure path
-  var refreshBtn = '<button type="button" onclick="refreshGps(\''+dir+'\')" '+
-    'style="margin-top:8px;width:100%;padding:10px 14px;background:#0ea5e9;color:#fff;border:none;'+
-    'border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">🔄 Refresh GPS</button>';
-
-  // v6.51 — fallback shown only on a real GPS failure: engineer asks admin to confirm presence.
+  // v6.65: ONE retry + ONE message. The big location button itself re-runs verifyGps, so there
+  // is no separate "Refresh GPS" button. Each failure renders a SINGLE unified card (reason +
+  // any fix tips) via _gpsMsg, with the ask-admin fallback below it.
   var manualBtn = '<button type="button" onclick="requestManualConfirm(\''+dir+'\')" '+
-    'style="margin-top:8px;width:100%;padding:10px 14px;background:#fff;color:#b45309;border:1px solid #f59e0b;'+
+    'style="margin-top:10px;width:100%;padding:10px 14px;background:#fff;color:#b45309;border:1px solid #f59e0b;'+
     'border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">✋ Can\'t verify? Request manual confirmation</button>';
+  function _gpsMsg(headline, tips) {
+    return '<div style="margin-top:8px;padding:11px 13px;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;color:#9a3412;font-size:.82rem;line-height:1.55">' +
+      headline + (tips ? ('<br><br>' + tips) : '') + '</div>';
+  }
 
   if (state==="ok") {
     btn.className="gps-btn ok";
@@ -3884,42 +3883,28 @@ function setGpsUI(dir, state, name, dist, acc) {
     st.innerHTML='<div class="pill pill-ok">✅ Within range · '+dist+'m from site</div>'+accBadge;
   } else if (state==="fail") {
     btn.className="gps-btn fail";
-    ic.textContent="🚫"; tx.textContent="Out of range — "+dist+"m (max "+GEOFENCE_M+"m)";
-    st.innerHTML='<div class="pill pill-bad">🚫 Too far from '+name+' · You are '+dist+'m away. Must be within '+GEOFENCE_M+'m.</div>'+accBadge+refreshBtn+manualBtn;
+    ic.textContent="🔄"; tx.textContent="Tap to try location again";
+    st.innerHTML = _gpsMsg('🚫 <b>Too far from '+name+'.</b> You are '+dist+'m away — must be within '+GEOFENCE_M+'m (GPS accuracy ±'+acc+'m).') + manualBtn;
   } else if (state==="wifispoof") {
-    // v6.7 — Detected WiFi / IP-based geolocation (huge distance with deceptively tight accuracy,
-    // or positions jumping kilometres between samples). Refuse and direct user to fix.
+    // v6.7 — Detected WiFi / IP-based geolocation (huge distance with deceptively tight accuracy).
     btn.className="gps-btn fail";
-    ic.textContent="📡"; tx.textContent="WiFi-based location detected — switch to GPS";
-    st.innerHTML =
-      '<div class="pill pill-bad">📡 Suspicious location · '+dist+'m from '+name+' (claimed ±'+acc+'m). Likely WiFi/IP-based, not real GPS.</div>'+
-      '<div style="margin-top:8px;padding:10px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:.78rem;color:#9a3412;line-height:1.5">'+
-        '<b>Why this happens:</b> Your browser/device returned a network-based position (WiFi router lookup or carrier IP), which can be off by kilometres even when accuracy <i>looks</i> tight.<br><br>'+
-        '<b>How to fix:</b><br>'+
-        '• <b>Turn off WiFi</b> and use mobile data (not just hotspot routed through WiFi)<br>'+
-        '• On Android: set Location Mode to <b>"High accuracy" / "GPS On"</b> (not Battery-saving)<br>'+
-        '• On iPhone: Settings → Privacy → Location Services → Safari/Chrome → <b>While Using + Precise Location ON</b><br>'+
-        '• Move outdoors or near a window for clear sky view<br>'+
-        '• Tap <b>Refresh GPS</b> below after applying the fix'+
-      '</div>'+refreshBtn+manualBtn;
+    ic.textContent="🔄"; tx.textContent="Tap to try location again";
+    st.innerHTML = _gpsMsg(
+      '📡 <b>WiFi-based location detected</b> · '+dist+'m from '+name+' (claimed ±'+acc+'m). This is a network/IP position, not real GPS — it can be off by kilometres.',
+      '<b>Fix, then tap the button above:</b><br>• Turn OFF WiFi, use mobile data<br>• Android: Location mode “High accuracy / GPS On”<br>• iPhone: Settings → Privacy → Location → your browser → While Using + Precise Location ON<br>• Move outdoors or near a window'
+    ) + manualBtn;
   } else if (state==="lowacc") {
-    // GPS reading is too inaccurate to trust — refuse to verify
+    // GPS reading is too inaccurate to trust — refuse to verify.
     btn.className="gps-btn fail";
-    ic.textContent="📡"; tx.textContent="GPS too inaccurate (±"+acc+"m) — try again";
-    st.innerHTML =
-      '<div class="pill pill-bad">📡 GPS accuracy ±'+acc+'m is worse than the '+GEOFENCE_M+'m geofence — reading can\'t be trusted.</div>'+
-      '<div style="margin-top:8px;padding:10px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;font-size:.78rem;color:#9a3412;line-height:1.5">'+
-        '<b>Likely cause:</b> Your browser is using WiFi / IP-based location instead of GPS.<br><br>'+
-        '<b>How to fix:</b><br>'+
-        '• <b>Disconnect from WiFi</b> and use mobile data / hotspot<br>'+
-        '• Move outdoors or near a window for clear sky<br>'+
-        '• Make sure <b>Location Services</b> are on for your browser<br>'+
-        '• Wait a few seconds and tap “Refresh GPS” below — the GPS chip warms up over time'+
-      '</div>'+refreshBtn+manualBtn;
+    ic.textContent="🔄"; tx.textContent="Tap to try location again";
+    st.innerHTML = _gpsMsg(
+      '📡 <b>GPS too inaccurate</b> (±'+acc+'m — worse than the '+GEOFENCE_M+'m geofence, so the reading can’t be trusted).',
+      '<b>Fix, then tap the button above:</b><br>• Disconnect from WiFi, use mobile data<br>• Move outdoors or near a window<br>• Make sure Location Services are on for your browser<br>• Wait a few seconds — the GPS chip warms up over time'
+    ) + manualBtn;
   } else {
     btn.className="gps-btn fail";
-    ic.textContent="❌"; tx.textContent="Try again";
-    st.innerHTML='<div class="pill pill-bad">❌ '+name+'</div>'+refreshBtn+manualBtn;
+    ic.textContent="🔄"; tx.textContent="Tap to try location again";
+    st.innerHTML = _gpsMsg('❌ '+name) + manualBtn;
   }
 }
 
