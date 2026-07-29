@@ -3355,9 +3355,59 @@ function resetGps(dir) {
   chkBtn();
 }
 
-function verifyGps(dir) {
+// v6.65: one-retry-then-recover on GPS-detection failure (cases 1–3: no-fix / low-accuracy /
+// WiFi-spoof). Out-of-range and ok never recover. Anti-spoof thresholds are unchanged.
+var _gpsAttempt = { in: 0, out: 0 };
+var _gpsRetryTimer = { in: null, out: null }; // v6.65: pending auto-retry timer per direction
+var MAX_GPS_ATTEMPTS = 2; // one retry
+
+function _handleGpsFailureOutcome(dir) {
+  if (_gpsAttempt[dir] < MAX_GPS_ATTEMPTS) {
+    var txId = dir === "in" ? "gpsCiTxt" : "gpsCoTxt";
+    var tx = document.getElementById(txId);
+    if (tx) tx.textContent = "Still can't get GPS — retrying… (" + (_gpsAttempt[dir] + 1) + " of " + MAX_GPS_ATTEMPTS + ")";
+    _gpsRetryTimer[dir] = setTimeout(function(){ _gpsRetryTimer[dir] = null; verifyGps(dir, true); }, 800);
+  } else {
+    _gpsAttempt[dir] = 0;
+    _gpsRecover(dir);
+  }
+}
+
+function _gpsRecover(dir) {
+  if (dir === "out") {
+    // Cases 1–3 twice on check-out → open the manual-checkout card (frozen time,
+    // GPS-failure context from lastGpsFix.out) → engineer confirms → admin Waiting List.
+    toast("Couldn't detect GPS — opening manual check-out", "t-err");
+    requestManualConfirm("out");
+    return;
+  }
+  // dir === "in": guide the engineer to reset the app (their explicit choice via _resetAppData's confirm).
+  var st = document.getElementById("gpsCiStatus");
+  if (st && !st.querySelector("[data-gps-recover]")) { // v6.65: guard against a duplicate callout
+    st.innerHTML += '<div data-gps-recover style="margin-top:10px;padding:12px 14px;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;color:#9a3412;font-size:.82rem;line-height:1.5">' +
+      '<b>Couldn\'t detect GPS after 2 tries.</b><br>' +
+      'Your app may be stuck. Resetting reloads the page and clears cached data (you may need to verify your email once after).' +
+      '<button type="button" onclick="_resetAppData()" style="margin-top:10px;width:100%;padding:11px 14px;background:#ea580c;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">🔄 Reset the app</button>' +
+      '<button type="button" onclick="refreshGps(\'in\')" style="margin-top:8px;width:100%;padding:10px 14px;background:#0ea5e9;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">🔄 Or try GPS again</button>' +
+      '</div>';
+  }
+}
+
+function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry chain
   var siteVal = document.getElementById("empSite").value;   // v6.62: name, not index
   if (dir==="in" && siteVal==="") { toast("Please select a work site first","t-err"); return; }
+
+  // v6.65: re-entrancy guard — ignore a new run while one is already actively detecting for this
+  // direction (an overlapping run would share the attempt counter and mis-drive retry/recovery).
+  // The 800ms auto-retry is unaffected: by the time it fires the button is in a fail state, not "checking".
+  var _busyBtn = document.getElementById(dir==="in" ? "gpsCiBtn" : "gpsCoBtnEl");
+  if (_busyBtn && /\bchecking\b/.test(_busyBtn.className)) return;
+
+  // v6.65: fresh entry (user tap / refreshGps / resume handler) starts the chain; auto-retry extends it.
+  // Cancel any pending auto-retry for this direction so a new run never races a scheduled one.
+  if (_gpsRetryTimer[dir]) { clearTimeout(_gpsRetryTimer[dir]); _gpsRetryTimer[dir] = null; }
+  if (isAutoRetry) { _gpsAttempt[dir] = (_gpsAttempt[dir] || 0) + 1; }
+  else { _gpsAttempt[dir] = 1; }
 
   var btnId  = dir==="in" ? "gpsCiBtn"    : "gpsCoBtnEl";
   var iconId = dir==="in" ? "gpsCiIcon"   : "gpsCoIcon";
@@ -3415,6 +3465,8 @@ function verifyGps(dir) {
   var goodEnough   = 30;      // tightened threshold (was 60m) → force real GPS
   var startTs      = Date.now();
   var finished     = false;
+  var countdownTimer = null;   // v6.65: visible countdown ticker
+  var bestAccTxt     = "";     // v6.65: latest "best ±Xm" text, rendered by the ticker
   var samples      = [];      // all readings collected — used for spoof detection
   var SPOOF_JUMP_M     = 2000;   // sample-to-sample jump that screams "WiFi"
   var IMPLAUSIBLE_M    = 5000;   // distance from site that looks like WiFi-IP location
@@ -3424,9 +3476,11 @@ function verifyGps(dir) {
     console.log("[v6.57] GPS verify finish:", dir, pos ? ("acc±" + Math.round(pos.coords.accuracy) + "m") : "no-fix");
     if (watcherId != null) { try { navigator.geolocation.clearWatch(watcherId); } catch(_){} }
     clearTimeout(timeoutTimer);
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; } // v6.65
 
     if (!pos) {
       setGpsUI(dir,"error", "Could not get a GPS fix — try moving outdoors or near a window.", null);
+      _handleGpsFailureOutcome(dir); // v6.65
       return;
     }
     var lat=pos.coords.latitude, lng=pos.coords.longitude, acc=Math.round(pos.coords.accuracy);
@@ -3437,6 +3491,7 @@ function verifyGps(dir) {
       GPS[dir] = null;
       setGpsUI(dir, "lowacc", site.name, dist, acc);
       chkBtn();
+      _handleGpsFailureOutcome(dir); // v6.65
       return;
     }
 
@@ -3455,6 +3510,7 @@ function verifyGps(dir) {
       GPS[dir] = null;
       setGpsUI(dir, "wifispoof", site.name, dist, acc);
       chkBtn();
+      _handleGpsFailureOutcome(dir); // v6.65
       return;
     }
 
@@ -3465,9 +3521,17 @@ function verifyGps(dir) {
     GPS[dir] = { lat:lat, lng:lng, accuracy:acc, dist:dist, ok:ok };
     setGpsUI(dir, ok?"ok":"fail", site.name, dist, acc);
     chkBtn();
+    _gpsAttempt[dir] = 0; // v6.65: ok OR out-of-range ends the chain — out-of-range still blocks, no recovery
   }
 
   var timeoutTimer = setTimeout(function(){ finish(bestFix); }, maxWaitMs);
+  // v6.65: tick the visible countdown so the engineer knows the waiting time.
+  countdownTimer = setInterval(function(){
+    var tx = document.getElementById(txtId);
+    if (!tx) return;
+    var remain = Math.max(0, Math.ceil((maxWaitMs - (Date.now() - startTs)) / 1000));
+    tx.textContent = "Detecting location… " + remain + "s" + (bestAccTxt ? " · " + bestAccTxt : "");
+  }, 500);
 
   try {
     watcherId = navigator.geolocation.watchPosition(
@@ -3486,15 +3550,14 @@ function verifyGps(dir) {
         if (acc <= goodEnough || (Date.now() - startTs) > maxWaitMs - 1000) {
           finish(bestFix);
         } else {
-          // Show live sample counter + best accuracy so user sees progress
-          var tx = document.getElementById(txtId);
-          if (tx) tx.textContent = "Sample " + samples.length + " · best ±" + Math.round(bestFix.coords.accuracy) + "m";
+          // v6.65: hand the readout to the countdown ticker (single renderer avoids flicker)
+          bestAccTxt = "best ±" + Math.round(bestFix.coords.accuracy) + "m";
         }
       },
       function(err) {
         var msgs = {1:"Location is blocked for this site. Tap the padlock/site-settings icon in your browser's address bar, set Location to Allow, then tap “Refresh GPS”. If that doesn't help, use “Reset app” below.",2:"Location unavailable.",3:"Request timed out."};
         if (bestFix) finish(bestFix);
-        else { finished = true; clearTimeout(timeoutTimer); setGpsUI(dir,"error", msgs[err.code]||"Location error.", null); }
+        else { finished = true; clearTimeout(timeoutTimer); if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; } setGpsUI(dir,"error", msgs[err.code]||"Location error.", null); _handleGpsFailureOutcome(dir); } // v6.65
       },
       { enableHighAccuracy:true, timeout:maxWaitMs, maximumAge:0 }
     );
@@ -11064,6 +11127,8 @@ function initLeaveForm() {
     ei.value = sess.empId.replace(/^[Ee][Nn][Gg]/i, "");
   }
   if (sess && sess.empName && en && !en.value) en.value = sess.empName;
+  var le = document.getElementById("leaveEmail"); // v6.65: pre-fill email from check-in session too
+  if (sess && sess.empEmail && le && !le.value) le.value = sess.empEmail;
   onLeaveSiteChange(); // reset manager dropdown to disabled state
 }
 
