@@ -1580,6 +1580,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="dash-tab" data-tab="waitlist" onclick="dTab('waitlist',this)" id="waitlistTabBtn">⏳ Waiting List <span id="waitlistPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" data-tab="device" onclick="dTab('device',this)">Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
       <div class="dash-tab" data-tab="team" onclick="dTab('team',this)">Team</div>
+      <div class="dash-tab" data-tab="backup" id="backupTabBtn" onclick="dTab('backup',this)">🗄️ Backup Import</div>
       <div class="dash-tab" data-tab="setup" id="setupTabBtn" onclick="dTab('setup',this)">Setup Guide</div>
     </div>
 
@@ -2220,6 +2221,47 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <!-- ENGINEER ACCOUNTS TAB -->
     <!-- accounts pane lives inside dTab-team; this stub is kept so old dTab() refs don't crash -->
     <div id="dTab-accounts" style="display:none"></div>
+    <div id="dTab-backup" style="display:none">
+      <div class="card">
+        <div class="card-lbl" style="color:var(--blue)">🗄️ Backup Import — recover offline submissions</div>
+        <p style="font-size:.85rem;color:var(--ink3);line-height:1.5;margin:6px 0 12px">
+          When the system was down, engineers submitted via the backup Microsoft Form. Download that
+          workbook from OneDrive, then upload it here to record the check-ins, check-outs and leave
+          applications. Nothing is written until you review and press <b>Import selected</b>.
+        </p>
+        <input type="file" id="backupFileInput" accept=".xlsx,.xls,.csv" onchange="_backupOnFile(this)"
+          style="display:block;margin-bottom:14px;font-size:.85rem"/>
+        <div id="backupSummary" style="font-size:.85rem;font-weight:600;margin-bottom:10px"></div>
+        <div id="backupReviewArea" style="overflow-x:auto"></div>
+        <button id="backupCommitBtn" onclick="_backupCommit()" disabled
+          style="margin-top:14px;display:none;width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer">
+          Import selected
+        </button>
+        <details style="margin-top:18px;font-size:.83rem;color:var(--ink2)">
+          <summary style="cursor:pointer;font-weight:600;color:var(--blue)">📋 How the backup plan works (one-time setup)</summary>
+          <div style="line-height:1.6;padding:8px 2px">
+            <p>If the app is unreachable (GitHub Pages or Firebase down), engineers submit via a backup
+            Microsoft Form; you import the results here once the app is back.</p>
+            <ol style="padding-left:20px">
+              <li>Create one <b>anonymous</b> Microsoft Form with these columns: Submission type
+                  (Check-in/Check-out/Leave), Engineer ID, Full name, Email, Work site, Date, Time,
+                  Leave type, From, To, Reason. Use <b>Open in Excel</b> so responses collect into a
+                  OneDrive workbook.</li>
+              <li>Share the form <b>link + QR code</b> with engineers ahead of time (WhatsApp / printed
+                  at sites) so they can reach it even when the app is down.</li>
+              <li>During an outage engineers submit. On recovery, download the workbook and upload it
+                  above, review the rows, and press <b>Import selected</b>.</li>
+              <li>Leave documents are NOT captured by the form — engineers send them to HR afterward
+                  (imported leave is flagged “document pending”).</li>
+            </ol>
+            <p>Publish this Firestore rule once (Firebase Console → Rules), matching your other admin rules:</p>
+            <pre style="font-size:.75rem;background:#0b1020;color:#d1e0ff;padding:10px;border-radius:8px;overflow-x:auto">match /backupImportLog/{docId} {
+  allow read, write: if request.auth != null;
+}</pre>
+          </div>
+        </details>
+      </div>
+    </div>
 
 
     <!-- Accounts content — hidden here, moved into teamPane-accounts by teamSubTab() -->
@@ -5870,12 +5912,12 @@ function showResult(type, rec, isLate, isOT) {
     html += row("Site", rec.site);
     html += row("Time", '<span style="font-family:var(--mono)">'+rec.checkinTime+'</span>');
     html += row("Date", rec.checkinDate);
-    html += row("GPS Distance", rec.viaManualConfirm ? "✋ Manually confirmed by admin" : (rec.checkinDist+"m from site ✅"));
+    html += row("GPS Distance", rec.viaBackupImport ? "🗄️ Backup entry (offline import)" : (rec.viaManualConfirm ? "✋ Manually confirmed by admin" : (rec.checkinDist+"m from site ✅"))); // v6.66
     if (isLate) html += '<div class="pill pill-warn" style="margin-top:10px">⚠️ Late arrival recorded</div>';
   } else {
     html  = row("Check-Out Time", '<span style="font-family:var(--mono)">'+rec.checkoutTime+'</span>');
     html += row("Duration", rec.duration);
-    html += row("GPS Distance", rec.checkoutViaManualConfirm ? "✋ Manually confirmed by admin" : (rec.checkoutDist+"m from site ✅"));
+    html += row("GPS Distance", rec.checkoutViaBackupImport ? "🗄️ Backup entry (offline import)" : (rec.checkoutViaManualConfirm ? "✋ Manually confirmed by admin" : (rec.checkoutDist+"m from site ✅"))); // v6.66
     if (isOT) html += '<div class="pill pill-warn" style="margin-top:10px">⏰ Overtime flagged ('+rec.duration+')</div>';
   }
   document.getElementById("resultBody").innerHTML = html;
@@ -5964,6 +6006,8 @@ function applyRoleVisibility() {
   currentManagerSites = (mgr && Array.isArray(mgr.sites)) ? mgr.sites.slice() : [];   // v6.61
   var setupTab = document.getElementById("setupTabBtn");
   if (setupTab) setupTab.style.display = currentUserIsManager ? "none" : "";
+  var _bkBtn = document.getElementById("backupTabBtn");
+  if (_bkBtn) _bkBtn.style.display = currentUserIsManager ? "none" : "";   // v6.66: admin-only
   // v6.61: the Firestore-rules reminder points to the Setup Guide, which managers cannot open — hide it for them.
   var rulesNote = document.getElementById("leaveRulesReminder");
   if (rulesNote) rulesNote.style.display = currentUserIsManager ? "none" : "";
@@ -6728,7 +6772,7 @@ function refreshDash() {
 // ── Admin dashboard modes (Tracking / Admin Tasks) ─────────────────────
 var MODES = {
   tracking: ["analytics","live","feed","calendar","device"],
-  admin:    ["leave","waitlist","team","setup"]
+  admin:    ["leave","waitlist","backup","team","setup"]   // v6.66: + backup
 };
 var MODE_DEFAULT = { tracking:"analytics", admin:"leave" };
 var _lastTab = { tracking:"analytics", admin:"leave" };
@@ -6766,8 +6810,299 @@ function setMode(mode){
 }
 
 // ── Dashboard tabs ─────────────────────────────────
+// ══ v6.66 Backup Import ═════════════════════════════════════════════
+// Reads the Microsoft-Forms→OneDrive Excel export locally (SheetJS) and maps
+// each row to a check-in / check-out / leave record after admin review.
+var BACKUP_HEADER_ALIASES = {
+  id:        ["id"],
+  submitted: ["completion time","start time"],
+  type:      ["submission type","type"],
+  engId:     ["engineer id","eng id","id number"],
+  name:      ["full name","name"],
+  email:     ["email","email address"],
+  site:      ["work site","site"],
+  date:      ["date"],
+  time:      ["time"],
+  leaveType: ["leave type"],
+  from:      ["from","from date"],
+  to:        ["to","to date"],
+  reason:    ["reason"]
+};
+var BACKUP_REQUIRED = ["id","type","engId","name","email"]; // id needed for dedup; minimum usable submission
+
+function _backupNorm(h){ return String(h == null ? "" : h).trim().toLowerCase(); }
+
+// Find a row's value for a canonical field by matching any accepted header spelling.
+function _backupField(row, field){
+  var aliases = BACKUP_HEADER_ALIASES[field] || [];
+  for (var k in row){
+    if (!Object.prototype.hasOwnProperty.call(row, k)) continue;
+    if (aliases.indexOf(_backupNorm(k)) !== -1) return row[k];
+  }
+  return "";
+}
+
+function _backupParseWorkbook(arrayBuffer){
+  var wb, ws, rows;
+  try {
+    wb = XLSX.read(arrayBuffer, { type:"array", cellDates:true });
+    ws = wb.Sheets[wb.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json(ws, { defval:"" });
+  } catch(e){
+    return { ok:false, error:"Could not read the file — is it a valid .xlsx/.csv export? (" + (e.message||e) + ")" };
+  }
+  if (!rows.length) return { ok:false, error:"The sheet has no rows." };
+  var have = Object.keys(rows[0]).map(_backupNorm);
+  var missing = BACKUP_REQUIRED.filter(function(f){
+    return !(BACKUP_HEADER_ALIASES[f].some(function(a){ return have.indexOf(a) !== -1; }));
+  });
+  if (missing.length) return { ok:false, error:"Missing required columns: " + missing.join(", "), found: Object.keys(rows[0]) };
+  return { ok:true, rows: rows };
+}
+
+function _backupCleanId(v){
+  var digits = String(v == null ? "" : v).replace(/[^0-9A-Za-z]/g,"").replace(/^[Ee][Nn][Gg]/,"");
+  return digits ? "Eng" + digits : "";
+}
+
+// Combine the engineer-stated Date + Time into an ISO string. Handles JS Date
+// objects (SheetJS cellDates), Excel numeric serials, and plain strings.
+function _backupEventISO(dateVal, timeVal){
+  var d = null;
+  // SheetJS (cellDates) encodes Excel dates/times as UTC wall-clock; read UTC components and
+  // rebuild as LOCAL so the stored time matches what the engineer actually entered.
+  if (dateVal instanceof Date && !isNaN(dateVal)) d = new Date(dateVal.getUTCFullYear(), dateVal.getUTCMonth(), dateVal.getUTCDate());
+  else if (typeof dateVal === "number" && dateVal > 0) { var _ds = new Date(Math.round((dateVal - 25569) * 86400 * 1000)); d = new Date(_ds.getUTCFullYear(), _ds.getUTCMonth(), _ds.getUTCDate()); }
+  else if (dateVal) { var p = new Date(String(dateVal)); if (!isNaN(p)) d = p; }
+  if (!d) return { iso:null, ok:false };
+  if (timeVal instanceof Date && !isNaN(timeVal)) { d.setHours(timeVal.getUTCHours(), timeVal.getUTCMinutes(), 0, 0); }
+  else if (typeof timeVal === "number" && timeVal >= 0 && timeVal < 1) { var mins = Math.round(timeVal * 24 * 60); d.setHours(Math.floor(mins/60), mins%60, 0, 0); }
+  else if (timeVal) { var m = String(timeVal).match(/(\d{1,2}):(\d{2})/); if (m) d.setHours(parseInt(m[1],10), parseInt(m[2],10), 0, 0); }
+  return { iso: d.toISOString(), ok:true };
+}
+
+function _backupNormType(v){
+  var t = _backupNorm(v);
+  if (t.indexOf("check-in") !== -1 || t.indexOf("check in") !== -1 || t === "in") return "checkin";
+  if (t.indexOf("check-out") !== -1 || t.indexOf("check out") !== -1 || t === "out") return "checkout";
+  if (t.indexOf("leave") !== -1) return "leave";
+  return "";
+}
+
+function _backupBuildRow(row){
+  var out = { warnings:[] };
+  out.responseId = String(_backupField(row,"id") || "").trim();
+  out.submittedAt = String(_backupField(row,"submitted") || "");
+  out.type   = _backupNormType(_backupField(row,"type"));
+  out.empId  = _backupCleanId(_backupField(row,"engId"));
+  out.empName= String(_backupField(row,"name") || "").trim();
+  out.empEmail = _normEmail(String(_backupField(row,"email") || ""));
+  var siteRaw = String(_backupField(row,"site") || "").trim();
+  var siteObj = siteRaw ? siteByName(siteRaw) : null;
+  out.site = siteObj ? siteObj.name : siteRaw;
+  out.siteOk = !!siteObj;
+
+  if (!out.type) out.warnings.push("Unknown submission type");
+  if (!out.empId) out.warnings.push("Missing/invalid Engineer ID");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out.empEmail)) out.warnings.push("Invalid email");
+  if (siteRaw && !siteObj) out.warnings.push("Unknown work site: " + siteRaw);
+
+  var meta = { viaBackupImport:true, backupResponseId: out.responseId, backupSubmittedAt: out.submittedAt };
+
+  if (out.type === "leave"){
+    out.collection = "leaveApplications";
+    out.leaveType = String(_backupField(row,"leaveType")||"").trim();
+    var frm = _backupEventISO(_backupField(row,"from"), "").iso;
+    var tod = _backupEventISO(_backupField(row,"to"), "").iso;
+    out.fromDate = frm ? frm.slice(0,10) : "";
+    out.toDate   = tod ? tod.slice(0,10) : "";
+    if (!out.leaveType) out.warnings.push("Missing leave type");
+    if (!out.fromDate || !out.toDate) out.warnings.push("Missing/invalid leave dates");
+    var _nd = (out.fromDate && out.toDate) ? (Math.round((new Date(out.toDate) - new Date(out.fromDate))/(1000*60*60*24)) + 1) : 0;
+    var _appNow = new Date();
+    out.record = Object.assign({
+      empId: out.empId, empName: out.empName, empEmail: out.empEmail, site: out.site,
+      managerId:"", managerName:"", managerEmail:"",
+      leaveType: out.leaveType, fromDate: out.fromDate, toDate: out.toDate, numDays: _nd,
+      reason: sanitize(String(_backupField(row,"reason")||""), 500),
+      status: "pending", attachment: null, documentPending: true,
+      appliedAt: _appNow.getTime(), appliedDate: _appNow.toLocaleDateString("en-SG"), appliedISO: _appNow.toISOString()
+    }, meta);
+    return out;
+  }
+
+  var ev = _backupEventISO(_backupField(row,"date"), _backupField(row,"time"));
+  out.eventISO = ev.iso; out.dateOk = ev.ok;
+  if (!ev.ok) out.warnings.push("Missing/invalid date or time");
+  out.collection = "attendance";
+  var evDate = ev.ok ? new Date(ev.iso) : null;
+
+  if (out.type === "checkout"){
+    out._checkout = true;
+    out.record = Object.assign({
+      checkoutTime: evDate ? evDate.toLocaleTimeString("en-SG") : null,
+      checkoutTimestamp: evDate ? evDate.getTime() : null,
+      checkoutLat:null, checkoutLng:null, checkoutDist:null,
+      status:"out", checkoutViaBackupImport:true
+    }, meta);
+  } else {
+    out.record = Object.assign({
+      empId: out.empId, empName: out.empName, empEmail: out.empEmail, site: out.site,
+      defaultSite: null, siteMismatch:false,
+      checkinTime: evDate ? evDate.toLocaleTimeString("en-SG") : null,
+      checkinDate: evDate ? evDate.toLocaleDateString("en-SG") : null,
+      checkinISO:  ev.iso,
+      checkinTimestamp: evDate ? evDate.getTime() : null,
+      checkinLat:null, checkinLng:null, checkinDist:null, checkinAcc:null,
+      checkoutTime:null, checkoutTimestamp:null, checkoutLat:null, checkoutLng:null, checkoutDist:null,
+      status:"in", isLate: evDate ? (evDate.getHours() >= WORK_HOUR_LATE) : false, isOvertime:false, duration:null,
+      deviceId:null, hwId:null, deviceToken:null, emailConflict:false,
+      _source:"backup-import"
+    }, meta);
+  }
+  return out;
+}
+
+var _backupState = { rows: [] };
+
+function _backupOnFile(input){
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var area = document.getElementById("backupReviewArea");
+  var sum  = document.getElementById("backupSummary");
+  sum.textContent = "Reading…"; area.innerHTML = "";
+  var reader = new FileReader();
+  reader.onload = function(e){
+    var parsed = _backupParseWorkbook(e.target.result);
+    if (!parsed.ok){ sum.innerHTML = '<span style="color:var(--red)">⚠️ ' + sanitizeHtml(parsed.error) + '</span>'; document.getElementById("backupCommitBtn").style.display="none"; return; }
+    var built = parsed.rows.map(_backupBuildRow).filter(function(r){ return r.responseId || r.type; });
+    _backupClassify(built, function(rows){ _backupState.rows = rows; _backupRenderReview(); });
+  };
+  reader.onerror = function(){ sum.innerHTML = '<span style="color:var(--red)">⚠️ Could not read the file.</span>'; };
+  reader.readAsArrayBuffer(file);
+}
+
+function _backupClassify(rows, cb){
+  var pending = rows.length;
+  if (!pending) return cb(rows);
+  var _seen = {};   // v6.66: a responseId repeated within the same file is an in-file duplicate
+  rows.forEach(function(r){
+    r.status = r.warnings.length ? "warning" : "new";
+    r.include = (r.status === "new");
+    if (r.responseId && _seen[r.responseId]) { r.status = "duplicate"; r.include = false; }
+    else if (r.responseId) { _seen[r.responseId] = true; }
+    function done(){ if (--pending === 0) cb(rows); }
+    if (fbOk && db && r.responseId){
+      db.collection("backupImportLog").doc(r.responseId).get()
+        .then(function(s){ if (s.exists){ r.status="duplicate"; r.include=false; } done(); })
+        .catch(done);
+    } else { done(); }
+  });
+}
+
+function _backupBadge(st){
+  if (st==="new") return '<span style="color:var(--green)">✅ New</span>';
+  if (st==="duplicate") return '<span style="color:var(--ink3)">⏭️ Duplicate</span>';
+  return '<span style="color:#b45309">⚠️ Warning</span>';
+}
+
+function _backupRenderReview(){
+  var rows = _backupState.rows;
+  var counts = { new:0, duplicate:0, warning:0 };
+  rows.forEach(function(r){ counts[r.status]++; });
+  document.getElementById("backupSummary").textContent =
+    counts.new + " new · " + counts.duplicate + " duplicates · " + counts.warning + " warnings";
+  var html = '<table class="at-table" style="width:100%;font-size:.8rem"><thead><tr>' +
+    '<th>Import?</th><th>Status</th><th>Type</th><th>Engineer</th><th>Site</th><th>When</th><th>Notes</th></tr></thead><tbody>';
+  rows.forEach(function(r, i){
+    var when = r.type==="leave" ? (r.fromDate + " → " + r.toDate) : (r.eventISO ? r.eventISO.replace("T"," ").slice(0,16) : "—");
+    var dis = (r.status==="duplicate") ? "disabled" : "";
+    html += '<tr>' +
+      '<td><input type="checkbox" ' + (r.include?"checked":"") + " " + dis + ' onchange="_backupToggle(' + i + ',this.checked)"></td>' +
+      '<td>' + _backupBadge(r.status) + '</td>' +
+      '<td>' + sanitizeHtml(r.type||"?") + '</td>' +
+      '<td>' + sanitizeHtml((r.empId||"?") + " · " + (r.empName||"")) + '</td>' +
+      '<td>' + sanitizeHtml(r.site||"—") + '</td>' +
+      '<td>' + sanitizeHtml(when) + '</td>' +
+      '<td style="color:#b45309">' + sanitizeHtml(r.warnings.join("; ")) + '</td>' +
+    '</tr>';
+  });
+  html += "</tbody></table>";
+  document.getElementById("backupReviewArea").innerHTML = html;
+  var btn = document.getElementById("backupCommitBtn");
+  btn.style.display = "block"; btn.disabled = !rows.some(function(r){ return r.include; });
+}
+
+function _backupToggle(i, on){
+  if (_backupState.rows[i]) _backupState.rows[i].include = on;
+  document.getElementById("backupCommitBtn").disabled = !_backupState.rows.some(function(r){ return r.include; });
+}
+
+function _backupCommit(){
+  var admin = (firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || "admin";
+  var sel = _backupState.rows.filter(function(r){ return r.include; });
+  if (!sel.length){ toast("Nothing selected to import","t-err"); return; }
+  if (!(fbOk && db)){ toast("Firestore not available","t-err"); return; }
+  var btn = document.getElementById("backupCommitBtn");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Importing…';
+  var done=0, failed=0, total=sel.length;
+
+  function finish(){
+    btn.innerHTML = "Import selected";
+    toast("✅ Imported " + (total-failed) + " of " + total + (failed?(" ("+failed+" failed)"):""), failed?"t-err":"t-ok");
+    _backupClassify(_backupState.rows, function(rows){ _backupState.rows=rows; _backupRenderReview(); });
+  }
+  function ok(){ if (++done+failed===total) finish(); }
+  function fail(e){ console.warn("[v6.66] backup import row failed:", e); failed++; if (done+failed===total) finish(); }
+
+  // v6.66: record + dedup marker are written in ONE batch per row so they are atomic —
+  // a marker-write failure can never leave a written record without its dedup marker
+  // (which would let a re-import double-write it). A synchronous throw is caught per row
+  // so finish() always fires. Check-out only closes a session when the date parsed.
+  sel.forEach(function(r){
+    try {
+      var now = new Date().toISOString();
+      var logRef = db.collection("backupImportLog").doc(r.responseId);
+      var meta = { responseId:r.responseId, type:r.type, empId:r.empId,
+                   recordCollection:r.collection, recordId:null, importedAt:now, importedBy:admin };
+      var rec = Object.assign({}, r.record, { importedAt:now, importedBy:admin });
+
+      if (r._checkout){
+        var dateStr = r.eventISO ? new Date(r.eventISO).toLocaleDateString("en-SG") : null;
+        db.collection("attendance").where("empId","==",r.empId).where("status","==","in").get()
+          .then(function(snap){
+            var match = null;
+            snap.forEach(function(d){ if (!match && dateStr && d.data().checkinDate===dateStr) match=d; });
+            var batch = db.batch();
+            if (match){
+              var patch = Object.assign({}, rec);
+              var ci = match.data().checkinTimestamp;
+              if (ci && rec.checkoutTimestamp) patch.duration = Math.max(0, Math.round((rec.checkoutTimestamp-ci)/60000)) + " min";
+              batch.update(match.ref, patch); meta.recordId = match.id;
+            } else {
+              var oRef = db.collection("attendance").doc();
+              var orphanRec = Object.assign({ empId:r.empId, empName:r.empName, empEmail:r.empEmail, site:r.site,
+                checkinTime:null, checkinDate:null, checkinISO:null, checkinTimestamp:null, orphanCheckout:true }, rec);
+              batch.set(oRef, orphanRec); meta.recordId = oRef.id;
+            }
+            batch.set(logRef, meta);
+            return batch.commit();
+          })
+          .then(ok).catch(fail);
+      } else {
+        var recRef = db.collection(r.collection).doc();
+        meta.recordId = recRef.id;
+        var batch2 = db.batch();
+        batch2.set(recRef, rec);
+        batch2.set(logRef, meta);
+        batch2.commit().then(ok).catch(fail);
+      }
+    } catch(e){ fail(e); }
+  });
+}
+
 function dTab(id, el) {
-  ["live","feed","analytics","calendar","leave","waitlist","device","team","setup"].forEach(function(t){
+  ["live","feed","analytics","calendar","leave","waitlist","backup","device","team","setup"].forEach(function(t){
     var p = document.getElementById("dTab-"+t); if(p) p.style.display = t===id?"block":"none";
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
