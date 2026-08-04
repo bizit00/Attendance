@@ -6390,6 +6390,14 @@ function checkWorkHourMonitors() {
 
   (allRecs || []).forEach(function(r) {
     if (r.status !== 'in' || !r.checkinTimestamp) return;   // v6.41: consider ALL open sessions, not just today's
+
+    // v6.66: never sweep a backup-imported session. These are backdated by design —
+    // an outage is imported hours or days after the engineer actually checked in — so
+    // the 12h rule below would force-close them before the engineer's check-out FORM
+    // has even been imported, inventing a check-out the engineer never submitted.
+    // Their check-out arrives via a second imported form, or the admin closes it by hand.
+    if (r.viaBackupImport || r._source === 'backup-import') return;
+
     var elapsedH = (now - r.checkinTimestamp) / MS_HOUR;
 
     // 1) 12h auto force-checkout — applies to ANY still-open session, including
@@ -6929,11 +6937,21 @@ function _backupParseDateString(v){
 // Combine the engineer-stated Date + Time into an ISO string. Handles JS Date
 // objects (SheetJS cellDates), Excel numeric serials, and plain strings.
 function _backupEventISO(dateVal, timeVal){
-  var d = null, _amb = false;
+  var d = null, _amb = false, _badTime = false;
   // SheetJS is read with { cellDates:true } and no UTC option, so it returns
   // LOCAL-time Date objects. Read LOCAL components — reading getUTC* here drops
   // a day at positive UTC offsets (SG, UTC+8), which is the v6.66 import bug.
-  if (dateVal instanceof Date && !isNaN(dateVal)) d = new Date(dateVal.getFullYear(), dateVal.getMonth(), dateVal.getDate());
+  //
+  // The +60s nudge is a SECOND, separate defect: SheetJS's serial->Date conversion
+  // lands a few seconds SHORT of midnight. Measured against a real Microsoft Forms
+  // export, serial 46238 (4 Aug 2026) came back as "Aug 03 2026 23:59:35", so
+  // reading the calendar parts straight off it still rolled the day back. A minute
+  // absorbs that drift and cannot disturb a genuine time-of-day, which this branch
+  // discards anyway (the time comes from timeVal below).
+  if (dateVal instanceof Date && !isNaN(dateVal)) {
+    var _dn = new Date(dateVal.getTime() + 60000);
+    d = new Date(_dn.getFullYear(), _dn.getMonth(), _dn.getDate());
+  }
   // Excel serial: the epoch math below produces a true UTC instant whose UTC
   // components ARE the intended wall clock. getUTC* is CORRECT here — do not
   // change these to local getters to match the branch above.
@@ -6942,9 +6960,21 @@ function _backupEventISO(dateVal, timeVal){
   if (!d || isNaN(d)) return { iso:null, ok:false, ymd:null, warning:null };
   if (timeVal instanceof Date && !isNaN(timeVal)) { d.setHours(timeVal.getHours(), timeVal.getMinutes(), 0, 0); }
   else if (typeof timeVal === "number" && timeVal >= 0 && timeVal < 1) { var mins = Math.round(timeVal * 24 * 60); d.setHours(Math.floor(mins/60), mins%60, 0, 0); }
-  else if (timeVal) { var m = String(timeVal).match(/(\d{1,2}):(\d{2})/); if (m) d.setHours(parseInt(m[1],10), parseInt(m[2],10), 0, 0); }
+  else if (timeVal) {
+    // The form's Time question is free text, so engineers type "21:55", "1400", "2pm".
+    // Accept HH:MM and bare HHMM; anything else must WARN rather than silently leave
+    // the event at 00:00 — a real export had "1400" import as 12:00:00 am.
+    var _tv = String(timeVal).trim();
+    var m = _tv.match(/^(\d{1,2}):(\d{2})/) || _tv.match(/^(\d{1,2})(\d{2})$/);
+    var _hh = m ? parseInt(m[1],10) : -1, _mm = m ? parseInt(m[2],10) : -1;
+    if (m && _hh >= 0 && _hh <= 23 && _mm >= 0 && _mm <= 59) d.setHours(_hh, _mm, 0, 0);
+    else _badTime = true;
+  }
+  var _warns = [];
+  if (_amb) _warns.push('Ambiguous date "' + dateVal + '" — read as day/month');
+  if (_badTime) _warns.push('Unrecognised time "' + timeVal + '" — imported as 00:00, please correct');
   return { iso: d.toISOString(), ok:true, ymd: _backupYMD(d),
-           warning: _amb ? ('Ambiguous date "' + dateVal + '" — read as day/month') : null };
+           warning: _warns.length ? _warns.join("; ") : null };
 }
 
 function _backupNormType(v){
