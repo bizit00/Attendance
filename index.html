@@ -2709,6 +2709,14 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if request.auth != null;
     }
+
+    // ── 8. Backup import dedup markers (v6.66) ───────
+    // One marker per imported form response, so re-importing the
+    // same workbook can't create duplicate attendance records
+    match /backupImportLog/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
   }
 }</pre>
             <button onclick="var t=document.getElementById('step7Rules');var r=document.createRange();r.selectNode(t);window.getSelection().removeAllRanges();window.getSelection().addRange(r);try{document.execCommand('copy');toast('✅ Rules copied!','t-ok');}catch(e){toast('Select + copy manually','t-err');}" style="margin-top:8px;padding:8px 16px;border-radius:var(--r);background:#0d1117;color:#e6edf3;border:none;font-size:.82rem;font-weight:600;cursor:pointer;font-family:var(--body)">📋 Copy All Rules</button>
@@ -6819,7 +6827,7 @@ var BACKUP_HEADER_ALIASES = {
   type:      ["submission type","type"],
   engId:     ["engineer id","eng id","id number"],
   name:      ["full name","name"],
-  email:     ["email","email address"],
+  email:     ["email address","email"],
   site:      ["work site","site"],
   date:      ["date"],
   time:      ["time"],
@@ -6833,13 +6841,23 @@ var BACKUP_REQUIRED = ["id","type","engId","name","email"]; // id needed for ded
 function _backupNorm(h){ return String(h == null ? "" : h).trim().toLowerCase(); }
 
 // Find a row's value for a canonical field by matching any accepted header spelling.
+// Microsoft Forms prepends its own ID / Start time / Completion time / Email / Name
+// columns to every export, and on an anonymous form the Email + Name ones are blank.
+// Those sit BEFORE the real question columns, so walk the aliases in priority order
+// (most specific first) and skip blanks, otherwise the empty auto column always wins.
 function _backupField(row, field){
   var aliases = BACKUP_HEADER_ALIASES[field] || [];
-  for (var k in row){
-    if (!Object.prototype.hasOwnProperty.call(row, k)) continue;
-    if (aliases.indexOf(_backupNorm(k)) !== -1) return row[k];
+  var fallback = "";
+  for (var i = 0; i < aliases.length; i++){
+    for (var k in row){
+      if (!Object.prototype.hasOwnProperty.call(row, k)) continue;
+      if (_backupNorm(k) !== aliases[i]) continue;
+      var v = row[k];
+      if (v !== "" && v != null) return v;
+      if (fallback === "") fallback = v;
+    }
   }
-  return "";
+  return fallback;
 }
 
 function _backupParseWorkbook(arrayBuffer){
