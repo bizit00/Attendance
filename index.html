@@ -6883,20 +6883,68 @@ function _backupCleanId(v){
   return digits ? "Eng" + digits : "";
 }
 
+// Local calendar day as YYYY-MM-DD. Never derive this by slicing toISOString():
+// that converts to UTC first and loses a day at positive offsets.
+function _backupYMD(d){
+  var m = d.getMonth() + 1, day = d.getDate();
+  return d.getFullYear() + "-" + (m < 10 ? "0" + m : m) + "-" + (day < 10 ? "0" + day : day);
+}
+
+// Local "YYYY-MM-DD HH:MM" for the review table. r.eventISO is a UTC instant
+// (d.toISOString()); slicing it displays UTC time, which is 8h off at UTC+8 and
+// can even show the wrong calendar date. Read it back with local getters instead.
+function _backupLocalWhen(iso){
+  var d = new Date(iso);
+  var hh = d.getHours(), mm = d.getMinutes();
+  return _backupYMD(d) + " " + (hh < 10 ? "0" + hh : hh) + ":" + (mm < 10 ? "0" + mm : mm);
+}
+
+// Parse a date STRING into a LOCAL date. Never uses bare new Date(str): the spec
+// parses "2026-08-04" as UTC midnight (loses a day at negative offsets) and reads
+// "04/08/2026" as 8 April. Returns { d:Date|null, ambiguous:bool }; ambiguous means
+// both slash components were <= 12 so day-first was assumed (en-SG convention).
+function _backupParseDateString(v){
+  var s = String(v).trim();
+  var iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return { d: new Date(+iso[1], +iso[2] - 1, +iso[3]), ambiguous:false };
+  var sl = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4}|\d{2})/);
+  if (sl){
+    var a = +sl[1], b = +sl[2], yStr = sl[3], y = +yStr, day, mon, amb = false;
+    var twoDigitYear = yStr.length === 2;
+    if (twoDigitYear) y += 2000;
+    if (a > 12 && b <= 12)      { day = a; mon = b; }              // only D/M works
+    else if (b > 12 && a <= 12) { day = b; mon = a; }              // only M/D works
+    else if (a > 12 && b > 12)  { return { d:null, ambiguous:false }; }  // neither works
+    else                        { day = a; mon = b; amb = true; }  // both <=12: assume D/M
+    if (twoDigitYear) amb = true;  // 2-digit year is inherently ambiguous — always warn
+    var dd = new Date(y, mon - 1, day);
+    if (dd.getMonth() !== mon - 1 || dd.getDate() !== day) return { d:null, ambiguous:false };
+    return { d: dd, ambiguous: amb };
+  }
+  var p = new Date(s);   // last resort for spelled-out forms like "4 Aug 2026"
+  if (isNaN(p)) return { d:null, ambiguous:false };
+  return { d: new Date(p.getFullYear(), p.getMonth(), p.getDate()), ambiguous:false };
+}
+
 // Combine the engineer-stated Date + Time into an ISO string. Handles JS Date
 // objects (SheetJS cellDates), Excel numeric serials, and plain strings.
 function _backupEventISO(dateVal, timeVal){
-  var d = null;
-  // SheetJS (cellDates) encodes Excel dates/times as UTC wall-clock; read UTC components and
-  // rebuild as LOCAL so the stored time matches what the engineer actually entered.
-  if (dateVal instanceof Date && !isNaN(dateVal)) d = new Date(dateVal.getUTCFullYear(), dateVal.getUTCMonth(), dateVal.getUTCDate());
+  var d = null, _amb = false;
+  // SheetJS is read with { cellDates:true } and no UTC option, so it returns
+  // LOCAL-time Date objects. Read LOCAL components — reading getUTC* here drops
+  // a day at positive UTC offsets (SG, UTC+8), which is the v6.66 import bug.
+  if (dateVal instanceof Date && !isNaN(dateVal)) d = new Date(dateVal.getFullYear(), dateVal.getMonth(), dateVal.getDate());
+  // Excel serial: the epoch math below produces a true UTC instant whose UTC
+  // components ARE the intended wall clock. getUTC* is CORRECT here — do not
+  // change these to local getters to match the branch above.
   else if (typeof dateVal === "number" && dateVal > 0) { var _ds = new Date(Math.round((dateVal - 25569) * 86400 * 1000)); d = new Date(_ds.getUTCFullYear(), _ds.getUTCMonth(), _ds.getUTCDate()); }
-  else if (dateVal) { var p = new Date(String(dateVal)); if (!isNaN(p)) d = p; }
-  if (!d) return { iso:null, ok:false };
-  if (timeVal instanceof Date && !isNaN(timeVal)) { d.setHours(timeVal.getUTCHours(), timeVal.getUTCMinutes(), 0, 0); }
+  else if (dateVal) { var _sr = _backupParseDateString(dateVal); d = _sr.d; _amb = _sr.ambiguous; }
+  if (!d || isNaN(d)) return { iso:null, ok:false, ymd:null, warning:null };
+  if (timeVal instanceof Date && !isNaN(timeVal)) { d.setHours(timeVal.getHours(), timeVal.getMinutes(), 0, 0); }
   else if (typeof timeVal === "number" && timeVal >= 0 && timeVal < 1) { var mins = Math.round(timeVal * 24 * 60); d.setHours(Math.floor(mins/60), mins%60, 0, 0); }
   else if (timeVal) { var m = String(timeVal).match(/(\d{1,2}):(\d{2})/); if (m) d.setHours(parseInt(m[1],10), parseInt(m[2],10), 0, 0); }
-  return { iso: d.toISOString(), ok:true };
+  return { iso: d.toISOString(), ok:true, ymd: _backupYMD(d),
+           warning: _amb ? ('Ambiguous date "' + dateVal + '" — read as day/month') : null };
 }
 
 function _backupNormType(v){
@@ -6930,12 +6978,14 @@ function _backupBuildRow(row){
   if (out.type === "leave"){
     out.collection = "leaveApplications";
     out.leaveType = String(_backupField(row,"leaveType")||"").trim();
-    var frm = _backupEventISO(_backupField(row,"from"), "").iso;
-    var tod = _backupEventISO(_backupField(row,"to"), "").iso;
-    out.fromDate = frm ? frm.slice(0,10) : "";
-    out.toDate   = tod ? tod.slice(0,10) : "";
+    var frmR = _backupEventISO(_backupField(row,"from"), "");
+    var todR = _backupEventISO(_backupField(row,"to"), "");
+    out.fromDate = frmR.ok ? frmR.ymd : "";
+    out.toDate   = todR.ok ? todR.ymd : "";
     if (!out.leaveType) out.warnings.push("Missing leave type");
     if (!out.fromDate || !out.toDate) out.warnings.push("Missing/invalid leave dates");
+    if (frmR.warning) out.warnings.push("From: " + frmR.warning);
+    if (todR.warning) out.warnings.push("To: " + todR.warning);
     var _nd = (out.fromDate && out.toDate) ? (Math.round((new Date(out.toDate) - new Date(out.fromDate))/(1000*60*60*24)) + 1) : 0;
     var _appNow = new Date();
     out.record = Object.assign({
@@ -6952,6 +7002,7 @@ function _backupBuildRow(row){
   var ev = _backupEventISO(_backupField(row,"date"), _backupField(row,"time"));
   out.eventISO = ev.iso; out.dateOk = ev.ok;
   if (!ev.ok) out.warnings.push("Missing/invalid date or time");
+  if (ev.warning) out.warnings.push(ev.warning);
   out.collection = "attendance";
   var evDate = ev.ok ? new Date(ev.iso) : null;
 
@@ -7033,7 +7084,7 @@ function _backupRenderReview(){
   var html = '<table class="at-table" style="width:100%;font-size:.8rem"><thead><tr>' +
     '<th>Import?</th><th>Status</th><th>Type</th><th>Engineer</th><th>Site</th><th>When</th><th>Notes</th></tr></thead><tbody>';
   rows.forEach(function(r, i){
-    var when = r.type==="leave" ? (r.fromDate + " → " + r.toDate) : (r.eventISO ? r.eventISO.replace("T"," ").slice(0,16) : "—");
+    var when = r.type==="leave" ? (r.fromDate + " → " + r.toDate) : (r.eventISO ? _backupLocalWhen(r.eventISO) : "—");
     var dis = (r.status==="duplicate") ? "disabled" : "";
     html += '<tr>' +
       '<td><input type="checkbox" ' + (r.include?"checked":"") + " " + dis + ' onchange="_backupToggle(' + i + ',this.checked)"></td>' +
