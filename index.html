@@ -256,6 +256,43 @@ input:-webkit-autofill,input:autofill{animation-name:onAutoFillStart;animation-d
 .stat-l{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--ink3);margin-top:6px}
 .stat.g .stat-n{color:var(--green)}.stat.b .stat-n{color:var(--blue)}.stat.r .stat-n{color:var(--red)}.stat.o .stat-n{color:var(--orange)}
 
+/* ── v6.67: Leave workflow card ─────────────────────────── */
+.wfc{background:#fff;border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:18px;overflow:hidden}
+.wfc-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 16px;cursor:pointer;user-select:none}
+.wfc-ttl{font-weight:800;font-size:.86rem;color:var(--ink);font-family:var(--body)}
+.wfc-tog{background:none;border:none;font-size:.78rem;color:var(--ink3);cursor:pointer;font-family:var(--body);font-weight:700;padding:4px 8px;white-space:nowrap}
+.wfc-body{padding:0 16px 16px}
+.wfc.wfc-closed .wfc-body{display:none}
+.wfc-grid{display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:8px;align-items:stretch}
+.wfc-stage{border:1.5px solid var(--border);border-radius:10px;padding:12px;background:#fafaf8;min-width:0}
+.wfc-stage.wfc-act{border-color:var(--blue);background:#eff6ff;border-width:2px}
+.wfc-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;font-family:var(--mono);font-weight:800;font-size:.74rem;margin-bottom:7px}
+.wfc-stg-ttl{font-weight:800;font-size:.78rem;color:var(--ink);margin-bottom:5px;line-height:1.4}
+.wfc-stg-txt{font-size:.73rem;color:var(--ink3);line-height:1.6}
+.wfc-arrow{display:flex;align-items:center;justify-content:center;color:var(--ink3);font-size:1rem}
+.wfc-reject{margin-top:12px;padding:9px 13px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:var(--red);font-size:.74rem;font-weight:600;line-height:1.6}
+@media(max-width:860px){
+  .wfc-grid{grid-template-columns:1fr}
+  .wfc-arrow{transform:rotate(90deg);padding:2px 0}
+}
+
+/* ── v6.67: engineer leave step card ────────────────────── */
+.ls-ov{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;z-index:1400;padding:18px}
+.ls-ov.open{display:flex}
+.ls-box{background:#fff;border-radius:16px;max-width:430px;width:100%;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.25);max-height:90vh;overflow-y:auto}
+.ls-rail{display:flex;gap:7px;margin-bottom:16px}
+.ls-dot{flex:1;height:5px;border-radius:3px;background:#e5e7eb}
+.ls-dot.done{background:var(--green)}
+.ls-dot.cur{background:var(--blue)}
+.ls-step{font-family:var(--mono);font-size:.72rem;font-weight:800;color:var(--blue);letter-spacing:.04em;margin-bottom:7px}
+.ls-ttl{font-weight:800;font-size:1.02rem;color:var(--ink);margin-bottom:9px;line-height:1.4}
+.ls-txt{font-size:.85rem;color:var(--ink3);line-height:1.7;margin-bottom:18px}
+.ls-btn{width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-weight:700;font-size:.9rem;font-family:var(--body);cursor:pointer}
+.ls-btn.ls-ok{background:var(--green)}
+.ls-sub{display:flex;gap:10px;margin-top:10px}
+.ls-lnk{flex:1;background:none;border:none;color:var(--ink3);font-size:.8rem;font-family:var(--body);cursor:pointer;padding:8px;font-weight:600}
+.ls-strip{display:flex;align-items:center;gap:9px;padding:10px 14px;border-radius:10px;background:#eff6ff;border:1.5px solid var(--blue);margin-bottom:14px;font-size:.79rem;font-weight:700;color:var(--blue)}
+
 .dash-tabs{display:flex;gap:4px;margin-bottom:20px;background:var(--card);border-radius:var(--r);padding:4px;border:1px solid var(--border);width:fit-content}
 .dash-tab{padding:7px 18px;border-radius:8px;font-size:.85rem;font-weight:600;color:var(--ink3);cursor:pointer;transition:all .2s}
 .dash-tab.on{background:var(--ink);color:#fff}
@@ -1368,6 +1405,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     <!-- ── LEAVE APPLICATION FORM ──────────────────── -->
     <div id="leaveSection" style="display:none">
+      <div class="ls-strip" id="lsFormStrip">📋 Step 3 of 4 — fill in your leave details and upload the Synapxe approval email</div>
 
       <div class="card">
         <div class="card-lbl" style="color:var(--blue)">📋 Leave Application Form <span class="help-dot" data-help="apply-leave" title="Help">?</span></div>
@@ -2048,12 +2086,40 @@ tr.on-leave-row td{background:#f0f9ff!important}
 <!-- LEAVE MANAGEMENT TAB -->
     <div id="dTab-leave" style="display:none">
 
-      <!-- Leave Stats -->
-      <div class="stats-grid" style="margin-bottom:18px">
-        <div class="stat o"><div class="stat-n" id="ls-pending">0</div><div class="stat-l">⏳ Pending</div></div>
-        <div class="stat g"><div class="stat-n" id="ls-approved">0</div><div class="stat-l">✅ Approved</div></div>
-        <div class="stat r"><div class="stat-n" id="ls-rejected">0</div><div class="stat-l">✗ Rejected</div></div>
-        <div class="stat b"><div class="stat-n" id="ls-total">0</div><div class="stat-l">Total</div></div>
+      <!-- v6.67: leave approval workflow reference (replaced the stat counters) -->
+      <div class="wfc" id="lmWorkflowCard">
+        <div class="wfc-hd" onclick="lmWorkflowToggle()">
+          <div class="wfc-ttl">📋 Leave Approval Workflow</div>
+          <button class="wfc-tog" id="lmWorkflowTog" type="button">Hide ▲</button>
+        </div>
+        <div class="wfc-body">
+          <div class="wfc-grid">
+            <div class="wfc-stage">
+              <div class="wfc-num">1</div>
+              <div class="wfc-stg-ttl">Engineer → Synapxe</div>
+              <div class="wfc-stg-txt">Engineer emails their leave application to the Synapxe team manager to seek approval.</div>
+            </div>
+            <div class="wfc-arrow">→</div>
+            <div class="wfc-stage">
+              <div class="wfc-num">2</div>
+              <div class="wfc-stg-ttl">Engineer → Bizit</div>
+              <div class="wfc-stg-txt">On approval, engineer forwards the approved email to Bizit HR, CC'ing Team Manager, Team Leader and Boss, and submits the completed leave application form (Excel) to HR.</div>
+            </div>
+            <div class="wfc-arrow">→</div>
+            <div class="wfc-stage">
+              <div class="wfc-num">3</div>
+              <div class="wfc-stg-ttl">Engineer → System</div>
+              <div class="wfc-stg-txt">Engineer taps Apply for Leave, fills in the leave details, selects their Site Team Manager, and uploads a photo of the Synapxe approval email.</div>
+            </div>
+            <div class="wfc-arrow">→</div>
+            <div class="wfc-stage wfc-act">
+              <div class="wfc-num">4</div>
+              <div class="wfc-stg-ttl">Manager / Admin → Verify</div>
+              <div class="wfc-stg-txt">Compare the uploaded approval email against the application below — sender, recipients (HR, Team Manager, Team Leader, Boss), dates and leave type must match. If they match, approve; the system emails the engineer the decision.</div>
+            </div>
+          </div>
+          <div class="wfc-reject">✗ Rejected at any stage — Synapxe, Bizit, or Manager/Admin — the engineer restarts from Step 1.</div>
+        </div>
       </div>
 
       <!-- Filters -->
@@ -3005,6 +3071,13 @@ service cloud.firestore {
   </div>
 </div>
 
+<!-- v6.67: engineer leave workflow step card -->
+<div id="leaveStepsOverlay" class="ls-ov">
+  <div class="ls-box" id="lsBox">
+    <!-- injected by lsRender() -->
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast"></div>
 
@@ -3238,7 +3311,10 @@ service cloud.firestore {
 <div id="leaveAttModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9997;flex-direction:column">
   <!-- Sticky header — always visible -->
   <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);flex-shrink:0;gap:12px;border-bottom:1px solid rgba(255,255,255,.1)">
-    <div style="color:#fff;font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="leaveAttModalTitle">📎 Leave Attachment</div>
+    <div style="flex:1;min-width:0">
+      <div style="color:#fff;font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="leaveAttModalTitle">📎 Leave Attachment</div>
+      <div id="attDeclLine" style="display:none;font-size:.74rem;color:#cbd5e1;font-family:var(--mono);margin-top:4px;line-height:1.6"></div>
+    </div>
     <div style="display:flex;gap:8px;flex-shrink:0">
       <button id="attZoomBtn" onclick="toggleAttZoom()" style="background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:.8rem;font-weight:700;cursor:pointer;font-family:var(--body)">🔍 Fit</button>
       <button onclick="closeLeaveAttModal()" style="background:rgba(255,59,92,.8);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:.88rem;font-weight:700;cursor:pointer;font-family:var(--body)">✕ Close</button>
@@ -5780,9 +5856,18 @@ function _activateOnboarding(empId) {
       var d = qs.docs[0];
       if (d.data().status !== "active") {
         d.ref.update({ status: "active", activatedAt: new Date().toISOString() })
-          .catch(function(){});
+          .catch(function(e){
+            // v6.67: expected to fail today — engineers are unauthenticated and
+            // engineerOnboarding is admin-only write. The admin-side reconcile in
+            // _onbReconcileActivations is what actually flips the status. Logged
+            // rather than swallowed so this can never go silent again.
+            console.warn("[ONB ACTIVATE] engineer-side status write denied (expected):",
+                         e && (e.code || e.message));
+          });
       }
-    }).catch(function(){});
+    }).catch(function(e){
+      console.warn("[ONB ACTIVATE] lookup failed:", e && (e.code || e.message));
+    });
 }
 
 // ── Save the attendance record (called after identity + leave checks pass) ──
@@ -6094,6 +6179,12 @@ function initDash() {
           ? null
           : "Read OK but Firestore returned 0 attendance records. Either there are no docs in the 'attendance' collection, or every doc is MISSING the 'checkinTimestamp' field (orderBy hides those).");
         renderAll();
+        // v6.67: attendance is the evidence source for onboarding "Active" badges —
+        // re-render (and repair) if the Onboarding tab was populated before this landed.
+        if (typeof _onbRecords !== "undefined" && _onbRecords.length) {
+          _onbRenderTable();
+          _onbReconcileActivations(_onbRecords, _onbActiveIdSet(allRecs));
+        }
       }, function(err){
         // ── v6.43 DIAGNOSTIC: surface the previously-silent read failure ──
         console.error("[ATTENDANCE READ] FAILED:", err.code, err.message, err);
@@ -11460,8 +11551,179 @@ function initEmailJS() {
   console.log("✅ Brevo REST API ready. From:", BREVO_FROM);
 }
 
+// ── v6.67: engineer leave step-card state ───────────────────────────────
+// Steps 1 and 2 happen entirely OUTSIDE this system (emails to Synapxe and to
+// Bizit HR), so the app cannot verify them — these are honesty checkboxes that
+// gate the form. The real control is the manager comparing the uploaded approval
+// email at stage 4.
+//
+// Stored per-device, not in Firestore: before the form is filled there is no
+// engineer identity to key a record to, and half-formed records are not worth
+// creating. Devices are already bound to one engineer via OTP/device
+// verification, and _leaveStepsForEngineer resets the ticks if they turn out to
+// belong to someone else.
+var LEAVE_STEPS_KEY = "at_leave_steps_v1";
+
+function _leaveStepsLoad() {
+  try {
+    var o = JSON.parse(localStorage.getItem(LEAVE_STEPS_KEY) || "{}");
+    return (o && typeof o === "object" && !(o instanceof Array)) ? o : {};
+  } catch (_) { return {}; }
+}
+
+function _leaveStepsSave(st) {
+  try { localStorage.setItem(LEAVE_STEPS_KEY, JSON.stringify(st || {})); } catch (_) {}
+}
+
+function _leaveStepsClear() {
+  try { localStorage.removeItem(LEAVE_STEPS_KEY); } catch (_) {}
+}
+
+function _leaveStepsTick(step, engId) {
+  var st = _leaveStepsLoad();
+  var id = _normIdKey(engId);
+  if (id) st.engId = id;
+  if (step === 1) st.synapxeAt = Date.now();
+  if (step === 2) st.bizitAt   = Date.now();
+  _leaveStepsSave(st);
+  return st;
+}
+
+// Ticks belong to a specific engineer once we know who they are. If the device's
+// stored ticks belong to someone else, hand back a clean slate rather than
+// letting one engineer inherit another's declarations. When either side is
+// unknown we keep the ticks — we cannot disprove ownership.
+function _leaveStepsForEngineer(st, engId) {
+  var want = _normIdKey(engId);
+  if (!st) return {};
+  if (!want || !st.engId) return st;
+  return st.engId === want ? st : {};
+}
+
+function _leaveStepsGateOk(st) {
+  return !!(st && st.synapxeAt && st.bizitAt);
+}
+
+function _leaveStepsDeclared(st) {
+  if (!_leaveStepsGateOk(st)) return null;
+  return { synapxeAt: st.synapxeAt, bizitAt: st.bizitAt };
+}
+
+// v6.67: a rejection or cancellation means re-running the process — but the popup
+// that reports it RE-FIRES for 7 days after the decision (see the `decidedRecently`
+// filter in checkApprovedLeaveForEmp), and it fires automatically on page load,
+// check-in and check-out — not on a user tap. So an engineer who was rejected on
+// Monday and starts a NEW application on Wednesday would have their fresh ticks
+// wiped every time they checked in. Only clear ticks that PREDATE the decision;
+// anything newer belongs to the new attempt and must survive.
+// `decidedAt` is epoch-ms (now.getTime()), the same units as the tick timestamps.
+function _leaveStepsClearIfBefore(decidedAt) {
+  if (!decidedAt) return false;                 // unknown decision time — never clear
+  var st = _leaveStepsLoad();
+  if (!st.synapxeAt && !st.bizitAt) return false;
+  var newest = Math.max(st.synapxeAt || 0, st.bizitAt || 0);
+  if (newest > decidedAt) return false;         // ticks are for a newer attempt
+  _leaveStepsClear();
+  return true;
+}
+
+// ── v6.67: leave workflow step card ─────────────────────────────────────
+var LS_STEPS = [
+  null,
+  { t: "Email Synapxe for approval",
+    b: "Submit your leave application email to your <strong>Synapxe team manager</strong> to seek approval. Wait until they approve before continuing.",
+    c: "✓ I've sent it" },
+  { t: "Forward to Bizit HR",
+    b: "Forward the Synapxe approval email to <strong>Bizit HR</strong>, CC'ing your <strong>Team Manager, Team Leader and Boss</strong>. Fill in the leave application form and send it to HR.",
+    c: "✓ I've sent it" },
+  { t: "Fill in your leave details",
+    b: "Enter your leave information and upload a photo of the Synapxe approval email. This step ticks itself once you submit.",
+    c: "Continue to the form →" },
+  { t: "Waiting for verification",
+    b: "Your Site Team Manager / Admin will compare your uploaded approval email against your application. You'll get the decision here and by email.",
+    c: "📁 View My Leaves" }
+];
+
+function _lsSessEngId() {
+  var s = getSess();
+  return (s && s.empId) ? s.empId : "";
+}
+
+function lsRender(step) {
+  var box = document.getElementById("lsBox");
+  if (!box) return;
+  var d = LS_STEPS[step];
+  var dots = "";
+  for (var i = 1; i <= 4; i++) {
+    dots += '<div class="ls-dot ' + (i < step ? "done" : (i === step ? "cur" : "")) + '"></div>';
+  }
+  var onClick = step === 4 ? "lsClose();showMyLeaves()"
+              : step === 3 ? "lsRevealForm()"
+              : "lsTick(" + step + ")";
+  var html = '<div class="ls-rail">' + dots + '</div>'
+    + '<div class="ls-step">STEP ' + step + ' OF 4</div>'
+    + '<div class="ls-ttl">' + d.t + '</div>'
+    + '<div class="ls-txt">' + d.b + '</div>'
+    + '<button class="ls-btn' + (step === 4 ? " ls-ok" : "") + '" type="button" onclick="' + onClick + '">' + d.c + '</button>'
+    + '<div class="ls-sub">';
+  if (step > 1 && step < 4) html += '<button class="ls-lnk" type="button" onclick="lsBack(' + step + ')">← Back</button>';
+  html += '<button class="ls-lnk" type="button" onclick="lsClose()">Close</button></div>';
+  box.innerHTML = html;
+  var ov = document.getElementById("leaveStepsOverlay");
+  if (ov) ov.classList.add("open");
+}
+
+// LS_STEPS content is a fixed literal above — no user input reaches this
+// innerHTML, so the <strong> tags are safe and sanitizeHtml is not needed here.
+
+function lsOpen() {
+  var st = _leaveStepsForEngineer(_leaveStepsLoad(), _lsSessEngId());
+  _leaveStepsSave(st);                    // persist a reset if ownership changed
+  if (_leaveStepsGateOk(st))      lsRevealForm();
+  else if (st.synapxeAt)          lsRender(2);
+  else                            lsRender(1);
+}
+
+function lsTick(step) {
+  var st = _leaveStepsTick(step, _lsSessEngId());
+  if (_leaveStepsGateOk(st)) lsRevealForm();
+  else lsRender(step + 1);
+}
+
+function lsBack(step) {
+  // Untick the step we are leaving so Back genuinely undoes a mis-tap.
+  var st = _leaveStepsLoad();
+  if (step === 2) delete st.synapxeAt;
+  if (step === 3) delete st.bizitAt;
+  _leaveStepsSave(st);
+  lsRender(step - 1);
+}
+
+function lsClose() {
+  var ov = document.getElementById("leaveStepsOverlay");
+  if (ov) ov.classList.remove("open");
+}
+
+function lsRevealForm() {
+  lsClose();
+  _showLeaveForm(true);
+}
+
+function lsShowStep4() {
+  lsRender(4);
+}
+
 // ── Engineer: Show/Hide Leave Section ───────────────
+// v6.67: the Apply for Leave button now opens the workflow step card. The form
+// itself is only reachable once steps 1 and 2 are ticked (or on hide, which must
+// still work unconditionally).
 function showLeaveSection(show) {
+  if (!show) { _showLeaveForm(false); return; }
+  lsOpen();
+}
+
+// The original behaviour, unchanged — now called only via the step card.
+function _showLeaveForm(show) {
   var ls = document.getElementById("leaveSection");
   var ab = document.getElementById("applyLeaveBtn");
   var mb = document.getElementById("myLeavesBtn");
@@ -12090,6 +12352,9 @@ function submitLeave() {
 
 // ── Actual Firestore write (called after entitlement check passes) ──
 function _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now, managerId, managerName, managerEmail) {
+  // v6.67: carry the engineer's step 1 & 2 declarations onto the application so
+  // the manager sees them while comparing the uploaded approval email.
+  var _decl = _leaveStepsDeclared(_leaveStepsLoad());
   // ── No Firebase: save locally ────────────────────
   if (!fbOk || !db) {
     var ll = JSON.parse(localStorage.getItem("at_leaves")||"[]");
@@ -12100,10 +12365,17 @@ function _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDat
       attachmentName:leaveAttachment.name, attachmentBase64:leaveAttachment.base64,
       status:"pending", appliedAt:now.getTime(),
       appliedDate:now.toLocaleDateString("en-SG"), appliedISO:now.toISOString(),
-      decidedAt:null,decidedDate:null,decidedBy:null,rejectReason:null
+      decidedAt:null,decidedDate:null,decidedBy:null,rejectReason:null,
+      stepsDeclared: _decl
     };
     ll.push(localRec); localStorage.setItem("at_leaves", JSON.stringify(ll));
-    showLeaveSection(false); toast("⚠️ Saved locally (Firebase not connected)", "t-ok");
+    showLeaveSection(false);
+    // v6.67: step 3 ticks itself on a successful submit; show step 4.
+    lsShowStep4();
+    // F1: clear the honesty-tick declarations now that they've landed on the
+    // record — otherwise stale ticks pre-satisfy the gate on the NEXT application.
+    _leaveStepsClear();
+    toast("⚠️ Saved locally (Firebase not connected)", "t-ok");
     var rc2=document.getElementById("resultCard");
     if(rc2){
       rc2.style.display="block";
@@ -12124,7 +12396,8 @@ function _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDat
     attachmentName:leaveAttachment.name, attachmentBase64:leaveAttachment.base64,
     status:"pending",
     appliedAt:now.getTime(), appliedDate:now.toLocaleDateString("en-SG"), appliedISO:now.toISOString(),
-    decidedAt:null, decidedDate:null, decidedBy:null, rejectReason:null
+    decidedAt:null, decidedDate:null, decidedBy:null, rejectReason:null,
+    stepsDeclared: _decl
   };
 
   var btn = document.getElementById("leaveSubmitBtn");
@@ -12137,6 +12410,11 @@ function _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDat
       if (btn) { btn.disabled=false; btn.innerHTML="📩 Submit Leave Application"; }
       toast("✅ Leave application submitted!", "t-ok");
       showLeaveSection(false);
+      // v6.67: step 3 ticks itself on a successful submit; show step 4.
+      lsShowStep4();
+      // F1: clear the honesty-tick declarations now that they've landed on the
+      // record — otherwise stale ticks pre-satisfy the gate on the NEXT application.
+      _leaveStepsClear();
       var rc=document.getElementById("resultCard");
       if(rc){
         rc.style.display="block";
@@ -12316,21 +12594,42 @@ function renderLeaveTable() {
   }).join("");
 }
 
+// ── v6.67: workflow card collapse state (per browser) ──
+var WF_LEAVE_KEY = "at_wf_leave_open_v1";
+
+function _lmWorkflowApply(open) {
+  var card = document.getElementById("lmWorkflowCard");
+  var tog  = document.getElementById("lmWorkflowTog");
+  if (!card) return;
+  if (open) card.classList.remove("wfc-closed");
+  else      card.classList.add("wfc-closed");
+  if (tog) tog.textContent = open ? "Hide ▲" : "Show ▼";
+}
+
+function lmWorkflowToggle() {
+  var card = document.getElementById("lmWorkflowCard");
+  if (!card) return;
+  var open = card.classList.contains("wfc-closed");   // currently closed -> opening
+  _lmWorkflowApply(open);
+  try { localStorage.setItem(WF_LEAVE_KEY, open ? "1" : "0"); } catch(_){}
+}
+
+// Expanded by default: only an explicit "0" collapses it.
+function _lmWorkflowInit() {
+  var saved = null;
+  try { saved = localStorage.getItem(WF_LEAVE_KEY); } catch(_){}
+  _lmWorkflowApply(saved !== "0");
+}
+
 // ── Update Leave Stats ──────────────────────────────
 function updateLeaveStats() {
+  _lmWorkflowInit();
   // v6.61: managers only tally leave for their assigned site(s) so their badges are accurate.
   var base = (currentUserIsManager)
     ? leaveRecs.filter(function(r){ return currentManagerSites.indexOf(r.site) !== -1; })
     : leaveRecs;
   var pending   = base.filter(function(r){return r.status==="pending";}).length;
   var cancelReq = base.filter(function(r){return r.status==="cancel_requested";}).length;
-  var approved  = base.filter(function(r){return r.status==="approved";}).length;
-  var rejected  = base.filter(function(r){return r.status==="rejected";}).length;
-  var el;
-  el=document.getElementById("ls-pending");  if(el) el.textContent=pending;
-  el=document.getElementById("ls-approved"); if(el) el.textContent=approved;
-  el=document.getElementById("ls-rejected"); if(el) el.textContent=rejected;
-  el=document.getElementById("ls-total");    if(el) el.textContent=base.length;
   // v6.61: badge = items needing admin action = pending applications + cancellation requests.
   var actionNeeded = pending + cancelReq;
   var badge = document.getElementById("leavePendingBadge");
@@ -12633,6 +12932,25 @@ function viewLeaveAtt(id) {
   var zoomBtn = document.getElementById("attZoomBtn");
 
   title.textContent = "📎 " + (rec.attachmentName||"Attachment") + " — " + (rec.empName||"");
+
+  // v6.67: show what the engineer declared in steps 1 & 2, right where the
+  // manager is comparing it against the uploaded approval email.
+  var declEl = document.getElementById("attDeclLine");
+  if (declEl) {
+    var sd = rec.stepsDeclared;
+    if (sd && sd.synapxeAt && sd.bizitAt) {
+      declEl.innerHTML = "Engineer declared: Synapxe approval "
+        + sanitizeHtml(new Date(sd.synapxeAt).toLocaleString("en-SG"))
+        + " · Forwarded to HR "
+        + sanitizeHtml(new Date(sd.bizitAt).toLocaleString("en-SG"));
+      declEl.style.display = "block";
+    } else {
+      // Applications submitted before v6.67 have no declaration — show nothing
+      // rather than blanks.
+      declEl.style.display = "none";
+    }
+  }
+
   fnLabel.textContent = rec.attachmentName || "attachment";
   dlBtn.href = rec.attachmentBase64;
   dlBtn.download = rec.attachmentName || "attachment";
@@ -13527,9 +13845,13 @@ function showLsnSingle(r, today) {
   } else if (r.status==="rejected") {
     skin = "lsn-rejected"; icon = "❌"; title = "Leave Not Approved";
     sub  = "Your leave application was not approved. Please check in as normal.";
+    // v6.67: reset the flow so the next Apply for Leave starts at step 1 — but only
+    // if the ticks predate this decision. See _leaveStepsClearIfBefore.
+    _leaveStepsClearIfBefore(r.decidedAt || r.cancelledAt || 0);
   } else if (r.status==="cancelled") {
     skin = "lsn-rejected"; icon = "🚫"; title = "Leave Cancelled";
     sub  = "Your approved leave has been cancelled. You are required to check in as normal.";
+    _leaveStepsClearIfBefore(r.decidedAt || r.cancelledAt || 0);
   } else if (r.status==="cancel_requested") {
     skin = "lsn-pending"; icon = "⏳"; title = "Cancellation Pending";
     sub  = "Your cancellation request is waiting for admin confirmation.";
@@ -14741,10 +15063,93 @@ function loadOnboarding() {
       _onbRecords = [];
       snap.forEach(function(d) { _onbRecords.push(Object.assign({ _id: d.id }, d.data())); });
       _onbRenderTable();
+      // v6.67: repair any stored status the derived badge just contradicted.
+      _onbReconcileActivations(_onbRecords, _onbActiveIdSet(typeof allRecs !== "undefined" ? allRecs : []));
     })
     .catch(function(e) {
       if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="color:var(--red);padding:20px;text-align:center">Error loading: ' + sanitizeHtml(e.message||"unknown") + '</td></tr>';
     });
+}
+
+// ── v6.67: Onboarding activation, derived from attendance ──────────────
+// An engineer is "active" once they have actually used the system. The stored
+// status field cannot be written by the engineer (engineerOnboarding is
+// admin-only write and engineers are never signed in), so the badge is DERIVED
+// from attendance data the dashboard already holds in `allRecs`, and the stored
+// field is repaired separately from the admin's authenticated session.
+function _normIdKey(v) {
+  return String(v === null || v === undefined ? "" : v).trim().toUpperCase();
+}
+
+// Plain object used as a set — the codebase is ES5 and does not use Set anywhere.
+function _onbActiveIdSet(recs) {
+  var map = {};
+  if (!recs || !recs.length) return map;
+  for (var i = 0; i < recs.length; i++) {
+    var id = _normIdKey(recs[i] && recs[i].empId);
+    if (id) map[id] = true;
+  }
+  return map;
+}
+
+function _onbIsActive(rec, idMap) {
+  if (!rec) return false;
+  if (rec.status === "active") return true;
+  var id = _normIdKey(rec.engId || rec._id);
+  return !!(id && idMap && idMap[id]);
+}
+
+function _onbStaleActivations(onbRecs, idMap) {
+  var out = [];
+  if (!onbRecs || !onbRecs.length) return out;
+  for (var i = 0; i < onbRecs.length; i++) {
+    var r = onbRecs[i];
+    if (r && r.status !== "active" && _onbIsActive(r, idMap)) out.push(r);
+  }
+  return out;
+}
+
+// v6.67: repair the STORED status for records the derived badge says are active.
+// Runs from the admin's authenticated session, so this write is permitted by the
+// rules as deployed. Purely a repair — the badge in _onbRenderTable is already
+// correct whether or not this succeeds.
+function _onbReconcileActivations(onbRecs, idMap) {
+  var stale = _onbStaleActivations(onbRecs, idMap);
+  if (!stale.length || !fbOk || !db) return Promise.resolve(0);
+
+  // F2: Firestore caps a WriteBatch at 500 ops. Chunk at 400 so the very first
+  // production run (potentially every engineer ever checked in) doesn't blow the
+  // cap and fail atomically forever. Cache mutation is deferred until ALL chunks
+  // have committed — a failure in any chunk must leave the local cache untouched.
+  var iso   = new Date().toISOString();
+  var CHUNK = 400;
+  var chunks = [];
+  for (var i = 0; i < stale.length; i += CHUNK) {
+    chunks.push(stale.slice(i, i + CHUNK));
+  }
+
+  var commits = chunks.map(function (chunk) {
+    var batch = db.batch();
+    for (var j = 0; j < chunk.length; j++) {
+      batch.update(db.collection("engineerOnboarding").doc(chunk[j]._id),
+                   { status: "active", activatedAt: chunk[j].activatedAt || iso });
+    }
+    return batch.commit();
+  });
+
+  return Promise.all(commits).then(function () {
+    // v6.67: only claim "active" locally once the write actually succeeded — mutating
+    // before commit() left the cache lying about status on a failed/partial batch.
+    for (var i = 0; i < stale.length; i++) {
+      stale[i].status = "active";
+      if (!stale[i].activatedAt) stale[i].activatedAt = iso;
+    }
+    console.log("[ONB RECONCILE] repaired " + stale.length + " onboarding record(s) to active");
+    return stale.length;
+  }).catch(function (e) {
+    console.warn("[ONB RECONCILE] write-back failed:", e && (e.code || e.message), e);
+    return 0;
+  });
 }
 
 function _onbRenderTable() {
@@ -14758,6 +15163,9 @@ function _onbRenderTable() {
   }
   if (empty) empty.style.display = "none";
 
+  // v6.67: computed once per render, not per row.
+  var _onbIdMap = _onbActiveIdSet(typeof allRecs !== "undefined" ? allRecs : []);
+
   var rows = _onbRecords.filter(_onbMatches);
   if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--ink3)">'
@@ -14766,8 +15174,10 @@ function _onbRenderTable() {
   }
 
   tbody.innerHTML = rows.map(function(r) {
-    var statusColor = r.status === "active" ? "var(--green)" : "#f59e0b";
-    var statusLabel = r.status === "active" ? "✅ Active" : "⏳ Pending";
+    // v6.67: derived — stored "active" OR any attendance record for this engineer.
+    var isAct      = _onbIsActive(r, _onbIdMap);
+    var statusColor = isAct ? "var(--green)" : "#f59e0b";
+    var statusLabel = isAct ? "✅ Active" : "⏳ Pending";
     return '<tr>'
       + '<td style="font-family:var(--mono);font-weight:700;color:var(--blue)">' + sanitizeHtml(r.engId||r._id) + '</td>'
       + '<td style="font-weight:600">' + sanitizeHtml(r.name||"—") + '</td>'
@@ -15022,6 +15432,65 @@ function _syncEngAccountFromOnboarding(oldEmail, oldEngId, newEngId, newName, ne
   }).catch(function(e){ console.warn("[v6.64] Eng Account sync lookup failed:", e); });
 }
 
+// v6.67: Reverse of _syncEngAccountFromOnboarding — when an admin edits an
+// engineer in Eng Accounts, push the identity change back into their Onboarding
+// record so the admin no longer has to edit the same person twice.
+//
+// Looks the record up by the engId FIELD, not the doc id: onbSave keys the doc by
+// (editId || engId), so an engineer whose ID was edited has a doc id frozen at the
+// OLD value and a doc-id lookup silently misses. Same trap v6.64 hit going the
+// other way.
+//
+// Deliberately narrow: identity fields only. status/activatedAt/nric/phone/
+// address/defaultSite/gender/createdAt/createdBy are NOT touched, and the doc id
+// is NOT renamed.
+function _onbSyncPatch(newEngId, newName, newEmail) {
+  return {
+    engId: newEngId,
+    name: newName,
+    email: String(newEmail === null || newEmail === undefined ? "" : newEmail).toLowerCase(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function _syncOnboardingFromEngAccount(oldEngId, newEngId, newName, newEmail) {
+  if (!newEngId || !fbOk || !db) return Promise.resolve(false);
+  var lookupId = oldEngId || newEngId;
+  var patch    = _onbSyncPatch(newEngId, newName, newEmail);
+
+  return db.collection("engineerOnboarding").where("engId", "==", lookupId).limit(1).get()
+    .then(function (qs) {
+      // No onboarding counterpart (self-registered engineer) — do nothing, say
+      // nothing. Symmetric with _syncEngAccountFromOnboarding, which never
+      // creates a phantom account for a non-existent counterpart.
+      if (qs.empty) return false;
+      var d = qs.docs[0];
+      return d.ref.update(patch).then(function () {
+        // Keep the local Onboarding cache in step so a later tab render is correct
+        // without a reload.
+        for (var i = 0; i < _onbRecords.length; i++) {
+          if (_onbRecords[i]._id === d.id) {
+            _onbRecords[i].engId     = patch.engId;
+            _onbRecords[i].name      = patch.name;
+            _onbRecords[i].email     = patch.email;
+            _onbRecords[i].updatedAt = patch.updatedAt;
+            break;
+          }
+        }
+        return true;
+      });
+    })
+    .catch(function (e) {
+      console.warn("[ONB REVERSE SYNC] failed:", e && (e.code || e.message), e);
+      // F3: qs.empty (no counterpart) stays silent above — that's a legitimate
+      // no-op. But a real failure here must not hide behind the same "✅ Account
+      // updated" toast the caller shows unconditionally, or an admin believes
+      // the Onboarding record is in sync when it isn't.
+      toast("⚠️ Onboarding record NOT updated — sync failed", "t-err");
+      return false;
+    });
+}
+
 // ── Delete ────────────────────────────────────────────
 function onbPromptDelete(id) {
   _onbDeleteId = id;
@@ -15262,6 +15731,11 @@ function adminAccSaveEdit() {
     resetBtn();
     document.getElementById("accEditModal").classList.remove("open");
     adminAccRender();
+    // v6.67: push the identity change into the Onboarding record too.
+    _syncOnboardingFromEngAccount(origEmpId, newEmpId, newName, newEmail)
+      .then(function (synced) {
+        if (synced) toast("Onboarding record updated to match", "t-ok");
+      });
     toast("✅ Account updated for " + newEmpId, "t-ok");
   }
 
