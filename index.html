@@ -1321,6 +1321,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
           </div>
           <div class="otp-msg" id="otpMsg"></div>
           <div class="otp-verified-badge" id="otpVerifiedBadge" style="display:none">✅ Email verified</div>
+          <div id="otpPolicyOffNote" style="display:none;margin-top:6px;padding:8px 12px;border-radius:8px;font-size:.8rem;color:var(--ink3);background:#f4f4f2;border:1.5px solid var(--border);line-height:1.5">📧 Email verification is temporarily switched off by your administrator. Verify your location and check in as usual.</div>
           <div id="onbValidationStatus" style="display:none;margin-top:6px;padding:8px 12px;border-radius:8px;font-size:.8rem;font-weight:600;border:1.5px solid;line-height:1.5"></div>
         </div>
         <div class="field"><label>Work Site</label>
@@ -1600,6 +1601,12 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     <div class="setup-ban" id="dashBanner">
       ⚙️ <strong>Setup needed:</strong> Replace <code>FIREBASE_CONFIG</code> in the script with your Firebase credentials for live data. Click <strong>Setup Guide</strong> tab below for instructions.
+    </div>
+
+    <!-- v6.68: visible whenever the email-OTP escape hatch is open -->
+    <div id="otpPolicyBanner" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:11px 15px;border-radius:10px;background:#fffbeb;border:1.5px solid #fcd34d;color:#92400e;font-size:.85rem;line-height:1.5">
+      <span><strong>⚠️ Email OTP verification is DISABLED</strong> — engineers can check in without verifying their email.</span>
+      <button id="otpPolicyBannerAction" onclick="openOtpPolicyModal()" style="border:none;background:#92400e;color:#fff;border-radius:8px;padding:5px 12px;font-size:.8rem;font-weight:700;cursor:pointer">Re-enable</button>
     </div>
 
     <!-- Mode toggle -->
@@ -2006,6 +2013,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
               title="Set required manpower per site">⚙️ Configure Manpower</button>
       <button id="teamSubBtnSites" class="team-sub-act" onclick="openSitesModal()"
               title="Add, edit or remove work sites (name + GPS)">📍 Work Sites</button>
+      <button id="teamSubBtnOtpPolicy" class="team-sub-act" onclick="openOtpPolicyModal()"
+              title="Enable or disable email OTP verification on first check-in">🔐 Check-in Security</button>
     </div>
   </div>
 
@@ -3096,6 +3105,16 @@ service cloud.firestore {
   </div>
 </div>
 
+<!-- ══ CHECK-IN SECURITY MODAL (v6.68) ════════════ -->
+<div id="otpPolicyModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:520px;max-height:92vh;overflow-y:auto">
+    <button class="modal-close" onclick="closeOtpPolicyModal()">✕</button>
+    <div class="modal-title">🔐 Check-in Security</div>
+    <div class="modal-sub">Controls whether engineers must verify an emailed code the first time they check in on a device.</div>
+    <div id="otpPolicyBody"></div>
+  </div>
+</div>
+
 <!-- ══ MANAGE WORK SITES MODAL ════════════════════ -->
 <div id="sitesModal" class="modal-overlay">
   <div class="modal-box" style="max-width:560px;max-height:92vh;overflow-y:auto">
@@ -3813,7 +3832,10 @@ function requestManualConfirm(dir) {
   if (siteVal === "" || siteVal == null) { toast("Please choose your site", "t-err"); return; }
   var siteObj = siteByName(siteVal);
   if (!siteObj) { toast("That work site no longer exists — pick another from the list", "t-err"); return; }
-  if (!otpVerified) { toast("Please verify your email with the OTP code first", "t-err"); return; }
+  // v6.68: OTP is skippable only while the admin escape hatch is open.
+  // Fail closed: an unset/undefined otpPolicyEnabled (e.g. read before its
+  // var declaration runs) must count as REQUIRED, not skippable.
+  if (otpPolicyEnabled !== false && !otpVerified) { toast("Please verify your email with the OTP code first", "t-err"); return; }
   if (_onbValidated === false) { toast("Your details don't match onboarding records — contact admin", "t-err"); return; }
 
   // Local buddy-punch (same device, different person today)
@@ -4284,6 +4306,9 @@ document.addEventListener("DOMContentLoaded", function(){
   // v6.41: load admin-defined custom sites so they appear in the check-in dropdown
   if (typeof loadCustomSites === "function") loadCustomSites();
 
+  // v6.68: the OTP escape hatch must be known before the engineer can check in
+  if (typeof _initOtpPolicyListener === "function") _initOtpPolicyListener();
+
   ["engIdWrap","leaveEngIdWrap"].forEach(function(wrapId){
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
@@ -4365,15 +4390,20 @@ function chkBtn() {
     statusEl.innerHTML = "";
   }
 
+  // Fail closed: an unset/undefined otpPolicyEnabled must count as REQUIRED,
+  // so only an explicit `false` (admin escape hatch) waives otpVerified.
   var ci = document.getElementById("ciBtn");
-  if (ci) ci.disabled = !(id && name.trim() && site && emailOk && GPS.in && GPS.in.ok && otpVerified && _onbValidated !== false);
+  if (ci) ci.disabled = !(id && name.trim() && site && emailOk && GPS.in && GPS.in.ok && (otpVerified || otpPolicyEnabled === false) && _onbValidated !== false);
   var co = document.getElementById("coBtn");
   if (co) co.disabled = !(GPS.out && GPS.out.ok);
 
   // Show Verify Email button when form has enough info and OTP not yet done
   var verifyBtn = document.getElementById("otpVerifyBtn");
   if (verifyBtn) {
-    var formReady = !!(id && name.trim() && emailOk && _onbValidated !== false);
+    // v6.68: otpPolicyEnabled first — a later chkBtn() must not resurrect the
+    // button that _applyOtpPolicyUi() hid. Fail closed: only an explicit
+    // `false` counts as the policy being off; unset/undefined stays required.
+    var formReady = !!(otpPolicyEnabled !== false && id && name.trim() && emailOk && _onbValidated !== false);
     verifyBtn.style.display = (formReady && !otpVerified) ? "block" : "none";
   }
 
@@ -4706,6 +4736,16 @@ function _maybeCheckOtpForEmail(email, emailOk) {
       _checkOtpOnLoad(current, fp);
     });
   }, 500);
+}
+
+// ── v6.68: Email-OTP policy (admin escape hatch) ────────────────────
+// Resolves the appConfig/otpPolicy payload into "is OTP required?".
+// FAIL CLOSED: only the exact boolean false switches OTP off. A missing
+// doc, a permission error, a half-written doc or a hand-typed string all
+// resolve to true, because the safe state is "OTP required".
+function _otpPolicyFromData(data) {
+  if (!data || typeof data !== "object") return true;
+  return data.enabled !== false;
 }
 
 // ── OTP Verification ───────────────────────────────
@@ -5776,6 +5816,12 @@ function doCheckin() {
   if (!empName || empName.length < 2) { toast("Please enter a valid full name", "t-err"); return; }
   if (!empEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(empEmail)) { toast("Please enter a valid email address", "t-err"); return; }
 
+  // v6.68: v6.67 gated OTP with the disabled button alone. Now that an admin
+  // can switch the requirement off, enforce it here too — so "required" means
+  // required regardless of the button's state.
+  // Fail closed: an unset/undefined otpPolicyEnabled must count as REQUIRED.
+  if (otpPolicyEnabled !== false && !otpVerified) { toast("Please verify your email with the OTP code first", "t-err"); return; }
+
   // ✅ ANTI-BUDDY-PUNCH: Block if this device already checked in a different person today
   var alreadyCheckedIn = deviceAlreadyCheckedIn(empId);
   if (alreadyCheckedIn) {
@@ -6101,6 +6147,10 @@ function applyRoleVisibility() {
   if (setupTab) setupTab.style.display = currentUserIsManager ? "none" : "";
   var _bkBtn = document.getElementById("backupTabBtn");
   if (_bkBtn) _bkBtn.style.display = currentUserIsManager ? "none" : "";   // v6.66: admin-only
+  // v6.68: the OTP escape hatch is a security control — admin only. Managers
+  // still SEE the banner (Task 6); they just cannot flip the switch.
+  var _otpPolBtn = document.getElementById("teamSubBtnOtpPolicy");
+  if (_otpPolBtn) _otpPolBtn.style.display = currentUserIsManager ? "none" : "";
   // v6.61: the Firestore-rules reminder points to the Setup Guide, which managers cannot open — hide it for them.
   var rulesNote = document.getElementById("leaveRulesReminder");
   if (rulesNote) rulesNote.style.display = currentUserIsManager ? "none" : "";
@@ -6117,6 +6167,9 @@ function applyRoleVisibility() {
       dTab("live", liveTab);
     }
   }
+
+  // v6.68: role is only known now, and the banner's action is role-dependent
+  if (typeof _applyOtpPolicyUi === "function") _applyOtpPolicyUi();
 }
 
 function initDash() {
@@ -6166,6 +6219,8 @@ function initDash() {
 
   // Load admin-defined custom work sites (merged into the site dropdowns live)
   if (typeof loadCustomSites === "function") loadCustomSites();
+
+  if (typeof _initOtpPolicyListener === "function") _initOtpPolicyListener();
 
   if (fbOk && db) {
     if (fbUnsub) fbUnsub();
@@ -10743,6 +10798,14 @@ var LEAVE_TYPE_COLORS = {
 var entitlementCache = {};
 var otpVerified = false;        // true once OTP confirmed or device already trusted
 var _otpVerifiedCache = false;  // in-memory flag to avoid re-querying Firestore mid-session
+
+// v6.68: admin escape hatch. TRUE = engineers must verify email OTP on first
+// check-in (the v6.67 behaviour, and the default whenever we cannot prove
+// otherwise). Only an explicit appConfig/otpPolicy { enabled:false } flips it.
+var otpPolicyEnabled  = true;
+var otpPolicyMeta     = { updatedBy:"", updatedAt:"", reason:"" };
+var _fbOtpPolicyUnsub = null;
+
 var calYear  = new Date().getFullYear();
 var calMonth = new Date().getMonth(); // 0-indexed
 var anLeaveTrendChart = null;
@@ -10850,6 +10913,170 @@ function _rebuildWorkSites() {
   if (!WORK_SITES.length) WORK_SITES = _BASE_WORK_SITES.slice();   // never leave check-in with an empty dropdown
   refreshAllSiteDropdowns();
   renderCustomSitesList();
+}
+
+// v6.68: one-document listener on the OTP policy switch. Modelled on the
+// siteMigration listener below. Cost is one doc read plus updates — unrelated
+// to the unbounded-listener quota problem on the attendance collection.
+// Attached from BOTH the engineer page and the dashboard; guarded so the two
+// entry points cannot double-subscribe.
+function _initOtpPolicyListener() {
+  if (_fbOtpPolicyUnsub) return;
+  if (!fbOk || !db) return;   // no Firestore -> stays fail-closed at true
+  _fbOtpPolicyUnsub = db.collection("appConfig").doc("otpPolicy")
+    .onSnapshot(function(doc){
+      // NOTE: enablePersistence() is not called anywhere in this app today, so
+      // every snapshot here is a live server read. If Firestore persistence is
+      // ever turned on (it is planned, for read-quota reasons — see the
+      // Firestore Free-Tier Quota Trap notes), the FIRST callback after a
+      // reload can be a cached snapshot replaying the last value seen before
+      // the app closed. A cached { enabled:false } would disable OTP on load
+      // until the real server snapshot arrives and overwrites it. Before that
+      // day, this callback must check doc.metadata.fromCache and refuse to
+      // act on a cached enabled:false (only apply cached enabled:true, or wait
+      // for a non-cached snapshot). Not implemented now because there is no
+      // cache to be stale from.
+      var data = (doc && doc.exists) ? doc.data() : null;
+      otpPolicyEnabled = _otpPolicyFromData(data);
+      otpPolicyMeta = {
+        updatedBy: (data && data.updatedBy) || "",
+        updatedAt: (data && data.updatedAt) || "",
+        reason:    (data && data.reason)    || ""
+      };
+      console.log("[v6.68] OTP policy:", otpPolicyEnabled ? "REQUIRED" : "DISABLED");
+      _applyOtpPolicyUi();
+    }, function(err){
+      // Fail closed. Do NOT set otpPolicyEnabled = false here under any
+      // circumstance — an unreachable Firestore must never disable OTP.
+      otpPolicyEnabled = true;
+      // Also reset the audit metadata — otherwise a transient error right
+      // after a disable leaves stale "Disabled by X — reason" text rendering
+      // beside the (correct) 🔒 OTP Required pill in the modal.
+      otpPolicyMeta = { updatedBy:"", updatedAt:"", reason:"" };
+      console.warn("[v6.68] otpPolicy listener error, failing closed:", err && (err.code || err.message));
+      _applyOtpPolicyUi();
+    });
+}
+
+// ── v6.68: admin control for the email-OTP escape hatch ──────────────
+function openOtpPolicyModal() {
+  _otpPolicyRender();
+  var m = document.getElementById("otpPolicyModal");
+  if (m) m.classList.add("open");     // matches openSitesModal, line ~10913
+}
+
+function closeOtpPolicyModal() {
+  var m = document.getElementById("otpPolicyModal");
+  if (m) m.classList.remove("open");
+}
+
+function _otpPolicyRender() {
+  var body = document.getElementById("otpPolicyBody");
+  if (!body) return;
+
+  var audit = "";
+  if (otpPolicyMeta.updatedBy || otpPolicyMeta.updatedAt) {
+    var when = otpPolicyMeta.updatedAt
+      ? new Date(otpPolicyMeta.updatedAt).toLocaleString("en-SG")
+      : "unknown time";
+    audit = '<div style="margin-top:10px;font-size:.78rem;color:var(--ink3)">'
+          + (otpPolicyEnabled !== false ? "Enabled by " : "Disabled by ")
+          + "<strong>" + sanitizeHtml(otpPolicyMeta.updatedBy || "unknown") + "</strong> on "
+          + sanitizeHtml(when)
+          + (otpPolicyMeta.reason ? " — " + sanitizeHtml(otpPolicyMeta.reason) : "")
+          + "</div>";
+  }
+
+  if (otpPolicyEnabled !== false) {
+    body.innerHTML =
+      '<div style="padding:10px 14px;border-radius:10px;background:#ecfdf5;border:1.5px solid #6ee7b7;color:#065f46;font-weight:700">🔒 OTP Required</div>'
+      + '<p style="font-size:.83rem;color:var(--ink3);margin-top:12px;line-height:1.6">Engineers must verify a 6-digit code emailed to them the first time they check in on a device. Later check-ins on that same device skip the code.</p>'
+      + '<p style="font-size:.83rem;color:var(--ink3);margin-top:8px;line-height:1.6">Switch this off only if OTP emails are not being delivered and check-in is blocked. While it is off, engineers check in with location verification only.</p>'
+      + '<div class="field" style="margin-top:14px"><label>Reason for disabling <span style="color:var(--red)">*</span></label>'
+      + '<input type="text" id="otpPolicyReason" maxlength="200" placeholder="e.g. n8n webhook down"/></div>'
+      + '<button class="act-btn" style="background:linear-gradient(135deg,#f59e0b,#d97706)" onclick="saveOtpPolicy(false, (document.getElementById(\'otpPolicyReason\')||{}).value)">⚠️ Disable email OTP</button>'
+      + audit;
+  } else {
+    body.innerHTML =
+      '<div style="padding:10px 14px;border-radius:10px;background:#fffbeb;border:1.5px solid #fcd34d;color:#92400e;font-weight:700">⚠️ OTP Disabled</div>'
+      + '<p style="font-size:.83rem;color:var(--ink3);margin-top:12px;line-height:1.6">Engineers are checking in with location verification only. No email codes are being requested.</p>'
+      + '<p style="font-size:.83rem;color:var(--ink3);margin-top:8px;line-height:1.6">When you switch this back on, every engineer who checked in during this window will be asked to verify once — they were never verified, so no device was trusted.</p>'
+      + '<button class="act-btn" style="background:linear-gradient(135deg,#10b981,#059669);margin-top:14px" onclick="saveOtpPolicy(true, \'\')">🔒 Re-enable email OTP</button>'
+      + audit;
+  }
+}
+
+function saveOtpPolicy(enabled, reason) {
+  if (!fbOk || !db) { toast("Firestore is not connected", "t-err"); return; }
+
+  var cleanReason = sanitize(String(reason || ""), 200);
+
+  // Disabling is a security downgrade: demand a reason and a confirmation.
+  // Re-enabling restores the safe state, so it goes through with one click.
+  if (!enabled) {
+    if (!cleanReason) { toast("Please enter a reason before disabling OTP", "t-err"); return; }
+    if (!confirm("Disable email OTP verification?\n\nEngineers will be able to check in without verifying their email. Only location verification will apply.\n\nRemember to switch it back on once OTP emails are working.")) return;
+  }
+
+  var who = "";
+  try { who = (firebase.auth().currentUser && firebase.auth().currentUser.email) || ""; } catch(_){}
+
+  db.collection("appConfig").doc("otpPolicy").set({
+    enabled:   !!enabled,
+    reason:    enabled ? "" : cleanReason,
+    updatedBy: who,
+    updatedAt: new Date().toISOString()
+  }, { merge:true })
+    .then(function(){
+      // The listener repaints the modal and banner; don't pre-empt it, or a
+      // failed write would leave the UI showing a state that never persisted.
+      toast(enabled ? "🔒 Email OTP re-enabled" : "⚠️ Email OTP disabled", "t-ok");
+    })
+    .catch(function(e){
+      console.error("[v6.68] saveOtpPolicy failed:", e);
+      toast("Could not save: " + (e && (e.code || e.message)), "t-err");
+    });
+}
+
+// Extended by Task 6 (dashboard banner). Safe to call before the DOM exists.
+function _applyOtpPolicyUi() {
+  // Fail closed: only an explicit `false` counts as the policy being off;
+  // unset/undefined (e.g. a read before the var declaration runs) stays required.
+  var off = otpPolicyEnabled === false;
+
+  // Engineer check-in screen (Task 4). These three are hide-only — something
+  // else always restores them when OTP is needed again: otpRow in sendOtp(),
+  // otpResendTimer in _startOtpResendTimer(), otpVerifyBtn in chkBtn().
+  ["otpVerifyBtn","otpRow","otpResendTimer"].forEach(function(elId){
+    var el = document.getElementById(elId);
+    if (el && off) el.style.display = "none";
+  });
+  // otpMsg has no other restorer anywhere in the file, so it needs a genuine
+  // two-way toggle or it stays display:none for the rest of the page's life
+  // once OTP is switched off — silencing every future "sending…"/error/success
+  // message even after the admin re-enables OTP. Restore to "" (not "block")
+  // so the .otp-msg/.ok/.err stylesheet rules keep control of layout.
+  var msgEl = document.getElementById("otpMsg");
+  if (msgEl) msgEl.style.display = off ? "none" : "";
+  // A running resend countdown must not resurrect the Verify button while OTP
+  // is switched off (it runs on its own setInterval, independent of this fn).
+  if (off && window._otpResendInterval) { clearInterval(window._otpResendInterval); window._otpResendInterval = null; }
+  var note = document.getElementById("otpPolicyOffNote");
+  if (note) note.style.display = off ? "block" : "none";
+
+  // Dashboard banner (Task 6). Managers see it; only admins get the action.
+  var banner = document.getElementById("otpPolicyBanner");
+  if (banner) banner.style.display = off ? "flex" : "none";
+  var bAct = document.getElementById("otpPolicyBannerAction");
+  if (bAct) bAct.style.display = (typeof currentUserIsManager !== "undefined" && currentUserIsManager) ? "none" : "inline-block";
+
+  // Keep an open modal in sync with the listener. Openness is the "open"
+  // class, not an inline display value.
+  var _pm = document.getElementById("otpPolicyModal");
+  if (_pm && _pm.classList.contains("open") && typeof _otpPolicyRender === "function") _otpPolicyRender();
+  // chkBtn() re-derives verify-button visibility and the check-in button state,
+  // so switching back ON restores the OTP flow without a reload.
+  if (typeof chkBtn === "function") chkBtn();
 }
 
 function loadCustomSites() {
