@@ -10221,6 +10221,9 @@ function renderCalendar() {
 }
 
 function _anRenderLeaveBalanceStrip(wrap, empId, year, recs) {
+  // v6.74: forceRefresh=true — this is what the engineer reads as "how many
+  // days do I have left", so it must never show a balance cached from before
+  // admin last saved the entitlement (see _anFetchEntitlement comment).
   _anFetchEntitlement(empId, year, function(doc) {
     if (!wrap) return;
     var hasAny = doc && (Object.keys(doc.quotas||{}).length > 0);
@@ -10254,7 +10257,7 @@ function _anRenderLeaveBalanceStrip(wrap, empId, year, recs) {
     });
 
     wrap.innerHTML = '<div style="display:flex;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch">' + cards + '</div>';
-  });
+  }, true);
 }
 
 function anSaveManpowerConfig() {
@@ -14883,6 +14886,7 @@ function _renderMyLeavesBalance(empId, recs) {
   if (!balEl || !empId) return;
 
   var year = new Date().getFullYear();
+  // v6.74: forceRefresh=true — same reasoning as _anRenderLeaveBalanceStrip above.
   _anFetchEntitlement(empId, year, function(doc) {
     if (!doc || !doc.quotas || !Object.keys(doc.quotas).length) {
       balEl.style.display = "none";
@@ -14924,7 +14928,7 @@ function _renderMyLeavesBalance(empId, recs) {
       + '<div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--ink3);margin-bottom:10px">📊 Leave Balance — ' + year + '</div>'
       + rows + '</div>';
     balEl.style.display = "block";
-  });
+  }, true);
 }
 
 // ── Engineer: Cancel a leave ────────────────────────
