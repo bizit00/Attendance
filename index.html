@@ -9,7 +9,7 @@
   script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://cdn.jsdelivr.net https://unpkg.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   font-src https://fonts.gstatic.com;
-  connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://api.brevo.com https://n8n.skyaifactory.com;
+  connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://n8n.skyaifactory.com;
   img-src 'self' data: https://maps.google.com;
   frame-src https://attendtrack-94b96.firebaseapp.com;
 ">
@@ -2857,52 +2857,17 @@ service cloud.firestore {
         </div>
 
         <div class="guide-step" style="border-left:4px solid #f59e0b">
-          <div class="gs-title">Step 11 — Configure Email Notifications</div>
+          <div class="gs-title">Step 11 — Email Notifications</div>
           <div class="gs-body">
-            <p>To enable automatic email notifications when leaves are approved/rejected:</p>
-            <ol>
-              <li>Sign up for free at <strong>emailjs.com</strong></li>
-              <li>Go to <strong>Email Services</strong> → Add New Service → connect your Gmail account</li>
-              <li>Go to <strong>Email Templates</strong> → Create New Template</li>
-              <li>In your template, use <strong>exactly</strong> these variable names (copy-paste them):<br>
-                <div style="background:#1e293b;border-radius:8px;padding:12px 14px;margin:10px 0;font-family:monospace;font-size:.82rem;color:#e2e8f0;line-height:2">
-                  <span style="color:#94a3b8">To Email field:</span> <code style="color:#fbbf24">{{to_email}}</code><br>
-                  <span style="color:#94a3b8">Subject field :</span> <code style="color:#fbbf24">{{subject}}</code><br>
-                  <span style="color:#94a3b8">Body (use any/all of these):</span><br>
-                  &nbsp;&nbsp;<code style="color:#6ee7b7">{{to_name}}</code> — Engineer name<br>
-                  &nbsp;&nbsp;<code style="color:#6ee7b7">{{status}}</code> — APPROVED ✅ or REJECTED ❌<br>
-                  &nbsp;&nbsp;<code style="color:#6ee7b7">{{leave_type}}</code> — e.g. Annual Leave<br>
-                  &nbsp;&nbsp;<code style="color:#6ee7b7">{{from_date}}</code> / <code style="color:#6ee7b7">{{to_date}}</code><br>
-                  &nbsp;&nbsp;<code style="color:#6ee7b7">{{num_days}}</code> — number of days<br>
-                  &nbsp;&nbsp;<code style="color:#6ee7b7">{{decided_by}}</code> — approver name<br>
-                  &nbsp;&nbsp;<code style="color:#6ee7b7">{{reject_reason}}</code> — rejection reason<br>
-                  &nbsp;&nbsp;<code style="color:#6ee7b7">{{message}}</code> — full pre-formatted message (use this alone for simplest setup)
-                </div>
-              </li>
-              <li>Go to <strong>Account → General</strong> to copy your <strong>Public Key</strong></li>
-              <li>Your <strong>Service ID</strong> is under Email Services (starts with <code>service_</code>)</li>
-              <li>Your <strong>Template ID</strong> is under Email Templates (starts with <code>template_</code>)</li>
-              <li>Go to <strong>Account → Security</strong> → add your website domain to <strong>"Allowed Origins"</strong> (e.g. <code>https://yourname.github.io</code> or <code>http://localhost</code> for local testing). <span style="color:#b91c1c;font-weight:700">This is the #1 reason emails appear sent but nothing arrives — EmailJS silently rejects requests from unregistered domains.</span></li>
-            </ol>
+            <p>No email service needs to be configured. When a leave is submitted, approved, rejected, or cancelled, the app shows a pre-filled message with a "Send Email" mailto link — the admin/manager sends it with one click from their own mail client, addressed to the engineer (and HR, if set under Team → Team Managers).</p>
           </div>
         </div>
 
-        <!-- ── EMAILJS LIVE DIAGNOSTICS ── -->
+        <!-- ── EMAIL NOTIFICATIONS ── -->
         <div class="guide-step" style="border-left:4px solid #10b981;margin-top:4px">
-          <div class="gs-title">🔬 EmailJS Live Diagnostics <span class="help-dot" data-help="email-otp-setup" title="Help">?</span></div>
+          <div class="gs-title">📧 Email Notifications <span class="help-dot" data-help="email-otp-setup" title="Help">?</span></div>
           <div class="gs-body">
-            <p style="margin-bottom:12px">Use this to verify your setup <strong>right now</strong> — without approving a real leave.</p>
-            <div id="ejDiagPanel" style="background:#0d1117;border-radius:10px;padding:16px;font-family:monospace;font-size:.8rem;line-height:1.9;margin-bottom:14px;min-height:60px">
-              <span style="color:#6b7280">Click "Run Diagnostics" to check your EmailJS configuration…</span>
-            </div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-              <button class="tb-btn" style="background:var(--blue);color:#fff;font-size:.83rem" onclick="runEmailJSDiag()">🔬 Run Diagnostics</button>
-              <button class="tb-btn" style="background:#10b981;color:#fff;font-size:.83rem" onclick="showEmailTestModal()">📤 Send Test Email</button>
-            </div>
-            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;font-size:.8rem;color:#78350f">
-              <strong>⚠️ Why my template changes aren't showing?</strong><br>
-              EmailJS <strong>caches</strong> templates on their CDN. After editing your template, wait 2–5 minutes then send a test email. If it still shows the old format, open your EmailJS dashboard → Email Templates → click your template → click <strong>Save</strong> again to force a cache refresh.
-            </div>
+            <p>Leave notifications (new request, approval, rejection, cancellation) don't send automatically — the app shows a pre-filled message with a "Send Email" mailto link, and the admin/manager sends it from their own mail client. There's no external email service to configure for this.</p>
           </div>
         </div>
       </div>
@@ -2951,24 +2916,6 @@ service cloud.firestore {
     <div class="modal-actions">
       <button class="modal-btn-cancel" onclick="closeTimesheetModal()">Cancel</button>
       <button class="modal-btn-confirm" style="background:#059669" onclick="generateTimesheetXLSX()">⬇ Download Excel</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══ EMAILJS TEST MODAL ════════════════════════════ -->
-<div id="emailTestModal" class="modal-overlay">
-  <div class="modal-box" style="max-width:460px">
-    <button class="modal-close" onclick="document.getElementById('emailTestModal').classList.remove('open')">✕</button>
-    <div class="modal-title">📤 Send Test Email</div>
-    <div class="modal-sub">This sends a real email through your EmailJS account so you can verify the template looks correct.</div>
-    <div class="field" style="margin-top:14px">
-      <label>Send test to (email address)</label>
-      <input type="email" id="ejTestEmail" placeholder="your@email.com" style="font-size:.9rem"/>
-    </div>
-    <div id="ejTestResult" style="margin:10px 0;font-size:.82rem;min-height:20px"></div>
-    <div class="modal-actions">
-      <button class="modal-btn-cancel" onclick="document.getElementById('emailTestModal').classList.remove('open')">Cancel</button>
-      <button class="modal-btn-confirm" onclick="sendTestEmail()">📤 Send Test</button>
     </div>
   </div>
 </div>
@@ -10847,44 +10794,20 @@ function toast(msg, cls) {
 // ║  LEAVE MODULE                                        ║
 // ╚══════════════════════════════════════════════════════╝
 
-// ── Email Mode Configuration ─────────────────────────
-// "manual" = OTP shown on-screen + mailto links (TESTING — no real email sent)
-// "auto"   = real email sent via Brevo API (once subscribed/verified)
-var EMAIL_MODE = "manual";
-
-// ── Email Configuration (Brevo / Sendinblue v3 REST API — used when EMAIL_MODE = "auto") ──
-var BREVO_API_KEY  = "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";
-var BREVO_FROM     = "bizit1610@gmail.com";
-
+// ── Email notifications ──────────────────────────────
+// No external email API is used. Leave-related notifications (new
+// submission, approval/rejection/cancellation) are shown on-screen with a
+// pre-filled mailto link (see showEmailFallback) so the admin/manager sends
+// them from their own mail client. This used to route through Brevo's REST
+// API; that integration was removed (unused — every actual send path already
+// forced "manual" mode, and the one path that didn't (sendLeaveSubmittedEmail)
+// was silently failing against a dead key).
+//
 // ── n8n Email OTP webhooks (engineer self-service verification) ──
+// This is a separate mechanism from the above and is unaffected — it POSTs
+// to your own n8n workflow, which handles sending the OTP email itself.
 var REQUEST_OTP_URL = "https://n8n.skyaifactory.com/webhook/request-otp";
 var VERIFY_OTP_URL  = "https://n8n.skyaifactory.com/webhook/verify-otp";
-var BREVO_FROM_NAME = "Attendance System";
-var BREVO_API_URL  = "https://api.brevo.com/v3/smtp/email";
-var emailjsReady = true; // REST API is always "ready" — no script to load
-
-// Send email via Brevo v3 REST API. Returns a Promise that resolves on success, rejects on failure.
-function _elasticSend(toEmail, subject, htmlBody) {
-  return fetch(BREVO_API_URL, {
-    method: "POST",
-    headers: {
-      "accept":       "application/json",
-      "api-key":      BREVO_API_KEY,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      sender:      { email: BREVO_FROM, name: BREVO_FROM_NAME },
-      to:          [{ email: toEmail }],
-      subject:     subject,
-      htmlContent: htmlBody
-    })
-  }).then(function(res) {
-    if (res.ok) return res.json();
-    return res.json().then(function(errData) {
-      throw new Error((errData && errData.message) || ("HTTP " + res.status));
-    });
-  });
-}
 
 var LEAVE_TYPES = [
   "Annual Leave","Sick Leave","Unpaid Leave",
@@ -11882,11 +11805,11 @@ function _dismissBuddyAlert(alertId) {
     .catch(function(e) { console.warn("[AT] dismiss buddy alert:", e); });
 }
 
-// ── Init Email (Brevo REST API — always ready) ───────
-function initEmailJS() {
-  emailjsReady = true;
-  console.log("✅ Brevo REST API ready. From:", BREVO_FROM);
-}
+// ── Init Email ────────────────────────────────────────
+// No external email service to initialize — notifications go through the
+// on-screen mailto fallback (see showEmailFallback). Kept as a no-op function
+// since initEmailJS() is still called on startup below.
+function initEmailJS() {}
 
 // ── v6.67: engineer leave step-card state ───────────────────────────────
 // Steps 1 and 2 happen entirely OUTSIDE this system (emails to Synapxe and to
@@ -15256,83 +15179,6 @@ function saveEditLeave() {
 // ╚══════════════════════════════════════════════════════╝
 
 // ══════════════════════════════════════════════════════
-// EMAILJS DIAGNOSTICS & TEST
-// ══════════════════════════════════════════════════════
-function runEmailJSDiag() {
-  var panel = document.getElementById("ejDiagPanel");
-  if (!panel) return;
-
-  var lines = [];
-  var ok  = function(msg){ lines.push('<span style="color:#6ee7b7">✅ ' + msg + '</span>'); };
-  var err = function(msg){ lines.push('<span style="color:#f87171">❌ ' + msg + '</span>'); };
-  var inf = function(msg){ lines.push('<span style="color:#93c5fd">ℹ️  ' + msg + '</span>'); };
-  var wrn = function(msg){ lines.push('<span style="color:#fbbf24">⚠️  ' + msg + '</span>'); };
-
-  // 1. SDK loaded?
-  if (typeof emailjs !== "undefined") ok("EmailJS SDK loaded successfully");
-  else {
-    err("EmailJS SDK NOT loaded — the script from cdn.jsdelivr.net failed to download");
-    wrn("This usually means: (1) No internet, (2) jsdelivr.net is blocked in your network, or (3) you opened the file as file:// without a local server");
-    inf("A fallback to unpkg.com was attempted automatically. If both failed, try opening the browser Console (F12) to see the exact network error.");
-    inf("Quick fix: open the file via a local server (e.g. VS Code Live Server) instead of double-clicking the file");
-    panel.innerHTML = lines.join("<br>");
-    return;
-  }
-
-  // 2. Brevo config set?
-  if (BREVO_API_KEY && BREVO_API_KEY !== "") ok("API Key set: " + BREVO_API_KEY.slice(0,8) + "…" + BREVO_API_KEY.slice(-4));
-  else err("BREVO_API_KEY is empty — set your Brevo API key in the file");
-
-  if (BREVO_FROM && BREVO_FROM !== "") ok("From address set: " + BREVO_FROM);
-  else err("BREVO_FROM is empty — set your sender email in the file");
-
-  ok("API endpoint: " + BREVO_API_URL);
-
-  // 3. Ready state
-  if (emailjsReady) ok("Email service ready (REST API)");
-  else err("Email service not initialised");
-
-  // 4. Origin info
-  inf("Current origin: " + location.origin);
-}
-
-function showEmailTestModal() {
-  var prev = document.getElementById("ejTestEmail");
-  if (prev) prev.value = "";
-  var res = document.getElementById("ejTestResult");
-  if (res) res.innerHTML = "";
-  document.getElementById("emailTestModal").classList.add("open");
-}
-
-function sendTestEmail() {
-  var emailEl = document.getElementById("ejTestEmail");
-  var resEl   = document.getElementById("ejTestResult");
-  var toEmail = (emailEl ? emailEl.value.trim() : "");
-
-  if (!toEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(toEmail)) {
-    if (resEl) resEl.innerHTML = '<span style="color:var(--red)">Please enter a valid email address.</span>';
-    return;
-  }
-  if (!emailjsReady) {
-    if (resEl) resEl.innerHTML = '<span style="color:var(--red)">❌ EmailJS not initialised. Run diagnostics first.</span>';
-    return;
-  }
-
-  if (resEl) resEl.innerHTML = '<span style="color:#6b7280">⏳ Sending…</span>';
-
-  var testHtml = "<p>This is a test email from your Attendance System.</p>" +
-                 "<p>If you can read this, Brevo email is working correctly!</p>" +
-                 "<p>Config used:<br>API: " + BREVO_API_URL + "<br>From: " + BREVO_FROM + "<br>Origin: " + location.origin + "</p>";
-  _elasticSend(toEmail, "✅ Brevo Test — Attendance System", testHtml)
-    .then(function() {
-      if (resEl) resEl.innerHTML = '<span style="color:#15803d;font-weight:700">✅ Email sent! Check your inbox (and spam folder).</span>';
-    })
-    .catch(function(e) {
-      if (resEl) resEl.innerHTML = '<span style="color:var(--red);font-weight:700">❌ Failed: ' + (e.message || e) + '</span>';
-    });
-}
-
-// ══════════════════════════════════════════════════════
 // ADMIN — ENGINEER ACCOUNTS MANAGEMENT
 // Reads from Firestore: emailBindings + empBindings
 // ══ ENGINEER ONBOARDING ══════════════════════════════════════════════
@@ -16749,7 +16595,7 @@ const HELP_TOPICS = {
       "On a trusted device you have used before, the app may skip OTP automatically — the 'Email verified' badge will appear without you entering a code."
     ],
     "manual": [
-      "Email OTP verification confirms that the email address you entered belongs to you. A 6-digit one-time password is sent to your inbox via the n8n automation service and Brevo email platform. You must enter this code before the Check-In button becomes active.",
+      "Email OTP verification confirms that the email address you entered belongs to you. A 6-digit one-time password is sent to your inbox via the n8n automation service. You must enter this code before the Check-In button becomes active.",
       "Once your email is successfully verified on a device, the app records that device as trusted for your email address. On future visits from the same device with the same email, the OTP step is skipped automatically.",
       "If your email address is already linked to a different Engineer ID in the system, the app will warn you. Each email can only be bound to one Engineer ID."
     ]
@@ -17103,7 +16949,7 @@ const HELP_TOPICS = {
     ],
     "troubleshooting": [
       "If Approve/Reject buttons fail with a permission error, ensure you are signed in and that leaveApplications update rules are published from Setup Guide Step 7.",
-      "If the engineer does not receive a notification email, check that the email service (Brevo API key) is configured in the HTML file and run diagnostics from Setup Guide.",
+      "If the engineer does not receive a notification email, remember it's not sent automatically — the pre-filled email modal must be sent from your own mail client via the 'Send Email' button.",
       "If an engineer requests cancellation of approved leave, the application status changes to 'cancel_requested' — review and confirm or deny the cancellation from the Leave Mgmt tab."
     ],
     "manual": [
@@ -17249,25 +17095,21 @@ const HELP_TOPICS = {
   },
   "email-otp-setup": {
     "audience": "admin",
-    "title": "Configuring Email OTP and Notifications",
+    "title": "Email OTP and Notifications",
     "steps": [
-      "Open index.html in a text editor.",
-      "Find the variables BREVO_API_KEY and BREVO_FROM near the bottom of the file and replace them with your Brevo API key and sender email.",
-      "For leave approval notification emails (Step 11 in Setup Guide), the same Brevo credentials are used — no additional setup is needed.",
-      "To test the email service, log in to the dashboard, go to the Setup Guide tab, and click 'Run Diagnostics', then 'Send Test Email'.",
+      "Engineer email OTP verification is handled by an n8n automation workflow — no setup needed on your side unless you want to point it at your own webhook.",
+      "Leave notifications (submitted, approved, rejected, cancelled) don't need any email service configured — the app opens a pre-filled mailto message and you send it from your own mail client.",
       "If you want to change the n8n OTP webhook URLs, find REQUEST_OTP_URL and VERIFY_OTP_URL in the file and update them."
     ],
     "troubleshooting": [
-      "If engineers report not receiving OTP emails, check the Brevo API key is valid and has sufficient daily sending quota.",
-      "If leave approval emails are not sent, run 'EmailJS Live Diagnostics' in Setup Guide to check the Brevo configuration.",
-      "If emails arrive but look like old templates, Brevo caches templates — wait 2 to 5 minutes and send a test again.",
-      "If the OTP request returns a network error, confirm that the n8n webhook URL is reachable and the n8n workflow is active."
+      "If engineers report not receiving OTP emails, the issue is on the n8n workflow side, not this app — check the n8n workflow's own execution log.",
+      "If the OTP request returns a network error, confirm that the n8n webhook URL is reachable and the n8n workflow is active.",
+      "If a leave notification 'isn't sending', remember it's not automatic — check that the mailto modal was actually sent from your mail client."
     ],
     "manual": [
-      "The attendance system uses two email mechanisms. Engineer email OTP verification uses an n8n automation workflow hosted at skyaifactory.com. The workflow calls Brevo's transactional email API to send the 6-digit code. The admin must set BREVO_API_KEY and BREVO_FROM in the HTML file for this to work.",
-      "Leave approval and rejection notification emails are also sent via Brevo using the same API key and sender address. These are triggered when an admin approves or rejects a leave application and sent to the engineer's email address and the HR notification email configured in Team → Team Managers.",
-      "The Setup Guide tab includes a live diagnostics panel that checks API key validity, sender address, and sends a real test email. Use this to verify the setup without approving a real leave application.",
-      "If you prefer to use a different email provider for OTP, replace REQUEST_OTP_URL and VERIFY_OTP_URL with your own webhook endpoints that accept a POST request with { email } and respond with { success: true }."
+      "The attendance system uses two separate email mechanisms. Engineer email OTP verification calls an n8n automation workflow hosted at skyaifactory.com, which sends the 6-digit code itself.",
+      "Leave submission, approval, rejection, and cancellation notifications are NOT sent automatically. The app opens a pre-filled email (mailto link) addressed to the engineer, with HR on Cc if configured under Team → Team Managers — the admin/manager reviews and sends it themselves.",
+      "If you prefer to use a different OTP provider, replace REQUEST_OTP_URL and VERIFY_OTP_URL with your own webhook endpoints that accept a POST request with { email } and respond with { success: true }."
     ]
   },
   "spot-check-location": {
