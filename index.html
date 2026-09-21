@@ -1406,7 +1406,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     <!-- ── LEAVE APPLICATION FORM ──────────────────── -->
     <div id="leaveSection" style="display:none">
-      <div class="ls-strip" id="lsFormStrip">📋 Step 3 of 4 — fill in your leave details and upload the Synapxe approval email</div>
+      <div class="ls-strip" id="lsFormStrip">📋 Step 2 of 3 — fill in your leave details and upload the HR approval email</div>
 
       <div class="card">
         <div class="card-lbl" style="color:var(--blue)">📋 Leave Application Form <span class="help-dot" data-help="apply-leave" title="Help">?</span></div>
@@ -2105,29 +2105,23 @@ tr.on-leave-row td{background:#f0f9ff!important}
           <div class="wfc-grid">
             <div class="wfc-stage">
               <div class="wfc-num">1</div>
-              <div class="wfc-stg-ttl">Engineer → Synapxe</div>
-              <div class="wfc-stg-txt">Engineer emails their leave application to the Synapxe team manager to seek approval.</div>
+              <div class="wfc-stg-ttl">Engineer → HR</div>
+              <div class="wfc-stg-txt">Engineer submits the leave application form and emails it to Bizit HR, CC'ing their Team Manager, to seek approval. Wait until approved before continuing.<br><br><strong>For MC:</strong> WhatsApp the Team Leader immediately, then see a doctor and get the MC, then submit/email the MC to HR and the Team Leader.</div>
             </div>
             <div class="wfc-arrow">→</div>
             <div class="wfc-stage">
               <div class="wfc-num">2</div>
-              <div class="wfc-stg-ttl">Engineer → Bizit</div>
-              <div class="wfc-stg-txt">On approval, engineer forwards the approved email to Bizit HR, CC'ing Team Manager, Team Leader and Boss, and submits the completed leave application form (Excel) to HR.</div>
-            </div>
-            <div class="wfc-arrow">→</div>
-            <div class="wfc-stage">
-              <div class="wfc-num">3</div>
               <div class="wfc-stg-ttl">Engineer → System</div>
-              <div class="wfc-stg-txt">Engineer taps Apply for Leave, fills in the leave details, selects their Site Team Manager, and uploads a photo of the Synapxe approval email.</div>
+              <div class="wfc-stg-txt">On approval, engineer taps Apply for Leave, fills in the leave details, selects their Site Team Manager, and uploads a photo of the HR approval email.</div>
             </div>
             <div class="wfc-arrow">→</div>
             <div class="wfc-stage wfc-act">
-              <div class="wfc-num">4</div>
+              <div class="wfc-num">3</div>
               <div class="wfc-stg-ttl">Manager / Admin → Verify</div>
-              <div class="wfc-stg-txt">Compare the uploaded approval email against the application below — sender, recipients (HR, Team Manager, Team Leader, Boss), dates and leave type must match. If they match, approve; the system emails the engineer the decision.</div>
+              <div class="wfc-stg-txt">Compare the uploaded approval email against the application below — sender, recipients (HR, Team Manager), dates and leave type must match. If they match, approve; the system emails the engineer the decision.</div>
             </div>
           </div>
-          <div class="wfc-reject">✗ Rejected at any stage — Synapxe, Bizit, or Manager/Admin — the engineer restarts from Step 1.</div>
+          <div class="wfc-reject">✗ Rejected at any stage — HR, or Manager/Admin — the engineer restarts from Step 1.</div>
         </div>
       </div>
 
@@ -11811,11 +11805,11 @@ function _dismissBuddyAlert(alertId) {
 // since initEmailJS() is still called on startup below.
 function initEmailJS() {}
 
-// ── v6.67: engineer leave step-card state ───────────────────────────────
-// Steps 1 and 2 happen entirely OUTSIDE this system (emails to Synapxe and to
-// Bizit HR), so the app cannot verify them — these are honesty checkboxes that
-// gate the form. The real control is the manager comparing the uploaded approval
-// email at stage 4.
+// ── v6.72: engineer leave step-card state ───────────────────────────────
+// Step 1 happens entirely OUTSIDE this system (submitting the leave form and
+// emailing Bizit HR, CC'ing the Team Manager), so the app cannot verify it —
+// this is an honesty checkbox that gates the form. The real control is the
+// manager comparing the uploaded approval email at stage 3.
 //
 // Stored per-device, not in Firestore: before the form is filled there is no
 // engineer identity to key a record to, and half-formed records are not worth
@@ -11843,8 +11837,7 @@ function _leaveStepsTick(step, engId) {
   var st = _leaveStepsLoad();
   var id = _normIdKey(engId);
   if (id) st.engId = id;
-  if (step === 1) st.synapxeAt = Date.now();
-  if (step === 2) st.bizitAt   = Date.now();
+  if (step === 1) st.hrEmailAt = Date.now();
   _leaveStepsSave(st);
   return st;
 }
@@ -11861,12 +11854,12 @@ function _leaveStepsForEngineer(st, engId) {
 }
 
 function _leaveStepsGateOk(st) {
-  return !!(st && st.synapxeAt && st.bizitAt);
+  return !!(st && st.hrEmailAt);
 }
 
 function _leaveStepsDeclared(st) {
   if (!_leaveStepsGateOk(st)) return null;
-  return { synapxeAt: st.synapxeAt, bizitAt: st.bizitAt };
+  return { hrEmailAt: st.hrEmailAt };
 }
 
 // v6.67: a rejection or cancellation means re-running the process — but the popup
@@ -11880,25 +11873,23 @@ function _leaveStepsDeclared(st) {
 function _leaveStepsClearIfBefore(decidedAt) {
   if (!decidedAt) return false;                 // unknown decision time — never clear
   var st = _leaveStepsLoad();
-  if (!st.synapxeAt && !st.bizitAt) return false;
-  var newest = Math.max(st.synapxeAt || 0, st.bizitAt || 0);
+  if (!st.hrEmailAt) return false;
+  var newest = st.hrEmailAt || 0;
   if (newest > decidedAt) return false;         // ticks are for a newer attempt
   _leaveStepsClear();
   return true;
 }
 
-// ── v6.67: leave workflow step card ─────────────────────────────────────
+// ── v6.72: leave workflow step card ─────────────────────────────────────
+// Only steps 1 and 3 are ever rendered as cards — step 2 IS the real leave-
+// details form (see lsRevealForm), not a card, so LS_STEPS[2] is left unused.
 var LS_STEPS = [
   null,
-  { t: "Email Synapxe for approval",
-    b: "Submit your leave application email to your <strong>Synapxe team manager</strong> to seek approval. Wait until they approve before continuing.",
+  { t: "Submit application & email HR",
+    b: "Fill in your leave application form and email it to <strong>Bizit HR</strong>, CC'ing your <strong>Team Manager</strong>, to seek approval. Wait until you get approval before continuing.<br><br>"
+      + "<strong>For MC:</strong> WhatsApp your <strong>Team Leader</strong> immediately, then see a doctor and get the MC. Once you have it, submit/email the MC to <strong>HR and your Team Leader</strong>.",
     c: "✓ I've sent it" },
-  { t: "Forward to Bizit HR",
-    b: "Forward the Synapxe approval email to <strong>Bizit HR</strong>, CC'ing your <strong>Team Manager, Team Leader and Boss</strong>. Fill in the leave application form and send it to HR.",
-    c: "✓ I've sent it" },
-  { t: "Fill in your leave details",
-    b: "Enter your leave information and upload a photo of the Synapxe approval email. This step ticks itself once you submit.",
-    c: "Continue to the form →" },
+  null,
   { t: "Waiting for verification",
     b: "Your Site Team Manager / Admin will compare your uploaded approval email against your application. You'll get the decision here and by email.",
     c: "📁 View My Leaves" }
@@ -11914,19 +11905,18 @@ function lsRender(step) {
   if (!box) return;
   var d = LS_STEPS[step];
   var dots = "";
-  for (var i = 1; i <= 4; i++) {
+  for (var i = 1; i <= 3; i++) {
     dots += '<div class="ls-dot ' + (i < step ? "done" : (i === step ? "cur" : "")) + '"></div>';
   }
-  var onClick = step === 4 ? "lsClose();showMyLeaves()"
-              : step === 3 ? "lsRevealForm()"
+  var onClick = step === 3 ? "lsClose();showMyLeaves()"
               : "lsTick(" + step + ")";
   var html = '<div class="ls-rail">' + dots + '</div>'
-    + '<div class="ls-step">STEP ' + step + ' OF 4</div>'
+    + '<div class="ls-step">STEP ' + step + ' OF 3</div>'
     + '<div class="ls-ttl">' + d.t + '</div>'
     + '<div class="ls-txt">' + d.b + '</div>'
-    + '<button class="ls-btn' + (step === 4 ? " ls-ok" : "") + '" type="button" onclick="' + onClick + '">' + d.c + '</button>'
+    + '<button class="ls-btn' + (step === 3 ? " ls-ok" : "") + '" type="button" onclick="' + onClick + '">' + d.c + '</button>'
     + '<div class="ls-sub">';
-  if (step > 1 && step < 4) html += '<button class="ls-lnk" type="button" onclick="lsBack(' + step + ')">← Back</button>';
+  if (step > 1 && step < 3) html += '<button class="ls-lnk" type="button" onclick="lsBack(' + step + ')">← Back</button>';
   html += '<button class="ls-lnk" type="button" onclick="lsClose()">Close</button></div>';
   box.innerHTML = html;
   var ov = document.getElementById("leaveStepsOverlay");
@@ -11939,9 +11929,8 @@ function lsRender(step) {
 function lsOpen() {
   var st = _leaveStepsForEngineer(_leaveStepsLoad(), _lsSessEngId());
   _leaveStepsSave(st);                    // persist a reset if ownership changed
-  if (_leaveStepsGateOk(st))      lsRevealForm();
-  else if (st.synapxeAt)          lsRender(2);
-  else                            lsRender(1);
+  if (_leaveStepsGateOk(st)) lsRevealForm();
+  else                       lsRender(1);
 }
 
 function lsTick(step) {
@@ -11953,8 +11942,7 @@ function lsTick(step) {
 function lsBack(step) {
   // Untick the step we are leaving so Back genuinely undoes a mis-tap.
   var st = _leaveStepsLoad();
-  if (step === 2) delete st.synapxeAt;
-  if (step === 3) delete st.bizitAt;
+  if (step === 1) delete st.hrEmailAt;
   _leaveStepsSave(st);
   lsRender(step - 1);
 }
@@ -11970,12 +11958,13 @@ function lsRevealForm() {
 }
 
 function lsShowStep4() {
-  lsRender(4);
+  lsRender(3); // v6.72: renamed the step (was 4/4, now 3/3) but kept the function
+               // name to avoid touching every call site.
 }
 
 // ── Engineer: Show/Hide Leave Section ───────────────
-// v6.67: the Apply for Leave button now opens the workflow step card. The form
-// itself is only reachable once steps 1 and 2 are ticked (or on hide, which must
+// v6.72: the Apply for Leave button now opens the workflow step card. The form
+// itself is only reachable once step 1 is ticked (or on hide, which must
 // still work unconditionally).
 function showLeaveSection(show) {
   if (!show) { _showLeaveForm(false); return; }
@@ -13175,16 +13164,14 @@ function viewLeaveAtt(id) {
 
   title.textContent = "📎 " + (rec.attachmentName||"Attachment") + " — " + (rec.empName||"");
 
-  // v6.67: show what the engineer declared in steps 1 & 2, right where the
+  // v6.72: show what the engineer declared in step 1, right where the
   // manager is comparing it against the uploaded approval email.
   var declEl = document.getElementById("attDeclLine");
   if (declEl) {
     var sd = rec.stepsDeclared;
-    if (sd && sd.synapxeAt && sd.bizitAt) {
-      declEl.innerHTML = "Engineer declared: Synapxe approval "
-        + sanitizeHtml(new Date(sd.synapxeAt).toLocaleString("en-SG"))
-        + " · Forwarded to HR "
-        + sanitizeHtml(new Date(sd.bizitAt).toLocaleString("en-SG"));
+    if (sd && sd.hrEmailAt) {
+      declEl.innerHTML = "Engineer declared: Submitted &amp; emailed HR "
+        + sanitizeHtml(new Date(sd.hrEmailAt).toLocaleString("en-SG"));
       declEl.style.display = "block";
     } else {
       // Applications submitted before v6.67 have no declaration — show nothing
