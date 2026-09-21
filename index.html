@@ -10220,45 +10220,11 @@ function renderCalendar() {
   grid.innerHTML = html;
 }
 
-function _anRenderLeaveBalanceStrip(wrap, empId, year, recs) {
-  // v6.74: forceRefresh=true — this is what the engineer reads as "how many
-  // days do I have left", so it must never show a balance cached from before
-  // admin last saved the entitlement (see _anFetchEntitlement comment).
-  _anFetchEntitlement(empId, year, function(doc) {
-    if (!wrap) return;
-    var hasAny = doc && (Object.keys(doc.quotas||{}).length > 0);
-
-    if (!hasAny) {
-      var hasUsage = LEAVE_TYPES.some(function(lt){
-        return _anComputeUsed(empId, year, lt, recs) > 0;
-      });
-      if (!hasUsage) {
-        wrap.innerHTML = '<div style="background:#f3f4f6;border-radius:10px;padding:10px 14px;font-size:.8rem;color:var(--ink3);font-style:italic">Leave entitlements not yet configured by admin.</div>';
-        return;
-      }
-    }
-
-    var cards = '';
-    LEAVE_TYPES.forEach(function(lt) {
-      var b = _anGetBalance(doc, lt, empId, year, recs);
-      if (b.quota === null && b.used === 0) return;
-      var usedOf = b.quota !== null ? b.used + " / " + b.quota : b.used + " / —";
-      var remTxt = b.balance !== null ? (b.balance + " left") : "—";
-      var remColor = b.balance === null ? "#6b7280" : b.balance > 0 ? "#15803d" : "#b91c1c";
-      var dot = LEAVE_TYPE_COLORS[lt] || "#6b7280";
-      cards += '<div style="flex-shrink:0;min-width:140px;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-right:10px">'
-        + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">'
-        +   '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;display:inline-block"></span>'
-        +   '<span style="font-size:.72rem;font-weight:700;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px">' + lt + '</span>'
-        + '</div>'
-        + '<div style="font-size:.82rem;color:var(--ink3);margin-bottom:2px">' + usedOf + ' days used</div>'
-        + '<div style="font-size:.88rem;font-weight:800;color:' + remColor + '">' + remTxt + '</div>'
-        + '</div>';
-    });
-
-    wrap.innerHTML = '<div style="display:flex;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch">' + cards + '</div>';
-  }, true);
-}
+// v6.75: _anRenderLeaveBalanceStrip() removed — it rendered a second, duplicate
+// balance widget (a horizontal card strip) in the My Leave Applications modal,
+// on top of the "📊 Leave Balance" panel from _renderMyLeavesBalance() below.
+// Removed the dead widget and its call site; _renderMyLeavesBalance() is now
+// the only balance display there.
 
 function anSaveManpowerConfig() {
   var inputs = document.querySelectorAll("#manpowerConfigRows .mp-row-input");
@@ -14807,23 +14773,10 @@ function loadMyLeaves() {
       list.innerHTML = '<div style="text-align:center;padding:30px;color:var(--ink3);font-size:.88rem">No leave applications found for this Engineer ID.</div>';
       return;
     }
-    // ── Balance strip ─────────────────────────────────
-    var year = new Date().getFullYear();
-    var balWrap = document.getElementById("myLeavesBalanceStrip");
-    if (!balWrap) {
-      balWrap = document.createElement("div");
-      balWrap.id = "myLeavesBalanceStrip";
-      balWrap.style.cssText = "margin-bottom:16px;overflow-x:auto;padding-bottom:4px";
-      var modalBox = document.querySelector("#myLeavesModal .modal-box");
-      var titleEl  = document.getElementById("myLeavesEmpInfo");
-      if (modalBox && titleEl && titleEl.nextSibling) {
-        modalBox.insertBefore(balWrap, titleEl.nextSibling.nextSibling || titleEl.nextSibling);
-      } else if (modalBox) {
-        modalBox.insertBefore(balWrap, modalBox.firstChild.nextSibling);
-      }
-    }
-    _anRenderLeaveBalanceStrip(balWrap, empId, year, recs);
-    // ── End balance strip ─────────────────────────────
+    // v6.75: the card-strip balance widget that used to render here was
+    // removed — it duplicated the "📊 Leave Balance" panel already shown by
+    // _renderMyLeavesBalance() below (see myLeavesBalance div), just in a
+    // different style. One widget now, not two.
     list.innerHTML = recs.map(function(r){
       var statusColor = {
         pending:"#92400e", approved:"#15803d", rejected:"#b91c1c",
