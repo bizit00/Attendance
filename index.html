@@ -10839,9 +10839,16 @@ var anLeaveTrendChart = null;
 
 // Fetch entitlement doc from Firestore (or local cache).
 // cb(doc) where doc = { quotas:{}, adjustments:{} } or null.
-function _anFetchEntitlement(empId, year, cb) {
+// v6.73: `forceRefresh` skips the cache read (but still repopulates it). The
+// cache has no expiry — an engineer's tab that queried this before admin set
+// up an entitlement would cache `null` forever and silently bypass the quota
+// check for the rest of that session, even after admin saves a quota. The
+// balance check at actual submission time must never trust a stale cache, so
+// it always passes forceRefresh=true; other callers (e.g. admin's own
+// Entitlements screen) keep using the cache as before.
+function _anFetchEntitlement(empId, year, cb, forceRefresh) {
   var key = empId + "_" + year;
-  if (entitlementCache[key] !== undefined) { cb(entitlementCache[key]); return; }
+  if (!forceRefresh && entitlementCache[key] !== undefined) { cb(entitlementCache[key]); return; }
   if (!db) { entitlementCache[key] = null; cb(null); return; }
   db.collection("leaveEntitlements").doc(key).get()
     .then(function(snap) {
@@ -12425,6 +12432,8 @@ function onLeaveTypeChange() {
   var year     = new Date().getFullYear();
   var numDays  = (fromDate && toDate) ? Math.round((new Date(toDate) - new Date(fromDate)) / 86400000) + 1 : 0;
 
+  // v6.73: forceRefresh=true so this hint can't show "safe" from a stale cache
+  // entry that predates the admin actually setting up the entitlement.
   _anFetchEntitlement(empId, year, function(doc) {
     if (!doc || !doc.quotas || doc.quotas[leaveType] == null) {
       hint.style.display = "none";
@@ -12474,7 +12483,7 @@ function onLeaveTypeChange() {
         hint.style.display = "block";
       })
       .catch(function() { hint.style.display = "none"; });
-  });
+  }, true);
 }
 
 // ── Submit Leave Application ────────────────────────
@@ -12553,6 +12562,8 @@ function submitLeave() {
 
   // ── Entitlement check (async) ────────────────────
   // Check quota before writing. If no entitlement set, allow through.
+  // v6.73: forceRefresh=true — this is the actual gate, so it must never trust
+  // a cached entitlement doc (see _anFetchEntitlement comment above).
   _checkOverlapThenContinue(function() {
   _anFetchEntitlement(empId, year, function(entDoc) {
     if (entDoc && entDoc.quotas && entDoc.quotas[leaveType] != null) {
@@ -12586,7 +12597,16 @@ function submitLeave() {
             });
             doSubmit(used);
           })
-          .catch(function() { _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now, managerId, managerName, managerEmail); });
+          .catch(function(e) {
+            // v6.73: an entitlement IS configured for this leave type, so a failed
+            // "how many days already used" query must NOT fall through to an
+            // unchecked submit — that was silently bypassing the quota entirely on
+            // any network blip or read error. Ask the engineer to retry instead.
+            console.warn("[Leave] balance check query failed:", e);
+            showLeaveError("⚠️ Could not verify your leave balance right now — please check your connection and try submitting again.");
+            var btn2 = document.getElementById("leaveSubmitBtn");
+            if (btn2) { btn2.disabled = false; btn2.innerHTML = "📩 Submit Leave Application"; }
+          });
       } else {
         // No Firebase: use in-memory leaveRecs if available
         doSubmit(_anComputeUsed(empId, year, leaveType));
@@ -12595,7 +12615,7 @@ function submitLeave() {
       // No entitlement configured for this leave type — allow submission
       _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDate, toDate, reason, numDays, now, managerId, managerName, managerEmail);
     }
-  }); // end _anFetchEntitlement
+  }, true); // end _anFetchEntitlement — forceRefresh=true, see comment above
   }); // end _checkOverlapThenContinue
 }  // end submitLeave — actual write is in _doActualLeaveSubmit below
 
