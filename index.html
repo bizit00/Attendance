@@ -12666,7 +12666,11 @@ function _doActualLeaveSubmit(empId, empName, empEmail, site, leaveType, fromDat
   db.collection("leaveApplications").add(leaveRec)
     .then(function(){
       clearLeaveError();
-      sendLeaveSubmittedEmail(leaveRec);
+      // v6.71: sendLeaveSubmittedEmail() used to fire here, but THIS call site runs
+      // on the ENGINEER'S OWN device right after they submit leave, so it was popping
+      // up an internal manager-notification tool on the wrong screen. Removed —
+      // admin/manager already sees new pending applications via the Leave Mgmt tab's
+      // pending-count badge.
       if (btn) { btn.disabled=false; btn.innerHTML="📩 Submit Leave Application"; }
       toast("✅ Leave application submitted!", "t-ok");
       showLeaveSection(false);
@@ -15664,11 +15668,16 @@ function onbPromptDelete(id) {
 function onbConfirmDelete() {
   if (!_onbDeleteId) return;
   var id = _onbDeleteId;
+  var rec = _onbRecords.find(function(r){ return r._id === id; });
   document.getElementById("onbDeleteModal").classList.remove("open");
 
   if (fbOk && db) {
     db.collection("engineerOnboarding").doc(id).delete()
-      .then(function() { toast("Record deleted", "t-ok"); loadOnboarding(); })
+      .then(function() {
+        toast("Record deleted", "t-ok");
+        _syncEngAccountDeleteFromOnboarding(id, rec && rec.email); // v6.71: one delete, everywhere
+        loadOnboarding();
+      })
       .catch(function(e) { toast("Delete failed: "+(e.message||"error"), "t-err"); });
   } else {
     _onbRecords = _onbRecords.filter(function(r){ return r._id !== id; });
@@ -15676,6 +15685,58 @@ function onbConfirmDelete() {
     toast("Deleted locally", "t-ok");
   }
   _onbDeleteId = null;
+}
+
+// v6.71: keep the two engineer registries in lock-step on DELETE, not just edit — deleting from
+// either Onboarding or Engineer Accounts previously left a stale record behind in the other,
+// which is exactly how a deleted engineer (e.g. Eng1000) kept reappearing in places like the
+// Leave Entitlements picker. Both directions are best-effort and fire-and-forget: a failure here
+// is only logged, and never blocks or reverses the delete the admin already confirmed.
+function _syncEngAccountDeleteFromOnboarding(empId, email) {
+  if (!empId) return;
+  var emailKey = (email || "").trim().toLowerCase();
+
+  // Local mirror (used when Firestore is offline / in demo mode).
+  try {
+    var eb = JSON.parse(localStorage.getItem("at_email_bind_v2")||"{}");
+    var xb = JSON.parse(localStorage.getItem("at_emp_bind_v2")||"{}");
+    if (emailKey && eb[emailKey]) delete eb[emailKey];
+    if (xb[empId]) delete xb[empId];
+    localStorage.setItem("at_email_bind_v2", JSON.stringify(eb));
+    localStorage.setItem("at_emp_bind_v2",   JSON.stringify(xb));
+  } catch(_){}
+
+  // Drop it from the in-memory Engineer Accounts table too, so it disappears immediately
+  // instead of waiting for the next adminAccRefresh().
+  if (typeof _accData !== "undefined") {
+    _accData = _accData.filter(function(r){ return (r.empId||"") !== empId && (r.email||"").toLowerCase() !== emailKey; });
+    if (document.getElementById("accTblBody")) adminAccRender();
+  }
+
+  if (!(fbOk && db)) return;
+  var batch = db.batch();
+  if (emailKey) batch.delete(db.collection("emailBindings").doc(emailKey));
+  batch.delete(db.collection("empBindings").doc(empId));
+  batch.commit()
+    .then(function(){ console.log("[v6.71] Eng Account cleared for deleted onboarding record", empId); })
+    .catch(function(e){ console.warn("[v6.71] Eng Account delete-sync failed:", e); });
+}
+
+// Reverse of the above — when an admin deletes from Engineer Accounts, also delete the matching
+// Onboarding record (Firestore doc ID for engineerOnboarding IS the empId) so it stops appearing
+// in Onboarding, the check-in identity gate, the Leave Entitlements picker, or anywhere else that
+// reads the onboarding registry.
+function _syncOnboardingDeleteFromEngAccount(empId) {
+  if (!empId || !(fbOk && db)) return;
+  db.collection("engineerOnboarding").doc(empId).delete()
+    .then(function() {
+      if (typeof _onbRecords !== "undefined") {
+        _onbRecords = _onbRecords.filter(function(r){ return r._id !== empId; });
+        if (typeof _onbRenderTable === "function" && document.getElementById("onbTblBody")) _onbRenderTable();
+      }
+      console.log("[v6.71] Onboarding record cleared for deleted Eng Account", empId);
+    })
+    .catch(function(e){ console.warn("[v6.71] Onboarding delete-sync failed:", e); });
 }
 
 // ── Export Excel ──────────────────────────────────────
@@ -15969,6 +16030,7 @@ function adminAccConfirmDelete() {
     _accDeleteKey = null;
     resetBtn();
     document.getElementById("accDeleteModal").classList.remove("open");
+    if (rec && rec.empId) _syncOnboardingDeleteFromEngAccount(rec.empId); // v6.71: one delete, everywhere
     adminAccRender();
     toast("🗑️ Account deleted", "t-ok");
   }
