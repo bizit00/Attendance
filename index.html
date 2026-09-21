@@ -3254,11 +3254,15 @@ service cloud.firestore {
     <div class="modal-sub">Set annual leave quotas and manual adjustments per engineer.</div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
-      <div class="field" style="margin-bottom:0">
+      <div class="field" style="margin-bottom:0;position:relative">
         <label>Engineer</label>
-        <select id="entEmpSel" onchange="anLoadEntitlement()">
-          <option value="">— Select engineer —</option>
-        </select>
+        <input type="text" id="entEmpCombo" placeholder="🔍 Type a name or Engineer ID, or click to see all…"
+               autocomplete="off"
+               oninput="anFilterEntEmpOptions()"
+               onfocus="anFilterEntEmpOptions()"
+               onblur="setTimeout(anCloseEntEmpDropdown, 150)">
+        <input type="hidden" id="entEmpSel" value="">
+        <div id="entEmpDropdown" style="display:none;position:absolute;left:0;right:0;top:100%;margin-top:2px;z-index:50;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.14);max-height:230px;overflow-y:auto"></div>
       </div>
       <div class="field" style="margin-bottom:0">
         <label>Year</label>
@@ -3557,6 +3561,10 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
   if (_gpsRetryTimer[dir]) { clearTimeout(_gpsRetryTimer[dir]); _gpsRetryTimer[dir] = null; }
   if (isAutoRetry) { _gpsAttempt[dir] = (_gpsAttempt[dir] || 0) + 1; }
   else { _gpsAttempt[dir] = 1; }
+  var attemptNum = _gpsAttempt[dir]; // label the countdown with which attempt this is, so a
+                                      // second automatic detection doesn't look like an
+                                      // unexplained restart to the engineer.
+  var attemptLabel = MAX_GPS_ATTEMPTS > 1 ? (" (attempt " + attemptNum + " of " + MAX_GPS_ATTEMPTS + ")") : "";
 
   var btnId  = dir==="in" ? "gpsCiBtn"    : "gpsCoBtnEl";
   var iconId = dir==="in" ? "gpsCiIcon"   : "gpsCoIcon";
@@ -3566,7 +3574,7 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
   var btn = document.getElementById(btnId);
   btn.className = "gps-btn checking";
   document.getElementById(iconId).textContent = "⏳";
-  document.getElementById(txtId).textContent  = "Detecting location…";
+  document.getElementById(txtId).textContent  = "Detecting location…" + attemptLabel;
   document.getElementById(statId).innerHTML   = "";
   GPS[dir] = null;
   chkBtn();
@@ -3679,7 +3687,7 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
     var tx = document.getElementById(txtId);
     if (!tx) return;
     var remain = Math.max(0, Math.ceil((maxWaitMs - (Date.now() - startTs)) / 1000));
-    tx.textContent = "Detecting location… " + remain + "s" + (bestAccTxt ? " · " + bestAccTxt : "");
+    tx.textContent = "Detecting location…" + attemptLabel + " " + remain + "s" + (bestAccTxt ? " · " + bestAccTxt : "");
   }, 500);
 
   try {
@@ -9823,10 +9831,16 @@ function anCloseManpowerConfig() {
 }
 
 // ── ENTITLEMENTS MODAL ──────────────────────────────────
+var _entEmpAllOptions = []; // full {empId, name} list, kept so the search box can re-filter
+                             // the picker instantly without re-touching leaveRecs/_onbRecords.
+
 function anOpenEntitlements() {
-  var sel = document.getElementById("entEmpSel");
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— Select engineer —</option>';
+  var combo = document.getElementById("entEmpCombo");
+  var hidden = document.getElementById("entEmpSel");
+  if (!combo || !hidden) return;
+  combo.value = "";
+  hidden.value = "";
+  anCloseEntEmpDropdown();
 
   var seen = {};
   leaveRecs.forEach(function(r) {
@@ -9839,11 +9853,8 @@ function anOpenEntitlements() {
     var id = o.engId || o._id;
     if (id && !seen[id]) seen[id] = o.name || id;
   });
-  Object.keys(seen).sort().forEach(function(empId) {
-    var o = document.createElement("option");
-    o.value = empId;
-    o.textContent = empId + " — " + seen[empId];   // empId already carries the "Eng" prefix
-    sel.appendChild(o);
+  _entEmpAllOptions = Object.keys(seen).sort().map(function(empId) {
+    return { empId: empId, name: seen[empId] };
   });
 
   var ySel = document.getElementById("entYearSel");
@@ -9862,6 +9873,50 @@ function anOpenEntitlements() {
   document.getElementById("entRows").innerHTML = '<div style="text-align:center;padding:20px;color:var(--ink3);font-size:.85rem">Select an engineer and year above.</div>';
   document.getElementById("entStatus").textContent = "";
   document.getElementById("entitlementsModal").classList.add("open");
+}
+
+// Single searchable combobox — typing filters the dropdown list right below the same field;
+// with 100+ engineers, scrolling a flat dropdown to find one was too slow.
+function anFilterEntEmpOptions() {
+  var combo = document.getElementById("entEmpCombo");
+  var dd = document.getElementById("entEmpDropdown");
+  if (!combo || !dd) return;
+
+  var q = combo.value.trim().toLowerCase();
+  var matches = !q ? _entEmpAllOptions : _entEmpAllOptions.filter(function(e) {
+    return e.empId.toLowerCase().indexOf(q) !== -1 || (e.name||"").toLowerCase().indexOf(q) !== -1;
+  });
+
+  if (!matches.length) {
+    dd.innerHTML = '<div style="padding:10px 12px;font-size:.82rem;color:var(--ink3)">No engineers match "' + sanitizeHtml(combo.value) + '"</div>';
+  } else {
+    dd.innerHTML = matches.map(function(e) {
+      var label = e.empId + " — " + e.name;
+      return '<div onmousedown="anSelectEntEmp(\'' + e.empId.replace(/'/g,"\\'") + '\')" '
+        + 'onmouseenter="this.style.background=\'#f3f4f6\'" onmouseleave="this.style.background=\'\'" '
+        + 'style="padding:9px 12px;font-size:.83rem;cursor:pointer;border-bottom:1px solid #f3f4f6">'
+        + sanitizeHtml(label) + '</div>';
+    }).join("");
+  }
+  dd.style.display = "block";
+}
+
+// Admin clicked (mousedown, so it fires before the input's onblur closes the dropdown) an
+// engineer in the filtered list — commit the pick and load their entitlement rows.
+function anSelectEntEmp(empId) {
+  var e = _entEmpAllOptions.find(function(x){ return x.empId === empId; });
+  var combo = document.getElementById("entEmpCombo");
+  var hidden = document.getElementById("entEmpSel");
+  if (!e || !combo || !hidden) return;
+  combo.value = e.empId + " — " + e.name;
+  hidden.value = e.empId;
+  anCloseEntEmpDropdown();
+  anLoadEntitlement();
+}
+
+function anCloseEntEmpDropdown() {
+  var dd = document.getElementById("entEmpDropdown");
+  if (dd) dd.style.display = "none";
 }
 
 function anLoadEntitlement() {
@@ -9951,9 +10006,11 @@ function anSaveEntitlement() {
     if (v !== 0) adjs[lt] = v;
   });
 
-  var empSel = document.getElementById("entEmpSel");
-  var empName = empSel ? (empSel.options[empSel.selectedIndex] || {}).textContent || "" : "";
-  empName = empName.replace(/^Eng \S+ — /, "");
+  // entEmpSel is now a hidden input (the visible field is the entEmpCombo searchable combobox),
+  // not a <select> — it has no .options/.selectedIndex. Look the display name up from the
+  // combobox's own data instead.
+  var empOpt = _entEmpAllOptions.find(function(e){ return e.empId === empId; });
+  var empName = empOpt ? empOpt.name : "";
 
   var doc = {
     empId: empId,
