@@ -3511,6 +3511,9 @@ function resetGps(dir) {
 var _gpsAttempt = { in: 0, out: 0 };
 var _gpsRetryTimer = { in: null, out: null }; // v6.65: pending auto-retry timer per direction
 var MAX_GPS_ATTEMPTS = 2; // one retry
+var _gpsGaveUp = { in: false, out: false }; // v6.70: true once both attempts are exhausted and the
+                                             // recovery card is showing — stops the tab-resume handler
+                                             // from silently restarting auto-detection underneath it.
 
 function _handleGpsFailureOutcome(dir) {
   if (_gpsAttempt[dir] < MAX_GPS_ATTEMPTS) {
@@ -3520,6 +3523,7 @@ function _handleGpsFailureOutcome(dir) {
     _gpsRetryTimer[dir] = setTimeout(function(){ _gpsRetryTimer[dir] = null; verifyGps(dir, true); }, 800);
   } else {
     _gpsAttempt[dir] = 0;
+    _gpsGaveUp[dir] = true; // v6.70: stop auto-detecting — only Reset app / manual confirmation remain
     _gpsRecover(dir);
   }
 }
@@ -3532,18 +3536,32 @@ function _gpsRecover(dir) {
     requestManualConfirm("out");
     return;
   }
-  // dir === "in": after two failures, REPLACE the status with a single unified card — the
-  // location button above retries, this card offers reset-app, and the ask-admin fallback sits
-  // below. Replace (not append) keeps it to one message and is idempotent (no dedupe guard needed).
+  // dir === "in": after two failures, REPLACE the status with a single unified card. Auto-detection
+  // has stopped (v6.70) — the location button above is disabled, so this card is now the only way
+  // forward: reset-app or the ask-admin fallback. Replace (not append) keeps it to one message and
+  // is idempotent (no dedupe guard needed).
   var st = document.getElementById("gpsCiStatus");
   if (st) {
     st.innerHTML =
       '<div style="margin-top:8px;padding:11px 13px;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;color:#9a3412;font-size:.82rem;line-height:1.55">' +
-        '📍 <b>Still no GPS after 2 tries.</b> Tap the location button above to try once more, or reset the app (reloads &amp; clears cached data — you may need to verify your email again).' +
+        '📍 <b>Still no GPS after 2 tries.</b> Reset the app (reloads &amp; clears cached data — you may need to verify your email again), or request manual confirmation below.' +
         '<button type="button" onclick="_resetAppData()" style="margin-top:10px;width:100%;padding:11px 14px;background:#ea580c;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">🔄 Reset the app</button>' +
       '</div>' +
-      '<button type="button" onclick="requestManualConfirm(\'in\')" style="margin-top:10px;width:100%;padding:10px 14px;background:#fff;color:#b45309;border:1px solid #f59e0b;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">✋ Can\'t verify? Request manual confirmation</button>';
+      '<button type="button" onclick="requestManualConfirm(\'in\')" style="margin-top:10px;width:100%;padding:10px 14px;background:#00c896;color:#fff;border:1px solid #00c896;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">✋ Can\'t verify? Request manual confirmation</button>';
   }
+  // v6.70: disable the GPS button itself — "Tap to try location again" is gone, auto-detect has
+  // stopped, and the recovery card above is the only path forward (Reset app / manual confirmation).
+  var gbtn = document.getElementById("gpsCiBtn");
+  if (gbtn) {
+    gbtn.disabled = true;
+    gbtn.className = "gps-btn fail";
+    gbtn.style.opacity = ".55";
+    gbtn.style.cursor = "not-allowed";
+  }
+  var gic = document.getElementById("gpsCiIcon");
+  if (gic) gic.textContent = "🚫";
+  var gtx = document.getElementById("gpsCiTxt");
+  if (gtx) gtx.textContent = "Auto-detection stopped — use the options below";
 }
 
 function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry chain
@@ -3560,7 +3578,8 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
   // Cancel any pending auto-retry for this direction so a new run never races a scheduled one.
   if (_gpsRetryTimer[dir]) { clearTimeout(_gpsRetryTimer[dir]); _gpsRetryTimer[dir] = null; }
   if (isAutoRetry) { _gpsAttempt[dir] = (_gpsAttempt[dir] || 0) + 1; }
-  else { _gpsAttempt[dir] = 1; }
+  else { _gpsAttempt[dir] = 1; _gpsGaveUp[dir] = false; } // v6.70: a genuine fresh run (manual tap,
+                                                            // reset, etc.) clears the give-up state
   var attemptNum = _gpsAttempt[dir]; // label the countdown with which attempt this is, so a
                                       // second automatic detection doesn't look like an
                                       // unexplained restart to the engineer.
@@ -3572,6 +3591,9 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
   var statId = dir==="in" ? "gpsCiStatus" : "gpsCoStatus";
 
   var btn = document.getElementById(btnId);
+  btn.disabled = false;             // v6.70: undo _gpsRecover's disable if this is a genuine retry
+  btn.style.opacity = "";
+  btn.style.cursor = "";
   btn.className = "gps-btn checking";
   document.getElementById(iconId).textContent = "⏳";
   document.getElementById(txtId).textContent  = "Detecting location…" + attemptLabel;
@@ -3745,6 +3767,10 @@ function _maybeResumeGps() {
   var siteVal = (document.getElementById("empSite") || {}).value || "";
   if (!siteVal) return;                                        // verifyGps("in") needs a site (would just toast)
   if (GPS.in && GPS.in.ok) return;                            // already have a good fix — leave it
+  if (_gpsGaveUp.in) return;                                   // v6.70: recovery card is showing —
+                                                                // don't silently restart auto-detect
+                                                                // on a tab-resume, only a real user
+                                                                // action (retry tap / reset) should
   var gbtn = document.getElementById("gpsCiBtn");
   if (gbtn && /\bchecking\b/.test(gbtn.className)) return;      // a verify is already running
   clearTimeout(_gpsResumeTimer);                              // debounce rapid lock/unlock toggles
@@ -4028,7 +4054,7 @@ function setGpsUI(dir, state, name, dist, acc) {
   // is no separate "Refresh GPS" button. Each failure renders a SINGLE unified card (reason +
   // any fix tips) via _gpsMsg, with the ask-admin fallback below it.
   var manualBtn = '<button type="button" onclick="requestManualConfirm(\''+dir+'\')" '+
-    'style="margin-top:10px;width:100%;padding:10px 14px;background:#fff;color:#b45309;border:1px solid #f59e0b;'+
+    'style="margin-top:10px;width:100%;padding:10px 14px;background:#00c896;color:#fff;border:1px solid #00c896;'+
     'border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">✋ Can\'t verify? Request manual confirmation</button>';
   function _gpsMsg(headline, tips) {
     return '<div style="margin-top:8px;padding:11px 13px;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;color:#9a3412;font-size:.82rem;line-height:1.55">' +
@@ -4045,24 +4071,51 @@ function setGpsUI(dir, state, name, dist, acc) {
     st.innerHTML = _gpsMsg('🚫 <b>Too far from '+name+'.</b> You are '+dist+'m away — must be within '+GEOFENCE_M+'m (GPS accuracy ±'+acc+'m).') + manualBtn;
   } else if (state==="wifispoof") {
     // v6.7 — Detected WiFi / IP-based geolocation (huge distance with deceptively tight accuracy).
-    btn.className="gps-btn fail";
-    ic.textContent="🔄"; tx.textContent="Tap to try location again";
-    st.innerHTML = _gpsMsg(
-      '📡 <b>WiFi-based location detected</b> · '+dist+'m from '+name+' (claimed ±'+acc+'m). This is a network/IP position, not real GPS — it can be off by kilometres.',
-      '<b>Fix, then tap the button above:</b><br>• Turn OFF WiFi, use mobile data<br>• Android: Location mode “High accuracy / GPS On”<br>• iPhone: Settings → Privacy → Location → your browser → While Using + Precise Location ON<br>• Move outdoors or near a window'
-    ) + manualBtn;
+    // v6.70: if this attempt still has an auto-retry coming (dir==="in" only — see _gpsRecover/
+    // _handleGpsFailureOutcome), don't flash the full card + manual-confirm button — it would just
+    // pop in and vanish ~800ms later when the retry clears the status area. Show a light "still
+    // trying" state instead and let the full card render only once we actually give up.
+    if (dir==="in" && (_gpsAttempt[dir]||0) < MAX_GPS_ATTEMPTS) {
+      // NOT "gps-btn checking" — verifyGps()'s re-entrancy guard skips starting a new attempt
+      // whenever the button class contains "checking", which would silently swallow the 800ms
+      // auto-retry and leave the UI stuck on this message forever.
+      btn.className="gps-btn fail";
+      ic.textContent="⏳"; tx.textContent="Still can't get a reliable fix — retrying…";
+      st.innerHTML="";
+    } else {
+      btn.className="gps-btn fail";
+      ic.textContent="🔄"; tx.textContent="Tap to try location again";
+      st.innerHTML = _gpsMsg(
+        '📡 <b>WiFi-based location detected</b> · '+dist+'m from '+name+' (claimed ±'+acc+'m). This is a network/IP position, not real GPS — it can be off by kilometres.',
+        '<b>Fix, then tap the button above:</b><br>• Turn OFF WiFi, use mobile data<br>• Android: Location mode “High accuracy / GPS On”<br>• iPhone: Settings → Privacy → Location → your browser → While Using + Precise Location ON<br>• Move outdoors or near a window'
+      ) + manualBtn;
+    }
   } else if (state==="lowacc") {
-    // GPS reading is too inaccurate to trust — refuse to verify.
-    btn.className="gps-btn fail";
-    ic.textContent="🔄"; tx.textContent="Tap to try location again";
-    st.innerHTML = _gpsMsg(
-      '📡 <b>GPS too inaccurate</b> (±'+acc+'m — worse than the '+GEOFENCE_M+'m geofence, so the reading can’t be trusted).',
-      '<b>Fix, then tap the button above:</b><br>• Disconnect from WiFi, use mobile data<br>• Move outdoors or near a window<br>• Make sure Location Services are on for your browser<br>• Wait a few seconds — the GPS chip warms up over time'
-    ) + manualBtn;
+    // GPS reading is too inaccurate to trust — refuse to verify. Same "don't flash the card on a
+    // retryable attempt" treatment as wifispoof above (v6.70).
+    if (dir==="in" && (_gpsAttempt[dir]||0) < MAX_GPS_ATTEMPTS) {
+      btn.className="gps-btn fail";
+      ic.textContent="⏳"; tx.textContent="Still can't get a reliable fix — retrying…";
+      st.innerHTML="";
+    } else {
+      btn.className="gps-btn fail";
+      ic.textContent="🔄"; tx.textContent="Tap to try location again";
+      st.innerHTML = _gpsMsg(
+        '📡 <b>GPS too inaccurate</b> (±'+acc+'m — worse than the '+GEOFENCE_M+'m geofence, so the reading can’t be trusted).',
+        '<b>Fix, then tap the button above:</b><br>• Disconnect from WiFi, use mobile data<br>• Move outdoors or near a window<br>• Make sure Location Services are on for your browser<br>• Wait a few seconds — the GPS chip warms up over time'
+      ) + manualBtn;
+    }
   } else {
-    btn.className="gps-btn fail";
-    ic.textContent="🔄"; tx.textContent="Tap to try location again";
-    st.innerHTML = _gpsMsg('❌ '+name) + manualBtn;
+    // Generic/no-fix error (state==="error") — same treatment (v6.70).
+    if (dir==="in" && (_gpsAttempt[dir]||0) < MAX_GPS_ATTEMPTS) {
+      btn.className="gps-btn fail";
+      ic.textContent="⏳"; tx.textContent="Still can't get a reliable fix — retrying…";
+      st.innerHTML="";
+    } else {
+      btn.className="gps-btn fail";
+      ic.textContent="🔄"; tx.textContent="Tap to try location again";
+      st.innerHTML = _gpsMsg('❌ '+name) + manualBtn;
+    }
   }
 }
 
@@ -13033,8 +13086,10 @@ function confirmReject() {
 }
 
 // ── Notify manager + admin of a NEW leave request (v6.52) ──
+// v6.70: no external email API is used — this now shows a pre-filled mailto draft
+// (see showEmailFallback) so the admin/manager sends it from their own mail client.
+// This used to route through Brevo's REST API; that integration was removed.
 function sendLeaveSubmittedEmail(rec) {
-  if (!emailjsReady) return; // email not configured; skip silently
   var subject = "🗓️ New Leave Request — " + rec.empName + " (" + (rec.site||"") + ")";
   var body = "A new leave application needs your review.\n\n"
     + "Engineer    : " + rec.empName + " (" + rec.empId + ")\n"
@@ -13047,15 +13102,12 @@ function sendLeaveSubmittedEmail(rec) {
     + "Please log in to the Attendance System to Approve or Reject this request.\n\n"
     + "If you do not recognize this engineer, you can reject the request (the engineer may have selected the wrong team manager).\n\n"
     + "— Attendance System";
-  var html = "<pre style='font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;line-height:1.6'>" + body + "</pre>";
-  var recipients = [];
-  if (rec.managerEmail) recipients.push(rec.managerEmail);
   var adminEmail = "";
   try { adminEmail = (firebase.auth().currentUser && firebase.auth().currentUser.email) || ""; } catch(_){}
-  if (adminEmail && recipients.indexOf(adminEmail) === -1) recipients.push(adminEmail);
-  recipients.forEach(function(to){
-    _elasticSend(to, subject, html).catch(function(e){ console.warn("submit-notify failed for " + to + ":", e); });
-  });
+  var to = rec.managerEmail || adminEmail || "";
+  if (!to) return; // nobody to notify
+  var cc = (adminEmail && adminEmail !== to) ? adminEmail : "";
+  showEmailFallback(to, subject, body, cc);
 }
 
 // ── Send Leave Notification Email ───────────────────
@@ -13118,34 +13170,13 @@ function sendLeaveEmail(rec, status, rejectReason) {
   }
   body += "This is an automated notification from the Attendance System.\n\nBest regards,\nAttendance System";
 
-  // v6.61: dispatch the notification to the engineer AND HR, in whichever email mode is active.
+  // v6.70: dispatch the notification to the engineer AND HR. No external email API is used —
+  // this always opens the mailto fallback modal so whoever is deciding sends it from their own
+  // mail client. This used to route through Brevo's REST API; that integration was removed.
   // hrCc is HR's address (blank if unset or same as the engineer).
   function _dispatch(hrEmail) {
     var hrCc = (typeof hrEmail === "string" && hrEmail && hrEmail !== rec.empEmail) ? hrEmail : "";
-    // MANUAL MODE (TESTING): open the fallback modal, addressed to engineer with HR on Cc.
-    if (EMAIL_MODE === "manual") {
-      showEmailFallback(rec.empEmail, subject, body, hrCc);
-    } else if (emailjsReady) {
-      var htmlBody = "<pre style='font-family:Arial,sans-serif;font-size:14px;white-space:pre-wrap;line-height:1.6'>" + body + "</pre>";
-      _elasticSend(rec.empEmail, subject, htmlBody)
-        .then(function() {
-          console.log("✅ Email sent OK");
-          toast("📧 Notification email sent to " + rec.empEmail + (hrCc ? " (HR copied)" : ""), "t-ok");
-        })
-        .catch(function(e) {
-          console.error("Brevo send failed:", e);
-          alert("❌ Email Error: " + (e.message || e) + "\n\nOpening email fallback so you can send manually.");
-          showEmailFallback(rec.empEmail, subject, body, hrCc);
-        });
-      // v6.52: also notify HR (does not block the engineer email)
-      if (hrCc) {
-        _elasticSend(hrCc, subject, htmlBody)
-          .then(function(){ console.log("✅ HR copy sent to " + hrCc); })
-          .catch(function(e){ console.warn("HR copy failed:", e); });
-      }
-    } else {
-      showEmailFallback(rec.empEmail, subject, body, hrCc);
-    }
+    showEmailFallback(rec.empEmail, subject, body, hrCc);
   }
 
   // Use the HR email already loaded; otherwise fetch it once so HR is always copied
