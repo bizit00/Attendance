@@ -264,7 +264,10 @@ input:-webkit-autofill,input:autofill{animation-name:onAutoFillStart;animation-d
 .wfc-tog:hover{background:#e5e7eb}
 .wfc-body{padding:2px 22px 22px}
 .wfc.wfc-closed .wfc-body{display:none}
-.wfc-grid{display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:14px;align-items:stretch}
+/* v6.81: template had 4 "1fr" stage tracks (+3 arrow tracks) but the HTML only ever renders
+   3 stages + 2 arrows — the unused 4th stage track was reserving a whole empty column on the
+   right. Matches the actual content now, so the 3 cards stretch to fill the full card width. */
+.wfc-grid{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:14px;align-items:stretch}
 .wfc-stage{border:1.5px solid var(--border);border-radius:14px;padding:20px 18px;background:#fafaf9;min-width:0;transition:transform .15s,box-shadow .15s}
 .wfc-stage:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(15,23,42,.06)}
 .wfc-stage.wfc-act{border-color:var(--blue);background:linear-gradient(180deg,#eff6ff,#f5f9ff);border-width:2px;box-shadow:0 4px 14px rgba(37,99,235,.1)}
