@@ -7736,11 +7736,20 @@ function _anBuildBreakdown(rows) {
   var sorter = function(a, b) { return (a.name || "").localeCompare(b.name || ""); };
   var result = {};
 
+  // v6.78: engineers' onboarding defaultSite is never updated/cleared when admin renames or
+  // removes a site in Manage Work Sites, so this roster can carry old/deleted site names
+  // (e.g. leftover seed-data sites) forever. Only trust a roster-only site name if it's still
+  // live in WORK_SITES — a site with real check-in history stays visible anyway via siteMap
+  // below, regardless of its current WORK_SITES status.
+  var _liveSiteNames = {};
+  WORK_SITES.forEach(function(s){ _liveSiteNames[s.name] = true; });
+
   // Ensure every rostered site appears even if it has zero check-ins today.
   var rosterSites = {};
   Object.keys(dsMap).forEach(function(id){
     var site = dsMap[id];
     if (siteFilter && site !== siteFilter) return;
+    if (!_liveSiteNames[site]) return; // v6.78: drop stale/deleted default-site references
     if (!rosterSites[site]) rosterSites[site] = [];
     rosterSites[site].push(id);
   });
