@@ -1619,12 +1619,13 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <div class="dash-tabs">
       <div class="dash-tab" data-tab="analytics" onclick="dTab('analytics',this)">Analytics</div>
       <div class="dash-tab on" data-tab="live" onclick="dTab('live',this)">Live Status</div>
-      <div class="dash-tab" data-tab="feed" onclick="dTab('feed',this)">Activity Feed</div>
       <div class="dash-tab" data-tab="calendar" onclick="dTab('calendar',this)">Calendar</div>
       <div class="dash-tab" data-tab="leave" onclick="dTab('leave',this)" id="leaveTabBtn">Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" data-tab="waitlist" onclick="dTab('waitlist',this)" id="waitlistTabBtn">⏳ Waiting List <span id="waitlistPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
-      <div class="dash-tab" data-tab="device" onclick="dTab('device',this)">Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
       <div class="dash-tab" data-tab="team" onclick="dTab('team',this)">Team</div>
+      <!-- v6.76 (Issue 3): Activity Feed and Device Audit moved here, between Team and Backup Import -->
+      <div class="dash-tab" data-tab="feed" onclick="dTab('feed',this)">Activity Feed</div>
+      <div class="dash-tab" data-tab="device" onclick="dTab('device',this)">Device Audit <span id="suspiciousBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">!</span><span id="buddyPunchBadge" style="display:none;background:var(--red);color:#fff;border-radius:30px;padding:2px 7px;font-size:.7rem;margin-left:2px;font-family:var(--mono)">⚠</span></div>
       <div class="dash-tab" data-tab="backup" id="backupTabBtn" onclick="dTab('backup',this)">🗄️ Backup Import</div>
       <div class="dash-tab" data-tab="setup" id="setupTabBtn" onclick="dTab('setup',this)">Setup Guide</div>
     </div>
@@ -1632,7 +1633,6 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <!-- LIVE TAB -->
     <div id="dTab-live">
       <div id="spotCheckRemindersWrap" style="margin-bottom:4px"></div>
-      <div id="scByLocationWrap" style="margin-bottom:8px"></div>
       <div id="nineHrIndicatorWrap" style="margin-bottom:4px"></div>
       <div class="toolbar">
         <input type="text" id="fSearch" placeholder="Search name / ID…" oninput="renderTable()"/>
@@ -1671,6 +1671,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     <!-- FEED TAB -->
     <div id="dTab-feed" style="display:none">
+      <!-- v6.76 (Issue 3): Spot Check by Location moved here from Live Status, as its own sub-section -->
+      <div id="scByLocationWrap" style="margin-bottom:8px"></div>
       <div class="toolbar">
         <input type="text" id="ffSearch" placeholder="Search name / ID…" oninput="renderFeed()"/>
         <select id="ffSite" onchange="renderFeed()"><option value="">All Sites</option></select>
@@ -2009,6 +2011,9 @@ tr.on-leave-row td{background:#f0f9ff!important}
     <span class="team-sub-div" aria-hidden="true"></span>
     <!-- v6.63: both admin config actions live here; they open modals, they do not switch panes -->
     <div class="team-sub-acts">
+      <!-- v6.76 (Issue 4): moved here from Leave Mgmt toolbar -->
+      <button id="teamSubBtnEntitlements" class="team-sub-act" onclick="anOpenEntitlements()"
+              title="Set leave entitlements per engineer">⚙️ Entitlements</button>
       <button id="teamSubBtnManpower" class="team-sub-act" onclick="anOpenManpowerConfig()"
               title="Set required manpower per site">⚙️ Configure Manpower</button>
       <button id="teamSubBtnSites" class="team-sub-act" onclick="openSitesModal()"
@@ -2142,7 +2147,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <button class="tb-btn tb-pri" onclick="exportLeaveCSV()">⬇ Leave CSV</button>
         <button class="tb-btn tb-out" onclick="exportCombinedCSV()">⬇ Full Report</button>
         <button class="tb-btn tb-out" onclick="leaveClearFilters()" title="Clear all filters">✕ Clear</button>
-        <button class="tb-btn tb-pri" onclick="anOpenEntitlements()" title="Set leave entitlements per engineer">⚙️ Entitlements</button>
+        <!-- v6.76 (Issue 4): Entitlements moved to Admin Tasks > Team > Onboarding (sub-tab action bar) -->
         <button class="tb-btn tb-pri" onclick="openTimesheetModal()" title="Download monthly timesheet as Excel" style="background:#059669">📋 Timesheet</button>
       </div>
 
@@ -3638,10 +3643,21 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
     // GPS error circle overlaps the geofence.
     var effectiveDist = Math.max(0, dist - acc);
     var ok = effectiveDist <= GEOFENCE_M;
-    GPS[dir] = { lat:lat, lng:lng, accuracy:acc, dist:dist, ok:ok };
-    setGpsUI(dir, ok?"ok":"fail", site.name, dist, acc);
+    if (!ok) {
+      // v6.76: out-of-range now goes through the same 2-attempt retry chain as the other
+      // GPS failure types (no-fix / low-accuracy / WiFi-spoof) instead of failing on the very
+      // first try — a second fresh sample can matter (GPS drift/jitter near the geofence edge),
+      // and it keeps the retry behavior consistent no matter why the first attempt failed.
+      GPS[dir] = null;
+      setGpsUI(dir, "fail", site.name, dist, acc);
+      chkBtn();
+      _handleGpsFailureOutcome(dir);
+      return;
+    }
+    GPS[dir] = { lat:lat, lng:lng, accuracy:acc, dist:dist, ok:true };
+    setGpsUI(dir, "ok", site.name, dist, acc);
     chkBtn();
-    _gpsAttempt[dir] = 0; // v6.65: ok OR out-of-range ends the chain — out-of-range still blocks, no recovery
+    _gpsAttempt[dir] = 0; // v6.65: a good fix ends the chain
   }
 
   var timeoutTimer = setTimeout(function(){ finish(bestFix); }, maxWaitMs);
@@ -3842,6 +3858,25 @@ function requestManualConfirm(dir) {
   });
 }
 
+// v6.76 — persist the pending manual-confirmation across a page refresh so the engineer's
+// screen (and the admin's later decision) survives a reload instead of being silently lost.
+var PENDING_CONFIRM_KEY = "at_pending_confirm_v1";
+function _savePendingConfirm(pendingId, dir, empId) {
+  try { localStorage.setItem(PENDING_CONFIRM_KEY, JSON.stringify({ pendingId: pendingId, dir: dir, empId: empId || null, ts: Date.now() })); } catch(_){}
+}
+function _clearPendingConfirm() {
+  try { localStorage.removeItem(PENDING_CONFIRM_KEY); } catch(_){}
+}
+function _getPendingConfirm() {
+  try {
+    var raw = localStorage.getItem(PENDING_CONFIRM_KEY);
+    if (!raw) return null;
+    var st = JSON.parse(raw);
+    if (!st || !st.pendingId || !st.dir) return null;
+    return st;
+  } catch(_) { return null; }
+}
+
 // v6.51 — engineer taps Confirm on the card → write the waiting-list entry.
 function confirmManualEntry() {
   if (!_manualDraft) { closeManualCard(); return; }
@@ -3866,6 +3901,7 @@ function confirmManualEntry() {
     .then(function(ref){
       closeManualCard();
       toast("✅ Submitted — waiting for admin confirmation", "t-ok");
+      _savePendingConfirm(ref.id, d.dir, d.empId);
       _showPendingState(ref.id, d.dir);
     })
     .catch(function(e){
@@ -3911,6 +3947,7 @@ function _showPendingState(pendingId, dir) {
     // Resolved — stop listening.
     try { _pendingUnsub(); } catch(_){} _pendingUnsub = null;
     _hidePendingBanner();
+    _clearPendingConfirm();
 
     if (e.status === "confirmed") {
       if (dir === "in") {
@@ -4007,9 +4044,17 @@ function setGpsUI(dir, state, name, dist, acc) {
     ic.textContent="✅"; tx.textContent="Verified — "+dist+"m from "+name;
     st.innerHTML='<div class="pill pill-ok">✅ Within range · '+dist+'m from site</div>'+accBadge;
   } else if (state==="fail") {
-    btn.className="gps-btn fail";
-    ic.textContent="🔄"; tx.textContent="Tap to try location again";
-    st.innerHTML = _gpsMsg('🚫 <b>Too far from '+name+'.</b> You are '+dist+'m away — must be within '+GEOFENCE_M+'m (GPS accuracy ±'+acc+'m).') + manualBtn;
+    // v6.76: out-of-range now retries too (see finish() in verifyGps) — same "don't flash the
+    // full card on a retryable attempt" treatment as wifispoof/lowacc/error below.
+    if (dir==="in" && (_gpsAttempt[dir]||0) < MAX_GPS_ATTEMPTS) {
+      btn.className="gps-btn fail";
+      ic.textContent="⏳"; tx.textContent="Still can't get a reliable fix — retrying…";
+      st.innerHTML="";
+    } else {
+      btn.className="gps-btn fail";
+      ic.textContent="🔄"; tx.textContent="Tap to try location again";
+      st.innerHTML = _gpsMsg('🚫 <b>Too far from '+name+'.</b> You are '+dist+'m away — must be within '+GEOFENCE_M+'m (GPS accuracy ±'+acc+'m).') + manualBtn;
+    }
   } else if (state==="wifispoof") {
     // v6.7 — Detected WiFi / IP-based geolocation (huge distance with deceptively tight accuracy).
     // v6.70: if this attempt still has an auto-retry coming (dir==="in" only — see _gpsRecover/
@@ -5076,46 +5121,55 @@ function initEmp() {
   var sess    = getSess();
   var sessDoc = getSessDocId();
 
-  // Cancel any previous force-checkout listener
-  if (_forceCoListener) { try { _forceCoListener(); } catch(e){} _forceCoListener = null; }
+  // v6.76 — if a manual confirmation was pending when the page was closed/refreshed,
+  // resume that state instead of falling back to the normal check-in/out screen.
+  // This is what makes the pending banner (and the admin's later decision) survive a reload.
+  var _pc = _getPendingConfirm();
 
-  if (sess && sess.checkinTimestamp && !sess.checkoutTimestamp) {
-    if (fbOk && db && sessDoc) {
-      // Use a real-time listener so force checkout is detected immediately,
-      // even without the engineer refreshing the page.
-      // NOTE: Firestore rules must allow attendance reads without auth (see Setup → Rules).
-      _forceCoListener = db.collection("attendance").doc(sessDoc).onSnapshot(function(snap) {
-        if (!snap.exists) return;
-        if (snap.data().status === "out") {
-          // Admin force-checked-out — clear stale local session immediately
-          if (_forceCoListener) { _forceCoListener(); _forceCoListener = null; }
-          setSess(null);
-          setSessDocId(null);
-          document.getElementById("ciForm").style.display    = "block";
-          document.getElementById("coSection").style.display = "none";
-          document.getElementById("sessBadge").style.display = "none";
-          document.getElementById("resultCard").style.display= "none";
-          toast("ℹ️ Your session was closed by admin. You can now check in at your new location.", "t-ok");
-        } else {
-          // Still checked in — show checkout mode (only on first snapshot)
-          var co = document.getElementById("coSection");
-          if (co && co.style.display !== "block") _initEmpShowCheckout(sess);
-        }
-      }, function(err) {
-        // Listener failed (likely permission denied) — do a plain one-time get instead
-        console.warn("[AT] onSnapshot failed:", err.code, "— falling back to .get()");
-        _forceCoListener = null;
-        // Try empBindings collection (public read) as a signal channel
-        _checkForceCoSignal(sess, sessDoc);
-      });
-    } else {
-      _initEmpShowCheckout(sess);
-    }
+  if (_pc) {
+    _showPendingState(_pc.pendingId, _pc.dir);
   } else {
-    document.getElementById("ciForm").style.display    = "block";
-    document.getElementById("coSection").style.display = "none";
-    document.getElementById("sessBadge").style.display = "none";
-    document.getElementById("resultCard").style.display= "none";
+    // Cancel any previous force-checkout listener
+    if (_forceCoListener) { try { _forceCoListener(); } catch(e){} _forceCoListener = null; }
+
+    if (sess && sess.checkinTimestamp && !sess.checkoutTimestamp) {
+      if (fbOk && db && sessDoc) {
+        // Use a real-time listener so force checkout is detected immediately,
+        // even without the engineer refreshing the page.
+        // NOTE: Firestore rules must allow attendance reads without auth (see Setup → Rules).
+        _forceCoListener = db.collection("attendance").doc(sessDoc).onSnapshot(function(snap) {
+          if (!snap.exists) return;
+          if (snap.data().status === "out") {
+            // Admin force-checked-out — clear stale local session immediately
+            if (_forceCoListener) { _forceCoListener(); _forceCoListener = null; }
+            setSess(null);
+            setSessDocId(null);
+            document.getElementById("ciForm").style.display    = "block";
+            document.getElementById("coSection").style.display = "none";
+            document.getElementById("sessBadge").style.display = "none";
+            document.getElementById("resultCard").style.display= "none";
+            toast("ℹ️ Your session was closed by admin. You can now check in at your new location.", "t-ok");
+          } else {
+            // Still checked in — show checkout mode (only on first snapshot)
+            var co = document.getElementById("coSection");
+            if (co && co.style.display !== "block") _initEmpShowCheckout(sess);
+          }
+        }, function(err) {
+          // Listener failed (likely permission denied) — do a plain one-time get instead
+          console.warn("[AT] onSnapshot failed:", err.code, "— falling back to .get()");
+          _forceCoListener = null;
+          // Try empBindings collection (public read) as a signal channel
+          _checkForceCoSignal(sess, sessDoc);
+        });
+      } else {
+        _initEmpShowCheckout(sess);
+      }
+    } else {
+      document.getElementById("ciForm").style.display    = "block";
+      document.getElementById("coSection").style.display = "none";
+      document.getElementById("sessBadge").style.display = "none";
+      document.getElementById("resultCard").style.display= "none";
+    }
   }
 
   function _initEmpShowCheckout(s) {
@@ -9078,8 +9132,14 @@ function _anSiteRosters() {
 function _anGapAnalysis(isoDate) {
   var rosters = _anSiteRosters();
   var siteNames = Object.keys(rosters);
-  // Also include sites in manpower config that aren't in WORK_SITES (defensive)
-  Object.keys(_anManpower || {}).forEach(function(s){ if (!rosters[s]) rosters[s] = {}; if (siteNames.indexOf(s) === -1) siteNames.push(s); });
+  // v6.76 (Issue 2): this USED to also add every key still present in the manpowerConfig
+  // Firestore doc, even after that site was renamed/removed from Admin Tasks > Team > Work
+  // Sites. manpowerConfig is never pruned when a site is deleted, so old/demo site names
+  // (e.g. leftover defaults from before real sites were set up) kept reappearing in the
+  // Manpower Gap chart forever, out of sync with the live Work Sites list. _anSiteRosters()
+  // above already keeps any site with REAL history (attendance or leave records), so a
+  // config-only leftover with no such history is genuinely stale — drop it instead of
+  // resurrecting it here.
 
   // v6.33 fix: for today/past dates use ACTUAL check-ins as "available".
   // The old logic used all-time roster minus approved leave, which inflated
@@ -13270,6 +13330,46 @@ function isBuddyPunch(record, empId, date) {
   });
 }
 
+// v6.76 (DEV-02/03) — GPS-proximity secondary check, independent of device fingerprinting.
+// Hardware/browser fingerprints (hwId/deviceId/deviceToken) can be defeated: iOS Safari in
+// Private Browsing deliberately randomizes GPU/canvas-adjacent signals each private session,
+// so the SAME physical iPhone can compute a DIFFERENT hwId every time — the fingerprint-based
+// grouping above never sees it as one device, and no buddy-punch flag is raised.
+// GPS coordinates aren't subject to that randomization, so as a fallback signal: flag
+// different engineers who checked in within ~15m of each other and ~5 minutes of each other —
+// a strong sign of one phone being passed between accounts, regardless of what fingerprint
+// (if any) it reported.
+var GPS_PROX_M = 15, GPS_PROX_WINDOW_MS = 5 * 60 * 1000;
+function _gpsProximitySuspects() {
+  var recs = allRecs
+    .filter(function(r){ return r.checkinLat != null && r.checkinLng != null && r.checkinTimestamp; })
+    .slice()
+    .sort(function(a,b){ return (a.checkinTimestamp||0) - (b.checkinTimestamp||0); });
+
+  var used = {};
+  var groups = [];
+  for (var i = 0; i < recs.length; i++) {
+    if (used[i]) continue;
+    var a = recs[i];
+    var cluster = [a];
+    var idxs = [i];
+    for (var j = i + 1; j < recs.length; j++) {
+      if (used[j]) continue;
+      var b = recs[j];
+      if ((b.checkinTimestamp - a.checkinTimestamp) > GPS_PROX_WINDOW_MS) break;
+      if (haversine(a.checkinLat, a.checkinLng, b.checkinLat, b.checkinLng) <= GPS_PROX_M) {
+        cluster.push(b); idxs.push(j);
+      }
+    }
+    var empIds = {}; cluster.forEach(function(r){ empIds[r.empId] = true; });
+    if (Object.keys(empIds).length >= 2) {
+      idxs.forEach(function(k){ used[k] = true; });
+      groups.push(cluster);
+    }
+  }
+  return groups;
+}
+
 function renderDeviceAudit() {
   // Group by hwId (hardware-stable, cross-browser) instead of deviceId.
   // The same physical device used in Chrome and Firefox produces the same hwId
@@ -13373,10 +13473,35 @@ function renderDeviceAudit() {
   var badge = document.getElementById("suspiciousBadge");
   if (badge) { badge.style.display = suspiciousDevices.length > 0 ? "inline" : "none"; }
 
+  var proxGroups = _gpsProximitySuspects();
+
   // Render flags summary
   var flagsWrap = document.getElementById("deviceFlagsWrap");
   if (flagsWrap) {
     var html = "";
+
+    // Purple: GPS-proximity matches — fingerprint-independent secondary signal (v6.76).
+    // Shown separately from the hardware-fingerprint flags below since it can catch cases
+    // (e.g. Safari Private Browsing) where the fingerprint itself was unreliable.
+    if (proxGroups.length > 0) {
+      html += '<div style="background:linear-gradient(135deg,#faf5ff,#f3e8ff);border:2px solid #d8b4fe;border-radius:var(--r2);padding:18px 20px;margin-bottom:10px">'
+        +'<div style="font-weight:800;color:#6b21a8;font-size:1rem;margin-bottom:6px">🛰️ ' + proxGroups.length + ' Possible Evasion Case' + (proxGroups.length>1?"s":"") + ' — GPS Proximity Match</div>'
+        +'<div style="font-size:.8rem;color:#6b21a8;margin-bottom:10px">Different engineers checked in within ~' + GPS_PROX_M + 'm and ' + Math.round(GPS_PROX_WINDOW_MS/60000) + ' minutes of each other. This check does NOT rely on the device fingerprint, so it can catch buddy-punching even when the fingerprint looks different each time (e.g. iOS Safari Private Browsing intentionally randomizes it).</div>'
+        + proxGroups.map(function(cluster){
+          var byEmp = {};
+          cluster.forEach(function(r){ if(!byEmp[r.empId]) byEmp[r.empId]=r; });
+          var names = Object.keys(byEmp).map(function(eid){
+            var r = byEmp[eid];
+            return '<strong>' + eid + '</strong> (' + sanitizeHtml(r.empName||"") + ')';
+          }).join(' &amp; ');
+          var site = cluster[0].site || "—";
+          var when = cluster[0].checkinTime || "";
+          return '<div style="background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:6px;border:1px solid #d8b4fe;font-size:.82rem;color:#6b21a8">'
+            +'📍 <strong>' + sanitizeHtml(site) + '</strong> around ' + when + ' — ' + names
+            +'</div>';
+        }).join("")
+        +'</div>';
+    }
 
     // Red: genuinely suspicious (always expanded — these need admin action)
     if (suspiciousDevices.length > 0) {
@@ -13469,7 +13594,7 @@ function renderDeviceAudit() {
     }
 
     // All clean
-    if (!suspiciousDevices.length && !sameModelDevices.length && !clearedDevices.length) {
+    if (!suspiciousDevices.length && !sameModelDevices.length && !clearedDevices.length && !proxGroups.length) {
       html = '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:var(--r2);padding:14px 18px;margin-bottom:4px;font-size:.85rem;color:#15803d;font-weight:600">✅ No buddy-punch activity detected across all records.</div>';
     }
 
@@ -16007,20 +16132,32 @@ function adminAccConfirmDelete() {
   }
 
   if (fbOk && db) {
-    var batch = db.batch();
-    // v6.12 — Write a tombstone FIRST so the engineer's app can detect the
-    // deletion in real time, even if their session is currently active.
-    if (rec && rec.empId) {
-      batch.set(db.collection("deletedAccounts").doc(rec.empId), {
-        empId:     rec.empId,
-        email:     emailKey,
-        empName:   rec.empName || "",
-        deletedAt: Date.now()
+    // v6.76 (DEV-05): same reasoning as adminAccConfirmResetDev — find every emailBindings doc
+    // for this empId (not just the one under the current email key) so a stale duplicate can't
+    // keep blocking other engineers' devices as "already registered" after this account is gone.
+    var extraQuery = rec && rec.empId
+      ? db.collection("emailBindings").where("empId", "==", rec.empId).get()
+      : Promise.resolve({ docs: [] });
+
+    extraQuery.then(function(snap) {
+      var batch = db.batch();
+      // v6.12 — Write a tombstone FIRST so the engineer's app can detect the
+      // deletion in real time, even if their session is currently active.
+      if (rec && rec.empId) {
+        batch.set(db.collection("deletedAccounts").doc(rec.empId), {
+          empId:     rec.empId,
+          email:     emailKey,
+          empName:   rec.empName || "",
+          deletedAt: Date.now()
+        });
+      }
+      batch.delete(db.collection("emailBindings").doc(emailKey));
+      snap.docs.forEach(function(doc) {
+        if (doc.id !== emailKey) batch.delete(doc.ref);
       });
-    }
-    batch.delete(db.collection("emailBindings").doc(emailKey));
-    if (rec && rec.empId) batch.delete(db.collection("empBindings").doc(rec.empId));
-    batch.commit()
+      if (rec && rec.empId) batch.delete(db.collection("empBindings").doc(rec.empId));
+      return batch.commit();
+    })
       .then(afterDelete)
       .catch(onError);
   } else {
@@ -16089,12 +16226,33 @@ function adminAccConfirmResetDev() {
   }
 
   if (fbOk && db) {
-    db.collection("emailBindings").doc(emailKey)
+    var rec = _accData[recIdx];
+    var resetPatch = { deviceIds: [], verifiedDeviceIds: [], deviceResetAt: new Date().getTime(), deviceResetByAdmin: true };
+    var mainRef = db.collection("emailBindings").doc(emailKey);
+
+    // v6.76 (DEV-05): the hardware-fingerprint conflict check in verifyIdentityBinding() scans
+    // the ENTIRE emailBindings collection for this engineer's empId, not just the doc keyed by
+    // their current email. If an older/duplicate emailBindings doc exists for the same empId
+    // (e.g. from before email keys were normalized, or a since-changed email), clearing only
+    // doc(emailKey) leaves that stale doc's deviceIds behind — so the fingerprint block on OTHER
+    // engineers' devices never clears, even after "Reset Devices" reports success. Find and clear
+    // every doc for this empId, not just the one under the current email key.
+    var extraQuery = rec && rec.empId
+      ? db.collection("emailBindings").where("empId", "==", rec.empId).get()
+      : Promise.resolve({ docs: [] });
+
+    extraQuery.then(function(snap) {
+      var batch = db.batch();
+      batch.set(mainRef, resetPatch, { merge: true });
+      snap.docs.forEach(function(doc) {
+        if (doc.id !== emailKey) batch.set(doc.ref, resetPatch, { merge: true });
+      });
       // v6.61 (TEM-02): also clear verifiedDeviceIds — the OTP auto-skip on load checks THIS list
       // (_isDeviceOtpVerified). Clearing only deviceIds left the device OTP-trusted, so a reset did
       // not actually force re-verification. Clearing both makes "Reset Devices" reliably require a
       // fresh OTP on the next visit regardless of browser (Chrome, Brave, etc.).
-      .update({ deviceIds: [], verifiedDeviceIds: [], deviceResetAt: new Date().getTime(), deviceResetByAdmin: true })
+      return batch.commit();
+    })
       .then(afterReset)
       .catch(onError);
   } else {
