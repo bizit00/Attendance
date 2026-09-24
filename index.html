@@ -257,20 +257,23 @@ input:-webkit-autofill,input:autofill{animation-name:onAutoFillStart;animation-d
 .stat.g .stat-n{color:var(--green)}.stat.b .stat-n{color:var(--blue)}.stat.r .stat-n{color:var(--red)}.stat.o .stat-n{color:var(--orange)}
 
 /* ── v6.67: Leave workflow card ─────────────────────────── */
-.wfc{background:#fff;border:1.5px solid var(--border);border-radius:var(--r);margin-bottom:18px;overflow:hidden}
-.wfc-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 16px;cursor:pointer;user-select:none}
-.wfc-ttl{font-weight:800;font-size:.86rem;color:var(--ink);font-family:var(--body)}
-.wfc-tog{background:none;border:none;font-size:.78rem;color:var(--ink3);cursor:pointer;font-family:var(--body);font-weight:700;padding:4px 8px;white-space:nowrap}
-.wfc-body{padding:0 16px 16px}
+.wfc{background:linear-gradient(180deg,#fff,#fcfcfb);border:1.5px solid var(--border);border-radius:16px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.04)}
+.wfc-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:18px 22px;cursor:pointer;user-select:none}
+.wfc-ttl{font-weight:800;font-size:1.15rem;color:var(--ink);font-family:var(--body);letter-spacing:-.01em}
+.wfc-tog{background:#f3f4f6;border:1px solid var(--border);border-radius:20px;font-size:.82rem;color:var(--ink2);cursor:pointer;font-family:var(--body);font-weight:700;padding:6px 14px;white-space:nowrap;transition:background .15s}
+.wfc-tog:hover{background:#e5e7eb}
+.wfc-body{padding:2px 22px 22px}
 .wfc.wfc-closed .wfc-body{display:none}
-.wfc-grid{display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:8px;align-items:stretch}
-.wfc-stage{border:1.5px solid var(--border);border-radius:10px;padding:12px;background:#fafaf8;min-width:0}
-.wfc-stage.wfc-act{border-color:var(--blue);background:#eff6ff;border-width:2px}
-.wfc-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--blue);color:#fff;font-family:var(--mono);font-weight:800;font-size:.74rem;margin-bottom:7px}
-.wfc-stg-ttl{font-weight:800;font-size:.78rem;color:var(--ink);margin-bottom:5px;line-height:1.4}
-.wfc-stg-txt{font-size:.73rem;color:var(--ink3);line-height:1.6}
-.wfc-arrow{display:flex;align-items:center;justify-content:center;color:var(--ink3);font-size:1rem}
-.wfc-reject{margin-top:12px;padding:9px 13px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:var(--red);font-size:.74rem;font-weight:600;line-height:1.6}
+.wfc-grid{display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:14px;align-items:stretch}
+.wfc-stage{border:1.5px solid var(--border);border-radius:14px;padding:20px 18px;background:#fafaf9;min-width:0;transition:transform .15s,box-shadow .15s}
+.wfc-stage:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(15,23,42,.06)}
+.wfc-stage.wfc-act{border-color:var(--blue);background:linear-gradient(180deg,#eff6ff,#f5f9ff);border-width:2px;box-shadow:0 4px 14px rgba(37,99,235,.1)}
+.wfc-num{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--blue),#1d4ed8);color:#fff;font-family:var(--mono);font-weight:800;font-size:1rem;margin-bottom:12px;box-shadow:0 2px 6px rgba(37,99,235,.35)}
+.wfc-stage.wfc-act .wfc-num{background:linear-gradient(135deg,#16a34a,#15803d);box-shadow:0 2px 6px rgba(22,163,74,.35)}
+.wfc-stg-ttl{font-weight:800;font-size:1.02rem;color:var(--ink);margin-bottom:8px;line-height:1.35}
+.wfc-stg-txt{font-size:.9rem;color:var(--ink2);line-height:1.65}
+.wfc-arrow{display:flex;align-items:center;justify-content:center;color:var(--blue);font-size:1.4rem;font-weight:700;opacity:.55}
+.wfc-reject{margin-top:16px;padding:13px 17px;border-radius:12px;background:#fef2f2;border:1px solid #fecaca;color:var(--red);font-size:.86rem;font-weight:600;line-height:1.65}
 @media(max-width:860px){
   .wfc-grid{grid-template-columns:1fr}
   .wfc-arrow{transform:rotate(90deg);padding:2px 0}
@@ -6733,9 +6736,16 @@ function renderSpotCheckByLocation() {
   var cache = (typeof spotSessionCache !== 'undefined' && spotSessionCache) ? spotSessionCache : {};
 
   // Roster: engineers currently checked IN, grouped by site.
+  // v6.80: this used to count ANY record with status:"in", with no date check — so an
+  // engineer who forgot to check out (or a stale/never-closed session from days or weeks
+  // ago) kept showing as "on-site" forever, even with nobody actually there. Only count
+  // check-ins from TODAY as currently on-site; an old unclosed session should be force
+  // checked out from Live Status instead of haunting this panel indefinitely.
+  var _scToday = new Date().toISOString().split("T")[0];
   var roster = {}; // site -> [empId,...]
   (allRecs || []).forEach(function(r){
     if (r.status !== 'in' || !r.site) return;
+    if (_anIsoDate(r) !== _scToday) return;
     if (!roster[r.site]) roster[r.site] = [];
     roster[r.site].push(_normEngId(r.empId));
   });
