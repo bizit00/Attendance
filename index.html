@@ -6989,8 +6989,14 @@ function refreshDash() {
 
 // ── Admin dashboard modes (Tracking / Admin Tasks) ─────────────────────
 var MODES = {
-  tracking: ["analytics","live","feed","calendar","device"],
-  admin:    ["leave","waitlist","backup","team","setup"]   // v6.66: + backup
+  // v6.78: Activity Feed and Device Audit moved from Tracking to Admin Tasks — both need
+  // admin action (feed's spot-check sub-section, device's buddy-punch review/clear), so they
+  // belong with Team/Backup Import here, not with the read-only Tracking views. Which mode a
+  // tab shows under is controlled ONLY by this array membership, not by where its <div> sits
+  // in the HTML tab bar — so moving the tab's DOM position alone (done in v6.76) never actually
+  // changes which mode row it appears in; this is the piece that does.
+  tracking: ["analytics","live","calendar"],
+  admin:    ["leave","waitlist","backup","team","setup","feed","device"]
 };
 var MODE_DEFAULT = { tracking:"analytics", admin:"leave" };
 var _lastTab = { tracking:"analytics", admin:"leave" };
@@ -7475,20 +7481,22 @@ function updateModeBadges() {
     var n = parseInt(e.textContent, 10);
     return isNaN(n) ? 0 : n;
   }
-  // Admin Tasks group → sum of pending leave + waitlist counts
+  // v6.78: Device Audit (suspicious / buddy-punch alerts) moved from Tracking to Admin Tasks,
+  // so its alert now folds into the Admin Tasks badge instead of the Tracking one below.
+  var trackAlert = shown("suspiciousBadge") || shown("buddyPunchBadge");
+
+  // Admin Tasks group → sum of pending leave + waitlist counts, plus a device-audit alert
   var adminCount = num("leavePendingBadge") + num("waitlistPendingBadge");
   var ab = document.getElementById("adminModeBadge");
   if (ab) {
-    if (_curMode !== "admin" && adminCount > 0) { ab.textContent = adminCount; ab.style.display = ""; }
-    else ab.style.display = "none";
+    if (_curMode !== "admin" && (adminCount > 0 || trackAlert)) {
+      ab.textContent = adminCount > 0 ? adminCount : "!";
+      ab.style.display = "";
+    } else ab.style.display = "none";
   }
-  // Tracking group → suspicious / buddy-punch alert (dot)
-  var trackAlert = shown("suspiciousBadge") || shown("buddyPunchBadge");
+  // Tracking group no longer hosts anything that raises its own badge.
   var tb = document.getElementById("trackingModeBadge");
-  if (tb) {
-    if (_curMode !== "tracking" && trackAlert) { tb.textContent = "!"; tb.style.display = ""; }
-    else tb.style.display = "none";
-  }
+  if (tb) tb.style.display = "none";
 }
 function _initModeBadgeWatch() {
   if (typeof MutationObserver === "undefined") { updateModeBadges(); return; }
