@@ -2037,11 +2037,14 @@ tr.on-leave-row td{background:#f0f9ff!important}
       </div>
       <button class="tb-btn tb-pri" onclick="onbOpenForm(null)">＋ Add Engineer</button>
       <button class="tb-btn tb-out" onclick="onbExportExcel()">⬇ Export Excel</button>
+      <!-- v6.79: bulk delete — hidden until at least one row is checked -->
+      <button class="tb-btn" id="onbBulkDeleteBtn" style="background:var(--red);color:#fff;display:none" onclick="onbPromptBulkDelete()">🗑️ Delete Selected (<span id="onbSelCount">0</span>)</button>
     </div>
     <div class="tbl-wrap" style="margin-top:8px">
       <div style="overflow-x:auto">
         <table id="onbTable">
           <thead><tr>
+            <th style="width:30px"><input type="checkbox" id="onbSelectAllChk" onchange="onbToggleSelectAll(this.checked)" title="Select all"></th>
             <th>Eng ID</th><th>Name</th><th>Gender</th><th>Default Site</th><th>NRIC</th>
             <th>Phone</th><th>Email</th><th>Status</th><th>Actions</th>
           </tr></thead>
@@ -15322,7 +15325,7 @@ function _onbMatches(r) {
 function loadOnboarding() {
   var tbody = document.getElementById("onbTbody");
   var empty = document.getElementById("onbEmpty");
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--ink3)">Loading…</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:var(--ink3)">Loading…</td></tr>';
 
   if (!fbOk || !db) {
     _onbRecords = [];
@@ -15338,7 +15341,7 @@ function loadOnboarding() {
       _onbReconcileActivations(_onbRecords, _onbActiveIdSet(typeof allRecs !== "undefined" ? allRecs : []));
     })
     .catch(function(e) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="color:var(--red);padding:20px;text-align:center">Error loading: ' + sanitizeHtml(e.message||"unknown") + '</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="color:var(--red);padding:20px;text-align:center">Error loading: ' + sanitizeHtml(e.message||"unknown") + '</td></tr>';
     });
 }
 
@@ -15430,6 +15433,9 @@ function _onbRenderTable() {
   if (!_onbRecords.length) {
     tbody.innerHTML = "";
     if (empty) empty.style.display = "block";
+    _onbSelected = {};
+    _onbUpdateBulkDeleteBtn();
+    _onbSyncSelectAllState();
     return;
   }
   if (empty) empty.style.display = "none";
@@ -15439,8 +15445,10 @@ function _onbRenderTable() {
 
   var rows = _onbRecords.filter(_onbMatches);
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--ink3)">'
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--ink3)">'
       + 'No engineers match “' + sanitizeHtml(_onbSearch) + '”</td></tr>';
+    _onbUpdateBulkDeleteBtn();
+    _onbSyncSelectAllState();
     return;
   }
 
@@ -15449,7 +15457,9 @@ function _onbRenderTable() {
     var isAct      = _onbIsActive(r, _onbIdMap);
     var statusColor = isAct ? "var(--green)" : "#f59e0b";
     var statusLabel = isAct ? "✅ Active" : "⏳ Pending";
+    var _cid = sanitizeHtml(r._id);
     return '<tr>'
+      + '<td><input type="checkbox" class="onb-row-chk" ' + (_onbSelected[r._id] ? 'checked' : '') + ' onchange="onbToggleRowSelect(\'' + _cid + '\', this.checked)"></td>'
       + '<td style="font-family:var(--mono);font-weight:700;color:var(--blue)">' + sanitizeHtml(r.engId||r._id) + '</td>'
       + '<td style="font-weight:600">' + sanitizeHtml(r.name||"—") + '</td>'
       + '<td>' + sanitizeHtml(r.gender||"—") + '</td>'
@@ -15467,6 +15477,80 @@ function _onbRenderTable() {
       + '</div></td>'
       + '</tr>';
   }).join("");
+
+  _onbUpdateBulkDeleteBtn();
+  _onbSyncSelectAllState();
+}
+
+// ── v6.79: bulk select / delete (onboarding) ────────────────────────────
+var _onbSelected = {};       // { _id: true } — persists across re-renders/search filters
+var _onbBulkDeleteIds = null;
+
+function onbToggleRowSelect(id, checked) {
+  if (checked) _onbSelected[id] = true; else delete _onbSelected[id];
+  _onbUpdateBulkDeleteBtn();
+  _onbSyncSelectAllState();
+}
+
+function onbToggleSelectAll(checked) {
+  var rows = _onbRecords.filter(_onbMatches); // only the currently-visible (searched) rows
+  rows.forEach(function(r){
+    if (checked) _onbSelected[r._id] = true; else delete _onbSelected[r._id];
+  });
+  _onbRenderTable();
+}
+
+function _onbUpdateBulkDeleteBtn() {
+  var n = Object.keys(_onbSelected).filter(function(id){ return _onbSelected[id]; }).length;
+  var btn = document.getElementById("onbBulkDeleteBtn");
+  var cnt = document.getElementById("onbSelCount");
+  if (cnt) cnt.textContent = n;
+  if (btn) btn.style.display = n > 0 ? "inline-flex" : "none";
+}
+
+function _onbSyncSelectAllState() {
+  var chk = document.getElementById("onbSelectAllChk");
+  if (!chk) return;
+  var rows = _onbRecords.filter(_onbMatches);
+  var selCount = rows.filter(function(r){ return _onbSelected[r._id]; }).length;
+  chk.checked = rows.length > 0 && selCount === rows.length;
+  chk.indeterminate = selCount > 0 && selCount < rows.length;
+}
+
+function onbPromptBulkDelete() {
+  var ids = Object.keys(_onbSelected).filter(function(id){ return _onbSelected[id]; });
+  if (!ids.length) return;
+  _onbBulkDeleteIds = ids;
+  _onbDeleteId = null; // make sure the single-delete path doesn't also fire
+
+  var names = ids.map(function(id){
+    var r = _onbRecords.find(function(x){ return x._id === id; });
+    return r ? (r.name || r.engId || id) : id;
+  });
+
+  var title = document.querySelector('#onbDeleteModal .modal-title');
+  if (title) title.textContent = "🗑️ Delete " + ids.length + " Onboarding Record" + (ids.length > 1 ? "s" : "");
+  var sub = document.getElementById("onbDeleteSub");
+  if (sub) sub.innerHTML = 'Delete <strong>' + ids.length + '</strong> onboarding record' + (ids.length > 1 ? "s" : "")
+    + ': ' + sanitizeHtml(names.slice(0, 8).join(", ")) + (names.length > 8 ? ' and ' + (names.length - 8) + ' more' : '')
+    + '? This cannot be undone.';
+  document.getElementById("onbDeleteModal").classList.add("open");
+}
+
+// Firestore batches cap at 500 ops — chunk defensively for large bulk deletes.
+function _onbBatchDeleteChunks(ids) {
+  var CH = 400;
+  var chunks = [];
+  for (var i = 0; i < ids.length; i += CH) chunks.push(ids.slice(i, i + CH));
+  var p = Promise.resolve();
+  chunks.forEach(function(chunk){
+    p = p.then(function(){
+      var batch = db.batch();
+      chunk.forEach(function(id){ batch.delete(db.collection("engineerOnboarding").doc(id)); });
+      return batch.commit();
+    });
+  });
+  return p;
 }
 
 // empId -> defaultSite, built from the cached onboarding records.
@@ -15765,13 +15849,48 @@ function _syncOnboardingFromEngAccount(oldEngId, newEngId, newName, newEmail) {
 // ── Delete ────────────────────────────────────────────
 function onbPromptDelete(id) {
   _onbDeleteId = id;
+  _onbBulkDeleteIds = null; // v6.79: single-delete always wins over any stale bulk selection
   var rec = _onbRecords.find(function(r){ return r._id === id; });
+  var title = document.querySelector('#onbDeleteModal .modal-title');
+  if (title) title.textContent = "🗑️ Delete Onboarding Record";
   var sub = document.getElementById("onbDeleteSub");
   if (sub && rec) sub.innerHTML = 'Delete onboarding record for <strong>' + sanitizeHtml(rec.name||id) + '</strong> (' + sanitizeHtml(rec.engId||id) + ')? This cannot be undone.';
   document.getElementById("onbDeleteModal").classList.add("open");
 }
 
 function onbConfirmDelete() {
+  // v6.79: bulk-delete path — takes priority when a multi-select delete was in progress.
+  if (_onbBulkDeleteIds && _onbBulkDeleteIds.length) {
+    var bulkIds = _onbBulkDeleteIds;
+    _onbBulkDeleteIds = null;
+    document.getElementById("onbDeleteModal").classList.remove("open");
+    var titleReset = document.querySelector('#onbDeleteModal .modal-title');
+    if (titleReset) titleReset.textContent = "🗑️ Delete Onboarding Record";
+
+    var recsById = {};
+    bulkIds.forEach(function(id){ recsById[id] = _onbRecords.find(function(r){ return r._id === id; }); });
+
+    if (fbOk && db) {
+      _onbBatchDeleteChunks(bulkIds)
+        .then(function(){
+          toast("🗑️ " + bulkIds.length + " record" + (bulkIds.length > 1 ? "s" : "") + " deleted", "t-ok");
+          bulkIds.forEach(function(id){
+            var rec = recsById[id];
+            _syncEngAccountDeleteFromOnboarding(id, rec && rec.email); // v6.71: one delete, everywhere
+            delete _onbSelected[id];
+          });
+          loadOnboarding();
+        })
+        .catch(function(e){ toast("Bulk delete failed: " + (e.message||"error"), "t-err"); });
+    } else {
+      bulkIds.forEach(function(id){ delete _onbSelected[id]; });
+      _onbRecords = _onbRecords.filter(function(r){ return bulkIds.indexOf(r._id) === -1; });
+      _onbRenderTable();
+      toast(bulkIds.length + " deleted locally", "t-ok");
+    }
+    return;
+  }
+
   if (!_onbDeleteId) return;
   var id = _onbDeleteId;
   var rec = _onbRecords.find(function(r){ return r._id === id; });
@@ -15782,11 +15901,13 @@ function onbConfirmDelete() {
       .then(function() {
         toast("Record deleted", "t-ok");
         _syncEngAccountDeleteFromOnboarding(id, rec && rec.email); // v6.71: one delete, everywhere
+        delete _onbSelected[id];
         loadOnboarding();
       })
       .catch(function(e) { toast("Delete failed: "+(e.message||"error"), "t-err"); });
   } else {
     _onbRecords = _onbRecords.filter(function(r){ return r._id !== id; });
+    delete _onbSelected[id];
     _onbRenderTable();
     toast("Deleted locally", "t-ok");
   }
