@@ -3260,7 +3260,7 @@ service cloud.firestore {
   <div class="modal-box" style="max-width:540px">
     <button class="modal-close" onclick="document.getElementById('emailFallbackModal').classList.remove('open')">✕</button>
     <div class="modal-title">📧 Send Notification Email</div>
-    <div class="modal-sub">EmailJS is not configured. Use the button below to open your email client with the message pre-filled, or copy the content manually.</div>
+    <div class="modal-sub">Notification emails are sent manually from your own mail client. Use the button below to open it with the message pre-filled, or copy the content manually.</div>
     <div class="ef-field">
       <div class="ef-label">To</div>
       <div class="ef-value" id="efTo">—</div>
@@ -17064,7 +17064,7 @@ const HELP_TOPICS = {
     "manual": [
       "Leave balances are based on entitlement records set by admin in the Leave Entitlements configuration (per engineer, per year, per leave type). The balance shown deducts all approved leave for the current year.",
       "If entitlements have not been configured for a specific leave type, the app allows submission without a balance check. Once entitlements are set, submissions that exceed the remaining balance are blocked.",
-      "Balance visibility in the My Leaves modal is read-only for engineers. Adjustments (such as carry-over or manual corrections) must be made by admin through the Entitlements modal in the Leave Management tab."
+      "Balance visibility in the My Leaves modal is read-only for engineers. Adjustments (such as carry-over or manual corrections) must be made by admin through the Entitlements modal, found in Admin Tasks → Team (in the sub-tab action bar)."
     ]
   },
   "spot-check": {
@@ -17145,7 +17145,7 @@ const HELP_TOPICS = {
       "Open the app link and tap 'Admin Dashboard' on the landing screen.",
       "Enter your admin email address and password.",
       "Tap 'Access Dashboard'.",
-      "The Live Status tab loads automatically upon successful login."
+      "The dashboard opens in Tracking mode on the Analytics tab. Switch to Admin Tasks mode (top toggle) for Leave Mgmt, Waiting List, Team, Activity Feed, Device Audit, Backup Import, and Setup Guide."
     ],
     "troubleshooting": [
       "If login fails with 'wrong password', use the Firebase Console (Authentication → Users) to reset the password.",
@@ -17173,12 +17173,11 @@ const HELP_TOPICS = {
     ],
     "troubleshooting": [
       "If the table is empty but engineers are checking in, confirm Firebase is connected and the attendance Firestore rules are published.",
-      "If the Spot-Check by Location panel is not visible, no engineers are currently checked in.",
       "Real-time updates require a live internet connection — a lost connection will pause updates until it is restored."
     ],
     "manual": [
       "The Live Status tab shows all attendance records across all sites in a single real-time table. Columns include engineer name and ID, site, check-in and check-out times, session duration, GPS coordinates for both check-in and check-out, device identifier, date, and spot-check response status.",
-      "The Spot-Check by Location panel appears at the top of the Live Status tab whenever engineers are currently checked in. It shows each occupied site, the number of engineers on site, and spot-check response tallies (verified, failed, no response). Admin can copy a spot-check link from here.",
+      "The Spot-Check by Location panel now lives on the Activity Feed tab (Admin Tasks mode), not here — see the 'Running a Spot-Check by Location' topic.",
       "The Force CO button opens a modal where admin can set a specific check-out date and time and add an optional note. The forced check-out is written to Firestore and the engineer's local session is cleared via a signal in the empBindings collection."
     ]
   },
@@ -17252,8 +17251,8 @@ const HELP_TOPICS = {
     "audience": "admin",
     "title": "Setting Leave Entitlements",
     "steps": [
-      "Log in and go to the Leave Mgmt tab.",
-      "Click the 'Entitlements' button in the toolbar.",
+      "Log in, switch to Admin Tasks mode, and open the Team tab.",
+      "Click the 'Entitlements' button in the sub-tab action bar (top right — it's available from any Team sub-tab: Onboarding, Eng Accounts, or Team Managers).",
       "Select the engineer from the dropdown and choose the year.",
       "Enter the quota (total days allowed) for each leave type.",
       "Optionally enter a manual adjustment (positive or negative) for special cases.",
@@ -17299,14 +17298,17 @@ const HELP_TOPICS = {
     "steps": [
       "Log in and go to the Team tab.",
       "In the 'Onboarding' sub-tab, click '+ Add Engineer' to pre-record an engineer's details (ID, name, site, email, NRIC, phone).",
+      "To delete several onboarding records at once (e.g. test/dummy data), tick the checkboxes on the rows you want (or the header checkbox to select all visible rows), then click 'Delete Selected'.",
       "In the 'Eng Accounts' sub-tab, view registered engineers. Use Edit to update details, Reset Devices to clear device bindings, or Delete to remove an account.",
       "In the 'Team Managers' sub-tab, set an HR notification email, add a new team manager with their login credentials and assigned site(s), or view existing managers.",
+      "The sub-tab action bar (top right, visible from any Team sub-tab) also has Entitlements, Configure Manpower, Work Sites, and Check-in Security.",
       "To export the onboarding list, click 'Export Excel' in the Onboarding sub-tab."
     ],
     "troubleshooting": [
       "If Edit or Delete fails with 'permission denied', re-paste the Step 7 Firestore rules to ensure emailBindings and empBindings write rules are present.",
       "If an engineer appears in Accounts but not Onboarding, they self-registered without an onboarding record — you can add one retroactively.",
-      "Creating a manager requires a valid email and password (minimum 6 characters). If creation fails, confirm the email is not already registered in Firebase Authentication."
+      "Creating a manager requires a valid email and password (minimum 6 characters). If creation fails, confirm the email is not already registered in Firebase Authentication.",
+      "Bulk delete removes the selected onboarding records and their linked Eng Accounts entries together — same as a single delete, just batched. This cannot be undone."
     ],
     "manual": [
       "The Team tab consolidates three functions: engineer onboarding (pre-registration), account management (post-registration), and team manager setup. Onboarding lets admin pre-enter engineer details before they first log in; the engineer's check-in form is auto-filled and validated against these records.",
@@ -17318,8 +17320,8 @@ const HELP_TOPICS = {
     "audience": "admin",
     "title": "Device Audit and Buddy-Punch Detection",
     "steps": [
-      "Log in and go to the Device Audit tab.",
-      "Review buddy punch alerts at the top — these flag cases where one device was used by more than one engineer on the same date.",
+      "Log in, switch to Admin Tasks mode, and go to the Device Audit tab.",
+      "Review buddy punch alerts at the top — these flag cases where one device was used by more than one engineer on the same date. A separate purple 'GPS Proximity Match' section flags different engineers who checked in at nearly the same spot within a few minutes of each other, even when their device fingerprints look different (e.g. iOS Safari Private Browsing).",
       "Review the Device-Engineer Registry table for any rows flagged as suspicious.",
       "To investigate: note the Device ID, go to Live Status and search for the engineer IDs involved, and compare GPS coordinates and timestamps.",
       "To clear a confirmed false positive, use the clear/resolve option on the alert.",
@@ -17332,7 +17334,9 @@ const HELP_TOPICS = {
     ],
     "manual": [
       "The Device Audit tab monitors for buddy punching — when one physical device is used to check in as two different engineers on the same day. This is detected by comparing Device Tokens across same-day attendance records. A Device Token is a random string generated and stored in the browser's local storage on first use; two identical phones of the same model will always get different tokens.",
-      "In addition to Device Tokens, the system also records a Hardware ID derived from GPU, screen, and CPU characteristics. Hardware ID is kept as a secondary signal for older records but same-model Hardware ID collisions alone are no longer treated as buddy punches.",
+      "In addition to Device Tokens, the system also records a Hardware ID derived from GPU, screen, and CPU characteristics. Hardware ID is kept as a secondary signal for older records but same-model Hardware ID collisions alone are no longer treated as buddy punches. Note: iOS Safari Private Browsing intentionally randomizes some of these hardware signals, so it can defeat this check entirely — the GPS Proximity Match section above is the fallback for that case.",
+      "The GPS Proximity Match section flags different engineers who checked in within roughly 15 metres and 5 minutes of each other, regardless of what device fingerprint (if any) was reported. This catches buddy-punching that the fingerprint check alone would miss.",
+      "Reset Devices (from Eng Accounts) and Delete both clear that engineer's device bindings everywhere they appear, not just under their current email — so a hardware-fingerprint block should never survive a reset.",
       "The Email-Device Binding Registry tracks which email address each device was first associated with. If a device later reports a different email (possible account sharing), the row is flagged. Admin can view the email history for the device and choose to reset the binding."
     ]
   },
@@ -17451,7 +17455,7 @@ const HELP_TOPICS = {
     "audience": "admin",
     "title": "Running a Spot-Check by Location",
     "steps": [
-      "Log in and go to the Live Status tab. The 'Spot-Check by Location' panel appears when engineers are currently checked in.",
+      "Log in, switch to Admin Tasks mode, and go to the Activity Feed tab. The 'Spot-Check by Location' panel appears at the top when engineers are currently checked in.",
       "Find the site you want to spot-check. Select a time window (15, 30, or 60 minutes) from the dropdown.",
       "Click 'Copy link' to generate a spot-check session and copy the unique URL to your clipboard.",
       "Share the link with all engineers at that site (e.g. via WhatsApp group).",
@@ -17460,15 +17464,15 @@ const HELP_TOPICS = {
       "If a session is already open, click 'New link' to generate a replacement session."
     ],
     "troubleshooting": [
-      "If the Spot-Check by Location panel is not visible, no engineers are currently checked in at any site.",
+      "If the Spot-Check by Location panel is not visible, no engineers checked in TODAY are currently on site — a check-in left open from a previous day no longer counts (the panel only reflects who's on site right now).",
       "If engineers report the link shows 'Spot-Check Expired', the session window has closed — generate a new link.",
       "If a response shows 'failed', the engineer's GPS could not verify their location within the geofence. Follow up in person.",
       "If an engineer appears as 'not on roster', they responded to the spot-check but are not currently recorded as checked in at that site."
     ],
     "manual": [
-      "Spot-check by location is a real-time presence verification tool. When admin generates a session for a site, a single shared link is created and stored in Firestore under spotCheckSessions. All engineers currently checked in at that site are expected to open the link and verify their GPS within the session window.",
+      "Spot-check by location is a real-time presence verification tool, found on the Activity Feed tab (Admin Tasks mode) as its own sub-section above the activity list. When admin generates a session for a site, a single shared link is created and stored in Firestore under spotCheckSessions. All engineers currently checked in at that site are expected to open the link and verify their GPS within the session window.",
       "The session window can be set to 15, 30, or 60 minutes. After the window expires, the session closes and no more responses are accepted. Generating a new link replaces the old session for that site.",
-      "The response tally in the Live Status panel shows: verified (GPS confirmed within 500 m), failed (GPS check failed or out of range), no response (engineer did not respond before expiry), and off-roster (responded but not currently checked in). This tally is live — it updates as engineers respond.",
+      "The response tally in the panel shows: verified (GPS confirmed within 500 m), failed (GPS check failed or out of range), no response (engineer did not respond before expiry), and off-roster (responded but not currently checked in). This tally is live — it updates as engineers respond.",
       "Spot-check results are also visible per-engineer in the Spot Check column of the attendance table, making it easy to identify engineers who did not respond or failed verification."
     ]
   }
