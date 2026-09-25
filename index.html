@@ -3110,6 +3110,16 @@ service cloud.firestore {
         <label>Longitude <span style="color:var(--red)">*</span></label>
         <input type="text" id="newSiteLng" placeholder="103.819800" inputmode="decimal"/>
       </div>
+      <div class="field">
+        <label>Work start time <span style="font-weight:500;color:var(--ink3)">(optional)</span></label>
+        <input type="time" id="newSiteStartTime"/>
+        <div style="font-size:.72rem;color:var(--ink3);margin-top:3px">Leave blank to use the default (9:00 AM).</div>
+      </div>
+      <div class="field">
+        <label>Overtime after <span style="font-weight:500;color:var(--ink3)">(hours, optional)</span></label>
+        <input type="number" id="newSiteOtHours" placeholder="18" min="1" max="24" step="0.5"/>
+        <div style="font-size:.72rem;color:var(--ink3);margin-top:3px">Leave blank to use the default (18h).</div>
+      </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
       <button class="tb-btn tb-out" onclick="siteUseMyLocation()" style="white-space:nowrap">📡 Use my current location</button>
@@ -3744,6 +3754,22 @@ function _maybeResumeGps() {
                                                                 // action (retry tap / reset) should
   var gbtn = document.getElementById("gpsCiBtn");
   if (gbtn && /\bchecking\b/.test(gbtn.className)) return;      // a verify is already running
+  if (_gpsRetryTimer.in) return;                               // v6.85: a scheduled auto-retry is
+                                                                // already mid-chain (the 800ms gap
+                                                                // between attempt 1 and attempt 2).
+                                                                // On some phones/browsers, visibility-
+                                                                // change or pageshow fires repeatedly
+                                                                // during this window (screen dim/relight,
+                                                                // keyboard toggling, notification banners).
+                                                                // Treating that as a fresh tap reset
+                                                                // _gpsAttempt.in back to 1 every time,
+                                                                // so the 2-attempt counter never reached
+                                                                // MAX_GPS_ATTEMPTS and the engineer got
+                                                                // stuck forever on "still can't get a
+                                                                // reliable fix — retrying…", never
+                                                                // reaching the manual-confirmation
+                                                                // fallback card. Let the already-
+                                                                // scheduled retry run instead.
   clearTimeout(_gpsResumeTimer);                              // debounce rapid lock/unlock toggles
   _gpsResumeTimer = setTimeout(function(){
     console.log("[v6.64] tab resumed → auto re-verifying check-in GPS");
@@ -5994,7 +6020,7 @@ function _saveCheckin(empId, empName, siteVal, empEmail, devId, btn) {
   if (!site) { btn.innerHTML = "✅ Check In"; toast("That work site no longer exists — pick another from the list", "t-err"); return; }
   var gps    = GPS.in;
   var now    = new Date();
-  var isLate = now.getHours() >= WORK_HOUR_LATE;
+  var isLate = _isLateForSite(now, site.name);   // v6.84: per-site start time
 
   // Resolve the engineer's assigned default site (snapshot onto the record).
   function _buildAndSave(defaultSite) {
@@ -6072,7 +6098,7 @@ function doCheckout() {
   var h    = Math.floor(ms/3600000);
   var m    = Math.floor((ms%3600000)/60000);
   var dur  = h+"h "+m+"m";
-  var isOT = h >= MAX_HOURS_OT;
+  var isOT = h >= _siteOtHours(sess.site);   // v6.84: per-site overtime threshold
 
   var updates = {
     checkoutTime:now.toLocaleTimeString("en-SG"),
@@ -6415,7 +6441,7 @@ function confirmPending(id, btn) {
   }
 
   if (e.dir === "in") {
-    var isLate = (new Date(e.reqTimestamp)).getHours() >= WORK_HOUR_LATE;
+    var isLate = _isLateForSite(new Date(e.reqTimestamp), e.site);   // v6.84: per-site start time
     var rec = {
       empId: e.empId, empName: e.empName, empEmail: e.empEmail, site: e.site,
       defaultSite: null, siteMismatch: false,
@@ -6441,7 +6467,7 @@ function confirmPending(id, btn) {
       var updates = {
         checkoutTime: e.reqTime, checkoutISO: e.reqISO, checkoutTimestamp: e.reqTimestamp,
         checkoutLat: e.gpsLat, checkoutLng: e.gpsLng, checkoutDist: e.gpsDist, checkoutAcc: e.gpsAcc,
-        status: "out", duration: h + "h " + m + "m", isOvertime: h >= MAX_HOURS_OT,
+        status: "out", duration: h + "h " + m + "m", isOvertime: h >= _siteOtHours(e.site),   // v6.84
         checkoutViaManualConfirm: true, checkoutConfirmedBy: who, checkoutConfirmedAt: when
       };
       return db.collection("attendance").doc(e.linkedAttendanceId).update(updates);
@@ -6734,6 +6760,7 @@ function _autoCheckout12h(r) {
   applyForceCheckout(r.id, r.empId, r.empName, r.checkinTimestamp, coInstant, {
     autoCheckout: true,
     forcedBy: "system-12h",
+    site: r.site,
     note: "System auto check-out after 12h"
   })
   .then(function(dur) {
@@ -7299,7 +7326,7 @@ function _backupBuildRow(row){
       checkinTimestamp: evDate ? evDate.getTime() : null,
       checkinLat:null, checkinLng:null, checkinDist:null, checkinAcc:null,
       checkoutTime:null, checkoutTimestamp:null, checkoutLat:null, checkoutLng:null, checkoutDist:null,
-      status:"in", isLate: evDate ? (evDate.getHours() >= WORK_HOUR_LATE) : false, isOvertime:false, duration:null,
+      status:"in", isLate: evDate ? _isLateForSite(evDate, out.site) : false, isOvertime:false, duration:null,   // v6.84
       deviceId:null, hwId:null, deviceToken:null, emailConflict:false,
       _source:"backup-import"
     }, meta);
@@ -11023,7 +11050,7 @@ function _siteSlug(name) {
 //  • no Firestore  → built-ins only (offline fallback, check-in still works)
 function _rebuildWorkSites() {
   var custom = customSitesList.map(function(s){
-    return { name:s.name, lat:s.lat, lng:s.lng, id:s.id, custom:true };
+    return { name:s.name, lat:s.lat, lng:s.lng, id:s.id, custom:true, startTime:s.startTime||null, otHours:s.otHours!=null?s.otHours:null };
   });
   if (_sitesMigrated) WORK_SITES = custom.slice();
   else                WORK_SITES = _BASE_WORK_SITES.concat(custom);
@@ -11264,6 +11291,32 @@ function refreshAllSiteDropdowns() {
 function siteByName(name) {
   if (name == null || name === "") return null;
   return WORK_SITES.find(function(s){ return s.name === name; }) || null;
+}
+
+// v6.84 — Per-site working hours. Each site may optionally set its own start time
+// (drives the "late" flag) and overtime-after threshold (drives the "OT" flag) from
+// Admin Tasks -> Team -> Work Sites. A site with no custom values falls back to the
+// app-wide WORK_HOUR_LATE / MAX_HOURS_OT constants, so nothing changes for sites that
+// haven't been configured yet.
+function _siteStartMinutes(siteName) {
+  var s = siteByName(siteName);
+  if (s && s.startTime) {
+    var p = String(s.startTime).split(":");
+    var h = parseInt(p[0], 10), m = parseInt(p[1] || "0", 10);
+    if (!isNaN(h)) return h * 60 + (isNaN(m) ? 0 : m);
+  }
+  return WORK_HOUR_LATE * 60;
+}
+// True if `dateObj` (a JS Date) counts as a late arrival for `siteName`.
+function _isLateForSite(dateObj, siteName) {
+  return (dateObj.getHours() * 60 + dateObj.getMinutes()) >= _siteStartMinutes(siteName);
+}
+// fallbackHours lets a caller keep its own pre-existing default (e.g. force-checkout used a
+// stricter 9h default before this feature existed) when the site has no custom override.
+function _siteOtHours(siteName, fallbackHours) {
+  var s = siteByName(siteName);
+  if (s && s.otHours != null && s.otHours !== "" && !isNaN(Number(s.otHours)) && Number(s.otHours) > 0) return Number(s.otHours);
+  return (fallbackHours != null ? fallbackHours : MAX_HOURS_OT);
 }
 
 function openSitesModal()  {
@@ -11564,7 +11617,7 @@ function importBuiltInSites() {
 // ── Edit-mode helpers ───────────────────────────────────────────────────────
 function siteCancelEdit() {
   var f = document.getElementById("editSiteId"); if (f) f.value = "";
-  ["newSiteName","newSiteLat","newSiteLng"].forEach(function(id){
+  ["newSiteName","newSiteLat","newSiteLng","newSiteStartTime","newSiteOtHours"].forEach(function(id){
     var el = document.getElementById(id); if (el) el.value = "";
   });
   var save = document.getElementById("siteSaveBtn");   if (save) save.textContent = "＋ Add site";
@@ -11580,6 +11633,8 @@ function editSite(id) {
   document.getElementById("newSiteName").value = s.name;
   document.getElementById("newSiteLat").value  = s.lat;
   document.getElementById("newSiteLng").value  = s.lng;
+  document.getElementById("newSiteStartTime").value = s.startTime || "";
+  document.getElementById("newSiteOtHours").value   = (s.otHours != null ? s.otHours : "");
   var save = document.getElementById("siteSaveBtn");       if (save) save.textContent = "💾 Save changes";
   var canc = document.getElementById("siteCancelEditBtn"); if (canc) canc.style.display = "";
   var msg  = document.getElementById("sitesFormMsg");
@@ -11601,9 +11656,13 @@ function saveSite() {
   var name = (document.getElementById("newSiteName").value||"").trim();
   var lat  = parseFloat((document.getElementById("newSiteLat").value||"").trim());
   var lng  = parseFloat((document.getElementById("newSiteLng").value||"").trim());
+  var startTimeRaw = (document.getElementById("newSiteStartTime").value||"").trim();
+  var otHoursRaw   = (document.getElementById("newSiteOtHours").value||"").trim();
+  var otHours = otHoursRaw ? parseFloat(otHoursRaw) : null;
   if (!name)                                 return fail("Enter a site name.");
   if (isNaN(lat) || lat < -90  || lat > 90)  return fail("Latitude must be a number between -90 and 90.");
   if (isNaN(lng) || lng < -180 || lng > 180) return fail("Longitude must be a number between -180 and 180.");
+  if (otHoursRaw && (isNaN(otHours) || otHours <= 0 || otHours > 24)) return fail("Overtime hours must be a number between 1 and 24.");
   if (!fbOk || !db)                          return fail("Firestore not connected — cannot save.");
 
   // Name must stay unique — ignore the record being edited.
@@ -11629,7 +11688,7 @@ function saveSite() {
 
     if (msg) { msg.style.color="var(--ink3)"; msg.textContent="Saving…"; }
     db.collection("workSites").doc(editId)
-      .set({ name:name, lat:lat, lng:lng, updatedAt:Date.now(), updatedBy:who }, { merge:true })
+      .set({ name:name, lat:lat, lng:lng, startTime:(startTimeRaw||null), otHours:otHours, updatedAt:Date.now(), updatedBy:who }, { merge:true })
       .then(function(){
         if (!renamed) {
           if(msg){ msg.style.color="#15803d"; msg.textContent="✓ Updated "+name; }
@@ -11653,12 +11712,14 @@ function saveSite() {
 
   // ── CREATE ──
   db.collection("workSites").doc(_siteSlug(name))
-    .set({ name:name, lat:lat, lng:lng, createdAt:Date.now(), createdBy:who })
+    .set({ name:name, lat:lat, lng:lng, startTime:(startTimeRaw||null), otHours:otHours, createdAt:Date.now(), createdBy:who })
     .then(function(){
       if(msg){ msg.style.color="#15803d"; msg.textContent="✓ Added "+name; }
       document.getElementById("newSiteName").value="";
       document.getElementById("newSiteLat").value="";
       document.getElementById("newSiteLng").value="";
+      document.getElementById("newSiteStartTime").value="";
+      document.getElementById("newSiteOtHours").value="";
       toast("📍 Site added: "+name, "t-ok");
       // A manager who adds a site is given access to it, otherwise they would
       // immediately lose the ability to edit what they just created.
@@ -11777,11 +11838,11 @@ function renderCustomSitesList() {
   var rows = [];
 
   locked.forEach(function(s){
-    rows.push(_siteRow(s.name, s.lat, s.lng, null, "Built-in — import to edit"));
+    rows.push(_siteRow(s.name, s.lat, s.lng, null, "Built-in — import to edit", s.startTime, s.otHours));
   });
   customSitesList.forEach(function(s){
     var can = _siteCanManage(s.name);
-    rows.push(_siteRow(s.name, s.lat, s.lng, can ? s.id : null, can ? null : "Not assigned to you"));
+    rows.push(_siteRow(s.name, s.lat, s.lng, can ? s.id : null, can ? null : "Not assigned to you", s.startTime, s.otHours));
   });
 
   if (!rows.length) {
@@ -11792,14 +11853,20 @@ function renderCustomSitesList() {
 }
 
 // One row. `id` null => read-only row, `lockNote` explains why.
-function _siteRow(name, lat, lng, id, lockNote) {
+function _siteRow(name, lat, lng, id, lockNote, startTime, otHours) {
   var actions = id
     ? '<button class="tb-btn" onclick="editSite(\''+_esc(id)+'\')" style="white-space:nowrap">✏️ Edit</button>'
       + '<button class="tb-btn" onclick="removeCustomSite(\''+_esc(id)+'\')" style="white-space:nowrap;color:#b91c1c;border-color:#fca5a5">🗑 Remove</button>'
     : '<span style="font-size:.7rem;color:var(--ink3);white-space:nowrap">🔒 '+sanitizeHtml(lockNote||"Read-only")+'</span>';
+  var hoursLine = '<div style="font-size:.72rem;color:var(--ink3);margin-top:1px">🕐 Start: '
+    + (startTime ? sanitizeHtml(String(startTime)) : '<span style="color:var(--ink3)">default (9:00 AM)</span>')
+    + ' · OT after: '
+    + (otHours != null && otHours !== "" ? sanitizeHtml(String(otHours))+'h' : '<span style="color:var(--ink3)">default (18h)</span>')
+    + '</div>';
   return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px">'
     + '<div style="min-width:0"><div style="font-weight:600;font-size:.85rem;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+sanitizeHtml(name)+'</div>'
-    + '<div style="font-size:.72rem;color:var(--ink3);font-family:var(--mono)">'+lat+', '+lng+'</div></div>'
+    + '<div style="font-size:.72rem;color:var(--ink3);font-family:var(--mono)">'+lat+', '+lng+'</div>'
+    + hoursLine + '</div>'
     + '<div style="display:flex;gap:6px;align-items:center;flex-shrink:0">'+actions+'</div>'
     + '</div>';
 }
@@ -16734,7 +16801,7 @@ function closeForceCoModal() {
 
 // Shared force check-out writer. Used by the manual admin modal AND the
 // automatic 12h work-hour monitor. checkoutInstant is a Date object.
-// meta: { autoCheckout?:bool, forcedBy?:string, adminEmail?:string, note?:string }
+// meta: { autoCheckout?:bool, forcedBy?:string, adminEmail?:string, note?:string, site?:string }
 // Returns a Promise resolving to the duration string ("Xh Ym").
 function applyForceCheckout(docId, empId, empName, checkinTs, checkoutInstant, meta) {
   meta = meta || {};
@@ -16743,7 +16810,7 @@ function applyForceCheckout(docId, empId, empName, checkinTs, checkoutInstant, m
   var diffH  = Math.floor(diffMs / 3600000);
   var diffM  = Math.floor((diffMs % 3600000) / 60000);
   var dur    = diffH + "h " + diffM + "m";
-  var isOT   = diffH >= 9;
+  var isOT   = diffH >= _siteOtHours(meta.site, 9);   // v6.84: per-site override, else the existing 9h default
 
   var updates = {
     checkoutTime:      checkoutInstant.toLocaleTimeString("en-SG", {hour:"2-digit", minute:"2-digit", second:"2-digit"}),
@@ -16811,7 +16878,7 @@ function confirmForceCheckout() {
   if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Processing…"; }
 
   applyForceCheckout(_fcoDocId, _fcoEmpId, _fcoEmpName, _fcoCheckinTs, coDateTime,
-    { adminEmail: adminEmail, note: note || "Admin force check-out" })
+    { adminEmail: adminEmail, site: _fcoSite, note: note || "Admin force check-out" })
     .then(function(dur) {
       closeForceCoModal();
       renderTable();
