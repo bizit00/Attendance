@@ -2082,7 +2082,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     <div class="card" style="margin-bottom:14px">
       <div class="card-lbl" style="color:var(--blue)">➕ Add Team Manager</div>
-      <p style="font-size:.8rem;color:var(--ink3);margin-bottom:10px">Creates a login the manager uses to sign in and approve/reject leave for their site(s). Managers see the full dashboard except the Setup Guide tab.</p>
+      <p style="font-size:.8rem;color:var(--ink3);margin-bottom:10px">Creates a login the manager uses to sign in and approve/reject leave for their site(s). Managers never see Setup Guide or Backup Import; the checkbox below controls whether they can enter Admin Tasks mode at all — off restricts them to Tracking only.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="field" style="margin-bottom:8px"><label>Name <span style="color:var(--red)">*</span></label><input type="text" id="mgrName" maxlength="60" placeholder="e.g. Mr Tan"/></div>
         <div class="field" style="margin-bottom:8px"><label>Phone</label><input type="text" id="mgrPhone" maxlength="30" placeholder="e.g. +65 9123 4567"/></div>
@@ -2093,6 +2093,11 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <label>Assigned Site(s) <span style="color:var(--red)">*</span></label>
         <div id="mgrSites" style="display:flex;flex-wrap:wrap;gap:6px;max-height:160px;overflow-y:auto;border:1.5px solid var(--border);border-radius:10px;padding:8px"></div>
       </div>
+      <!-- v6.83: per-manager Admin Tasks access — checked by default so a new manager
+           behaves like existing ones (full dashboard access minus Setup Guide/Backup). -->
+      <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;font-weight:600;color:var(--ink);margin-bottom:10px;cursor:pointer">
+        <input type="checkbox" id="mgrCanAdminTasks" checked/> Allow access to Admin Tasks mode
+      </label>
       <button class="act-btn" onclick="submitNewManager()" style="background:linear-gradient(135deg,#0077ff,#005acc);margin-top:4px">➕ Create Manager</button>
       <div id="mgrFormMsg" style="font-size:.8rem;margin-top:8px;min-height:16px"></div>
     </div>
@@ -6193,6 +6198,7 @@ var fbUnsub = null;
 var currentUserIsManager = false;
 var currentManagerName    = "";
 var currentManagerSites   = [];   // v6.61: sites this manager is assigned to (empty for full admin)
+var currentManagerCanAdminTasks = true;   // v6.83: false hides the Admin Tasks mode entirely
 
 // v6.61: true if the current user may act on leave for `site`.
 // Full admins (not a manager) may act on any site; managers only on their assigned sites.
@@ -6208,6 +6214,16 @@ function applyRoleVisibility() {
   currentUserIsManager = !!mgr;
   currentManagerName = mgr ? mgr.name : "";
   currentManagerSites = (mgr && Array.isArray(mgr.sites)) ? mgr.sites.slice() : [];   // v6.61
+  // v6.83: absent/undefined defaults to true so existing managers keep their current
+  // (full) access unless admin explicitly switches this off for them.
+  currentManagerCanAdminTasks = mgr ? (mgr.canAdminTasks !== false) : true;
+  var adminSeg = document.querySelector('.mode-seg[data-mode="admin"]');
+  if (adminSeg) adminSeg.style.display = (currentUserIsManager && !currentManagerCanAdminTasks) ? "none" : "";
+  // If a manager's Admin Tasks access is switched off while they're actively sitting in
+  // Admin Tasks mode (this listener is real-time), bounce them back to Tracking immediately.
+  if (currentUserIsManager && !currentManagerCanAdminTasks && typeof _curMode !== "undefined" && _curMode === "admin") {
+    if (typeof setMode === "function") setMode("tracking");
+  }
   var setupTab = document.getElementById("setupTabBtn");
   if (setupTab) setupTab.style.display = currentUserIsManager ? "none" : "";
   var _bkBtn = document.getElementById("backupTabBtn");
@@ -7033,10 +7049,15 @@ function _applyModeVisuals(mode){
     s.classList.toggle("on", s.getAttribute("data-mode") === mode);
   });
   if (typeof updateModeBadges === "function") updateModeBadges();
+  // v6.83: OTP-disabled banner is Admin-Tasks-only — re-sync on every mode switch.
+  if (typeof _syncOtpPolicyBanner === "function") _syncOtpPolicyBanner();
 }
 
 function setMode(mode){
   if (!MODES[mode]) return;
+  // v6.83: belt-and-braces — a manager without Admin Tasks access cannot enter it even if
+  // something else calls setMode('admin') directly (the button itself is already hidden).
+  if (mode === "admin" && typeof currentUserIsManager !== "undefined" && currentUserIsManager && !currentManagerCanAdminTasks) return;
   _applyModeVisuals(mode);
   var want = _lastTab[mode] || MODE_DEFAULT[mode];
   var btn  = document.querySelector('.dash-tab[data-tab="'+want+'"]');
@@ -11134,6 +11155,18 @@ function saveOtpPolicy(enabled, reason) {
     });
 }
 
+// v6.83: the OTP-disabled banner should only show while the admin is looking at
+// Admin Tasks mode — it's an admin config warning, not something that needs to
+// follow them around the read-only Tracking views. Tracked separately from the
+// mode-visuals code so either a policy change or a mode switch can re-sync it.
+var _otpPolicyOff = false;
+function _syncOtpPolicyBanner() {
+  var banner = document.getElementById("otpPolicyBanner");
+  if (banner) banner.style.display = (_otpPolicyOff && _curMode === "admin") ? "flex" : "none";
+  var bAct = document.getElementById("otpPolicyBannerAction");
+  if (bAct) bAct.style.display = (typeof currentUserIsManager !== "undefined" && currentUserIsManager) ? "none" : "inline-block";
+}
+
 // Extended by Task 6 (dashboard banner). Safe to call before the DOM exists.
 function _applyOtpPolicyUi() {
   // Fail closed: only an explicit `false` counts as the policy being off;
@@ -11161,10 +11194,10 @@ function _applyOtpPolicyUi() {
   if (note) note.style.display = off ? "block" : "none";
 
   // Dashboard banner (Task 6). Managers see it; only admins get the action.
-  var banner = document.getElementById("otpPolicyBanner");
-  if (banner) banner.style.display = off ? "flex" : "none";
-  var bAct = document.getElementById("otpPolicyBannerAction");
-  if (bAct) bAct.style.display = (typeof currentUserIsManager !== "undefined" && currentUserIsManager) ? "none" : "inline-block";
+  // v6.83: moved into _syncOtpPolicyBanner() so it can also react to mode
+  // switches (Tracking vs Admin Tasks), not just OTP-policy changes.
+  _otpPolicyOff = off;
+  _syncOtpPolicyBanner();
 
   // Keep an open modal in sync with the listener. Openness is the "open"
   // class, not an inline display value.
@@ -11328,6 +11361,7 @@ function submitNewManager() {
   var phone = sanitize((document.getElementById("mgrPhone")||{}).value||"", 30);
   var pass  = ((document.getElementById("mgrPass")||{}).value||"");
   var sites = _selectedMgrSites();
+  var canAdminTasks = !!((document.getElementById("mgrCanAdminTasks")||{}).checked);
   if (!name) return fail("Name is required.");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Enter a valid email (this is the login).");
   if (pass.length < 6) return fail("Password must be at least 6 characters.");
@@ -11341,7 +11375,7 @@ function submitNewManager() {
     .then(function() {
       var adminEmail = (firebase.auth().currentUser && firebase.auth().currentUser.email) || "Admin";
       return db.collection("teamManagers").add({
-        name:name, email:email, phone:phone, sites:sites, active:true,
+        name:name, email:email, phone:phone, sites:sites, active:true, canAdminTasks:canAdminTasks,
         createdAt:Date.now(), createdBy:adminEmail
       });
     })
@@ -11349,6 +11383,7 @@ function submitNewManager() {
       ok("✓ Manager created: " + name);
       ["mgrName","mgrEmail","mgrPhone","mgrPass"].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=""; });
       document.querySelectorAll(".mgr-site-cb").forEach(function(cb){ cb.checked=false; });
+      var cbAt = document.getElementById("mgrCanAdminTasks"); if (cbAt) cbAt.checked = true;
       toast("👔 Team manager added: " + name, "t-ok");
     })
     .catch(function(e) {
@@ -11368,6 +11403,7 @@ function renderManagersList() {
   }
   wrap.innerHTML = teamManagersList.map(function(m){
     var inactive = m.active === false;
+    var canAT = m.canAdminTasks !== false;   // v6.83: undefined/true = has access
     var sites = (m.sites||[]).map(function(s){ return '<span style="font-size:.7rem;background:#eff6ff;color:var(--blue);border-radius:20px;padding:1px 8px;margin-right:4px;white-space:nowrap">'+sanitizeHtml(s)+'</span>'; }).join("");
     return '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;'+(inactive?'opacity:.55;background:#fafafa':'')+'">'
       + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'
@@ -11375,6 +11411,10 @@ function renderManagersList() {
       +     '<div style="font-weight:700;font-size:.9rem;color:var(--ink)">'+sanitizeHtml(m.name)+(inactive?' <span style="font-size:.7rem;color:var(--red)">(deactivated)</span>':'')+'</div>'
       +     '<div style="font-size:.76rem;color:var(--ink3);font-family:var(--mono)">'+sanitizeHtml(m.email)+(m.phone?' · '+sanitizeHtml(m.phone):'')+'</div>'
       +     '<div style="margin-top:6px">'+(sites||'<span style="font-size:.72rem;color:var(--red)">no sites assigned</span>')+'</div>'
+      +     '<label style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:.76rem;font-weight:600;color:'+(canAT?'#15803d':'var(--ink3)')+';cursor:pointer">'
+      +       '<input type="checkbox" '+(canAT?'checked':'')+' onchange="toggleManagerAdminTasks(\''+sanitizeHtml(m.id)+'\', this.checked)"/> '
+      +       (canAT ? 'Admin Tasks access: ON' : 'Admin Tasks access: OFF (Tracking only)')
+      +     '</label>'
       +   '</div>'
       +   '<div style="display:flex;gap:6px;flex-wrap:wrap">'
       +     '<button class="tb-btn" onclick="editManagerSites(\''+sanitizeHtml(m.id)+'\')">✏️ Sites</button>'
@@ -11383,6 +11423,17 @@ function renderManagersList() {
       +   '</div>'
       + '</div></div>';
   }).join("");
+}
+
+// v6.83: per-manager toggle for whether they may switch the dashboard into Admin Tasks mode.
+// Off = Tracking-only (Analytics, Live Status, Calendar). On = same as before (full access
+// minus Setup Guide / Backup Import, which are always admin-only regardless of this toggle).
+function toggleManagerAdminTasks(id, checked) {
+  var m = teamManagersList.find(function(x){ return x.id === id; });
+  if (!m) return;
+  db.collection("teamManagers").doc(id).update({ canAdminTasks: checked })
+    .then(function(){ toast((checked ? "🔓 Admin Tasks enabled for " : "🔒 Admin Tasks disabled for ") + m.name, "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message||e), "t-err"); renderManagersList(); });
 }
 
 function editManagerSites(id) {
@@ -17300,7 +17351,8 @@ const HELP_TOPICS = {
       "In the 'Onboarding' sub-tab, click '+ Add Engineer' to pre-record an engineer's details (ID, name, site, email, NRIC, phone).",
       "To delete several onboarding records at once (e.g. test/dummy data), tick the checkboxes on the rows you want (or the header checkbox to select all visible rows), then click 'Delete Selected'.",
       "In the 'Eng Accounts' sub-tab, view registered engineers. Use Edit to update details, Reset Devices to clear device bindings, or Delete to remove an account.",
-      "In the 'Team Managers' sub-tab, set an HR notification email, add a new team manager with their login credentials and assigned site(s), or view existing managers.",
+      "In the 'Team Managers' sub-tab, set an HR notification email, add a new team manager with their login credentials, assigned site(s), and whether they may access Admin Tasks mode, or view existing managers.",
+      "For an existing manager, tick/untick 'Admin Tasks access' on their card at any time — this takes effect immediately (in real time, even mid-session) and does not require the manager to log out.",
       "The sub-tab action bar (top right, visible from any Team sub-tab) also has Entitlements, Configure Manpower, Work Sites, and Check-in Security.",
       "To export the onboarding list, click 'Export Excel' in the Onboarding sub-tab."
     ],
@@ -17313,7 +17365,7 @@ const HELP_TOPICS = {
     "manual": [
       "The Team tab consolidates three functions: engineer onboarding (pre-registration), account management (post-registration), and team manager setup. Onboarding lets admin pre-enter engineer details before they first log in; the engineer's check-in form is auto-filled and validated against these records.",
       "The Engineer Accounts sub-tab lists all engineers who have registered by completing at least one check-in or having their email bound. From here, admin can edit personal details, reset device fingerprints (so the engineer can check in from a new phone), or permanently delete the account and associated records.",
-      "Team Managers are separate Firebase Authentication accounts. They log in at the same admin login screen and see the full dashboard except Setup Guide. Managers can approve or reject leave only for the sites they are assigned. The HR notification email (set in Team Managers) receives a copy of every leave decision email."
+      "Team Managers are separate Firebase Authentication accounts. They log in at the same admin login screen. Setup Guide and Backup Import are always hidden from managers; whether they can switch into Admin Tasks mode at all (Leave Mgmt, Waiting List, Team, Activity Feed, Device Audit) is controlled per-manager by the 'Admin Tasks access' toggle on their card — when off, they only see Tracking mode (Analytics, Live Status, Calendar). Managers can approve or reject leave only for the sites they are assigned. The HR notification email (set in Team Managers) receives a copy of every leave decision email."
     ]
   },
   "device-audit": {
