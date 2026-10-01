@@ -3887,19 +3887,54 @@ function requestManualConfirm(dir) {
   computeFingerprint().then(function(devId){
     verifyIdentityBinding(empEmail, empId, empName, devId, function(result){
       if (!result.ok) { toast(result.reason, "t-err"); return; }
-      _isOnApprovedLeaveToday(empId, function(leaveRec){
-        if (leaveRec) { toast("⛔ You are on approved " + leaveRec.leaveType + " today — check-in not allowed", "t-err"); return; }
-        _checkCrossDeviceDuplicate(empId, devId, function(conflict){
-          if (conflict) {
-            _reportBuddyPunchAlert(empId, empName, devId, conflict);
-            toast("⛔ Buddy punch detected — already checked in from another device today.", "t-err");
-            return;
-          }
-          _hasOpenPending(empId, "in", function(exists, doc){
-            if (exists) { _showPendingState(doc.id, "in"); return; }
+
+      // v6.86 — before treating this as a NEW check-in, find out whether this
+      // engineer already has an open session in the database. This is the
+      // exact same lost-local-session bug as doCheckin, just reached through
+      // the "GPS too weak, request manual confirmation" door instead of the
+      // normal GPS-verified one — so it needs the same guard here too, or a
+      // private-tab/cleared-cache engineer with weak GPS still ends up with a
+      // duplicate open record instead of actually closing out their day.
+      _lookupOpenAttendance(empId, function(openRec){
+        if (openRec) {
+          // Restore the real session and go straight into a manual CHECK-OUT
+          // request for it — they're already here because GPS failed, so the
+          // natural next step is confirming their checkout manually too.
+          var rec = Object.assign({}, openRec.data, { empId: empId });
+          setSess(rec);
+          setSessDocId(openRec.id);
+          document.getElementById("ciForm").style.display    = "none";
+          document.getElementById("coSection").style.display = "block";
+          document.getElementById("sessBadge").style.display = "block";
+          var sbEmp = document.getElementById("sb-emp");  if (sbEmp) sbEmp.textContent  = rec.empName + " (" + rec.empId + ")";
+          var sbSite = document.getElementById("sb-site"); if (sbSite) sbSite.textContent = rec.site;
+          var sbCin = document.getElementById("sb-cin");  if (sbCin) sbCin.textContent  = rec.checkinTime;
+          toast("ℹ️ You're already checked in since " + rec.checkinTime + " — switched you to check-out.", "t-ok");
+          _hasOpenPending(empId, "out", function(exists, doc){
+            if (exists && doc && doc.data().linkedAttendanceId === openRec.id) { _showPendingState(doc.id, "out"); return; }
             openManualCard({
-              dir: "in", empId: empId, empName: empName, empEmail: empEmail,
-              site: siteObj.name, devId: devId
+              dir: "out", empId: empId, empName: rec.empName, empEmail: rec.empEmail || empEmail,
+              site: rec.site, devId: rec.deviceId || devId, linkedAttendanceId: openRec.id
+            });
+          });
+          return;
+        }
+
+        // No open session — this really is a fresh check-in. Proceed as before.
+        _isOnApprovedLeaveToday(empId, function(leaveRec){
+          if (leaveRec) { toast("⛔ You are on approved " + leaveRec.leaveType + " today — check-in not allowed", "t-err"); return; }
+          _checkCrossDeviceDuplicate(empId, devId, function(conflict){
+            if (conflict) {
+              _reportBuddyPunchAlert(empId, empName, devId, conflict);
+              toast("⛔ Buddy punch detected — already checked in from another device today.", "t-err");
+              return;
+            }
+            _hasOpenPending(empId, "in", function(exists, doc){
+              if (exists) { _showPendingState(doc.id, "in"); return; }
+              openManualCard({
+                dir: "in", empId: empId, empName: empName, empEmail: empEmail,
+                site: siteObj.name, devId: devId
+              });
             });
           });
         });
@@ -6014,16 +6049,20 @@ function doCheckin() {
 // v6.86 — looks for an open (status:"in") attendance record for this empId,
 // independent of localStorage. Private/incognito tabs, a cleared cache, or a
 // different device all wipe "at_sess" silently; the database doesn't forget.
-// If found, rebuild the local session from the real record and switch the
-// screen straight to check-out instead of letting a duplicate check-in happen.
-function _tryResumeOpenSession(empId, empName, empEmail, devId, btn, onNoOpenSession) {
-  if (!fbOk || !db) { onNoOpenSession(); return; }
+// Shared by both the normal GPS check-in path (doCheckin) AND the manual-
+// confirmation path (requestManualConfirm) — a weak-GPS engineer going
+// through "Request manual confirmation" must be caught here too, or they hit
+// the exact same duplicate-check-in bug through the other door.
+// Calls back with { id, data } if an open record exists, or null if not
+// (including on lookup failure — fails open rather than blocking the engineer).
+function _lookupOpenAttendance(empId, callback) {
+  if (!fbOk || !db) { callback(null); return; }
   db.collection("attendance")
     .where("empId", "==", empId)
     .where("status", "==", "in")
     .get()
     .then(function(qs) {
-      if (qs.empty) { onNoOpenSession(); return; }
+      if (qs.empty) { callback(null); return; }
       // Normally there should only ever be one open record — but if more than
       // one somehow exists (e.g. from before this fix), resume the most recent.
       var best = null;
@@ -6033,27 +6072,34 @@ function _tryResumeOpenSession(empId, empName, empEmail, devId, btn, onNoOpenSes
           best = { id: doc.id, data: d };
         }
       });
-      var rec = Object.assign({}, best.data, { empId: empId });
-      setSess(rec);
-      setSessDocId(best.id);
-      btn.disabled = false;
-      btn.innerHTML = "✅ Check In";
-      document.getElementById("ciForm").style.display    = "none";
-      document.getElementById("coSection").style.display = "block";
-      document.getElementById("sessBadge").style.display = "block";
-      document.getElementById("sb-emp").textContent  = rec.empName + " (" + rec.empId + ")";
-      document.getElementById("sb-site").textContent = rec.site;
-      document.getElementById("sb-cin").textContent  = rec.checkinTime;
-      updateDur();
-      checkApprovedLeaveForEmp(rec.empId);
-      toast("ℹ️ You're already checked in since " + rec.checkinTime + " — switched you to check-out.", "t-ok");
+      callback(best);
     })
     .catch(function(e) {
       console.warn("[v6.86] open-session lookup failed:", e && (e.code || e.message));
-      // Fail open rather than blocking the engineer entirely — fall through to
-      // the normal check-in flow if the lookup itself couldn't run.
-      onNoOpenSession();
+      callback(null);
     });
+}
+
+// Used by doCheckin's normal GPS flow — if an open session exists, resume it
+// and switch straight to the check-out screen instead of creating a duplicate.
+function _tryResumeOpenSession(empId, empName, empEmail, devId, btn, onNoOpenSession) {
+  _lookupOpenAttendance(empId, function(best) {
+    if (!best) { onNoOpenSession(); return; }
+    var rec = Object.assign({}, best.data, { empId: empId });
+    setSess(rec);
+    setSessDocId(best.id);
+    btn.disabled = false;
+    btn.innerHTML = "✅ Check In";
+    document.getElementById("ciForm").style.display    = "none";
+    document.getElementById("coSection").style.display = "block";
+    document.getElementById("sessBadge").style.display = "block";
+    document.getElementById("sb-emp").textContent  = rec.empName + " (" + rec.empId + ")";
+    document.getElementById("sb-site").textContent = rec.site;
+    document.getElementById("sb-cin").textContent  = rec.checkinTime;
+    updateDur();
+    checkApprovedLeaveForEmp(rec.empId);
+    toast("ℹ️ You're already checked in since " + rec.checkinTime + " — switched you to check-out.", "t-ok");
+  });
 }
 
 // v6.64: Flip a pre-registered engineer's onboarding record to "active".
