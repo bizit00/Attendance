@@ -3359,20 +3359,7 @@ var WORK_HOUR_LATE = 09;          // hour (24h) considered "late" arrival
 var MAX_HOURS_OT   = 18;         // hours before overtime flag
 
 var WORK_SITES = [
-  { name:"HQ - Elementum",  lat:1.3065232058219243, lng:103.79258262698083 },
-  { name:"Site A - NUH",    lat:1.2941060351075837, lng:103.78314248180223 },
-  { name:"Site B - NTFGH",  lat:1.3340183111776367,  lng:103.74533785581737 },
-  { name:"Site C - TTSH",   lat:1.3215956826375057,  lng:103.84600588650957 },
-  { name:"Site D - WH",     lat:1.4255730640948574, lng:103.79358640285662 },
-  { name:"Site E - NSC",    lat:1.3221829783973038, lng:103.84933935706384 },
-  { name:"Site F - Bizit Office",   lat:1.3529846010135893, lng:103.84316689510088 },
-  { name:"Site G - Bishan MRT",       lat:1.351292939593891, lng:103.84870003652243 },
-  { name:"Site H - Orchard Central",        lat:1.3010213243802298, lng:103.83972359419455 },
-  { name:"Site I - Ronald Home",        lat:1.4247928457305246, lng:103.83180977959292 },
-  { name:"Site J - Evan Home",        lat:1.5444273661786772, lng:103.81599479207716 },
-  { name:"Site K - Brenden Home",        lat:1.3772207346355416, lng:103.77344134822532 },
-  { name:"Site L - Hui Hong Home",        lat:1.4208355755415034, lng:103.8475711887202 },
-  { name:"Site M - Marcus Home",        lat:1.275931624207712, lng:103.80887589637807 }
+  { name:"Refresh This Page",  lat:1.3065232058219243, lng:103.79258262698083 }
 ];
 
 // v6.41: keep the built-in sites separate so admin-added (custom) sites can be
@@ -3688,7 +3675,11 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
       _handleGpsFailureOutcome(dir);
       return;
     }
-    GPS[dir] = { lat:lat, lng:lng, accuracy:acc, dist:dist, ok:true };
+    // v6.87 — stamp which site this fix was actually verified against. If the
+    // dropdown silently changes afterward (e.g. a live site-list refresh
+    // resets the selection without the user touching it), _saveCheckin can
+    // catch the mismatch instead of saving GPS data under the wrong site name.
+    GPS[dir] = { lat:lat, lng:lng, accuracy:acc, dist:dist, ok:true, siteName: site.name };
     setGpsUI(dir, "ok", site.name, dist, acc);
     chkBtn();
     _gpsAttempt[dir] = 0; // v6.65: a good fix ends the chain
@@ -6137,6 +6128,21 @@ function _saveCheckin(empId, empName, siteVal, empEmail, devId, btn) {
   var site   = siteByName(siteVal);   // v6.62: lookup by name (indexes shift when sites are deleted)
   if (!site) { btn.innerHTML = "✅ Check In"; toast("That work site no longer exists — pick another from the list", "t-err"); return; }
   var gps    = GPS.in;
+  if (!gps || !gps.ok) {
+    btn.innerHTML = "✅ Check In";
+    toast("Please verify your GPS location before checking in", "t-err");
+    return;
+  }
+  // v6.87 — the site dropdown can silently change after GPS was verified (a
+  // live site-list refresh resetting the selection without a user-initiated
+  // change doesn't fire the normal re-verify reset). Refuse to save GPS data
+  // under a site it was never actually checked against.
+  if (gps.siteName && gps.siteName !== site.name) {
+    btn.innerHTML = "✅ Check In";
+    resetGps("in");
+    toast("⚠️ Your selected site changed since you verified your location (was " + gps.siteName + ", now " + site.name + ") — please verify your location again.", "t-err");
+    return;
+  }
   var now    = new Date();
   var isLate = _isLateForSite(now, site.name);   // v6.84: per-site start time
 
@@ -11402,6 +11408,14 @@ function refreshAllSiteDropdowns() {
     es.innerHTML = '<option value="">— Select your work site —</option>';
     WORK_SITES.forEach(function(s){ var o=document.createElement("option"); o.value=s.name; o.textContent=s.name; es.appendChild(o); });
     es.value = curName;
+    // v6.87 — if the previous selection no longer matches any current option
+    // (the live site list changed under the engineer, e.g. admin importing/
+    // editing/removing sites mid-session), the browser silently clears the
+    // selection. Setting .value programmatically never fires a 'change'
+    // event, so the normal onchange="resetGps('in')" safety net never runs —
+    // any already-"verified" GPS state would otherwise go stale without
+    // anyone noticing. Force the reset here instead.
+    if (es.value !== curName && typeof resetGps === "function") resetGps("in");
   }
 }
 
