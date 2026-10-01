@@ -2410,11 +2410,15 @@ tr.on-leave-row td{background:#f0f9ff!important}
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Attendance records — public read/create/update; admin delete only
-    // Engineers need read to detect admin force check-out on their own device
+    // Attendance records
+    // v6.86 — engineers can read ONLY still-open ("in") records, so a lost
+    // local session (private browsing, cleared cache, new device) can be
+    // resumed from the database instead of creating a duplicate check-in.
+    // Completed ("out") records and full history still require admin auth.
     match /attendance/{doc} {
-      allow read, create, update: if true;
-      allow delete: if request.auth != null;
+      allow read: if resource.data.status == 'in';
+      allow create, update: if true;
+      allow read, update, delete: if request.auth != null;
     }
 
     // Email ↔ Engineer ID bindings — read/write for binding checks + admin CRUD
@@ -2650,6 +2654,12 @@ service cloud.firestore {
                         'checkoutLat','checkoutLng','checkoutDist',
                         'checkoutAcc','status','duration','isOvertime'])
                     && request.resource.data.status == 'out';
+
+      // v6.86 — engineers can read ONLY still-open ("in") records, so a lost
+      // local session (private browsing, cleared cache, new device) can be
+      // resumed from the database instead of creating a duplicate check-in.
+      // Completed ("out") records and full history still require admin auth.
+      allow read: if resource.data.status == 'in';
 
       // Signed-in admin can read, update (force check-out) or delete records
       allow read, update, delete: if request.auth != null;
@@ -5946,42 +5956,104 @@ function doCheckin() {
         return;
       }
 
-      // ── Identity verified — now check for approved leave today ──
-      // This MUST run AFTER identity binding so a wrong-empId attempt can't
-      // leak another engineer's leave status.
-      btn.innerHTML = '<span class="spin"></span> Checking leave status…';
+      // v6.86 — identity verified, but before treating this as a NEW check-in,
+      // find out whether this engineer already has an open (never-checked-out)
+      // session in the database. Local storage (at_sess) is normally what
+      // remembers "you're still checked in," but a private/incognito tab, a
+      // cleared cache, or a different device all wipe it silently — leaving the
+      // engineer stuck ("No active session found" on checkout) or, worse,
+      // creating a duplicate check-in on top of the still-open one. The
+      // database is the real source of truth here, not localStorage.
+      btn.innerHTML = '<span class="spin"></span> Checking your status…';
+      _tryResumeOpenSession(empId, empName, empEmail, devId, btn, function() {
+        // No open session found in the database — this really is a fresh
+        // check-in. Proceed with the existing checks, unchanged.
+        _continueFreshCheckin();
+      });
 
-      _isOnApprovedLeaveToday(empId, function(leaveRec) {
-        if (leaveRec) {
-          // Engineer is on approved leave today — hard block, show banner
-          showLeaveBanner(leaveRec);
-          toast("⛔ You are on approved " + leaveRec.leaveType + " today — check-in not allowed", "t-err");
-          btn.disabled = false;
-          btn.innerHTML = "✅ Check In";
-          var banner = document.getElementById("leaveActiveBanner");
-          if (banner && banner.scrollIntoView) banner.scrollIntoView({ behavior: "smooth", block: "start" });
-          return;
-        }
-        // Not on leave — cross-device buddy punch check (Firestore-backed, catches different devices)
-        btn.innerHTML = '<span class="spin"></span> Checking device…';
-        _checkCrossDeviceDuplicate(empId, devId, function(conflict) {
-          if (conflict) {
-            // Same engineer already checked in today from a different physical device — flag it
-            _reportBuddyPunchAlert(empId, empName, devId, conflict);
+      function _continueFreshCheckin() {
+        // ── Identity verified — now check for approved leave today ──
+        // This MUST run AFTER identity binding so a wrong-empId attempt can't
+        // leak another engineer's leave status.
+        btn.innerHTML = '<span class="spin"></span> Checking leave status…';
+
+        _isOnApprovedLeaveToday(empId, function(leaveRec) {
+          if (leaveRec) {
+            // Engineer is on approved leave today — hard block, show banner
+            showLeaveBanner(leaveRec);
+            toast("⛔ You are on approved " + leaveRec.leaveType + " today — check-in not allowed", "t-err");
             btn.disabled = false;
             btn.innerHTML = "✅ Check In";
-            toast("⛔ Buddy punch detected! This account already checked in from a different device today.", "t-err");
-            setTimeout(function(){
-              alert("⛔ Buddy Punch Detected!\n\n" + empId + " (" + empName + ") already checked in from a different device at " + (conflict.checkinTime || "unknown time") + " at " + (conflict.site || "unknown site") + ".\n\nEach engineer must use only one phone to check in. This incident has been reported to admin.");
-            }, 300);
+            var banner = document.getElementById("leaveActiveBanner");
+            if (banner && banner.scrollIntoView) banner.scrollIntoView({ behavior: "smooth", block: "start" });
             return;
           }
-          // All checks passed — save the check-in
-          _saveCheckin(empId, empName, siteVal, empEmail, devId, btn);
+          // Not on leave — cross-device buddy punch check (Firestore-backed, catches different devices)
+          btn.innerHTML = '<span class="spin"></span> Checking device…';
+          _checkCrossDeviceDuplicate(empId, devId, function(conflict) {
+            if (conflict) {
+              // Same engineer already checked in today from a different physical device — flag it
+              _reportBuddyPunchAlert(empId, empName, devId, conflict);
+              btn.disabled = false;
+              btn.innerHTML = "✅ Check In";
+              toast("⛔ Buddy punch detected! This account already checked in from a different device today.", "t-err");
+              setTimeout(function(){
+                alert("⛔ Buddy Punch Detected!\n\n" + empId + " (" + empName + ") already checked in from a different device at " + (conflict.checkinTime || "unknown time") + " at " + (conflict.site || "unknown site") + ".\n\nEach engineer must use only one phone to check in. This incident has been reported to admin.");
+              }, 300);
+              return;
+            }
+            // All checks passed — save the check-in
+            _saveCheckin(empId, empName, siteVal, empEmail, devId, btn);
+          });
         });
-      });
+      }
     });
   });
+}
+
+// v6.86 — looks for an open (status:"in") attendance record for this empId,
+// independent of localStorage. Private/incognito tabs, a cleared cache, or a
+// different device all wipe "at_sess" silently; the database doesn't forget.
+// If found, rebuild the local session from the real record and switch the
+// screen straight to check-out instead of letting a duplicate check-in happen.
+function _tryResumeOpenSession(empId, empName, empEmail, devId, btn, onNoOpenSession) {
+  if (!fbOk || !db) { onNoOpenSession(); return; }
+  db.collection("attendance")
+    .where("empId", "==", empId)
+    .where("status", "==", "in")
+    .get()
+    .then(function(qs) {
+      if (qs.empty) { onNoOpenSession(); return; }
+      // Normally there should only ever be one open record — but if more than
+      // one somehow exists (e.g. from before this fix), resume the most recent.
+      var best = null;
+      qs.forEach(function(doc) {
+        var d = doc.data();
+        if (!best || (d.checkinTimestamp || 0) > (best.data.checkinTimestamp || 0)) {
+          best = { id: doc.id, data: d };
+        }
+      });
+      var rec = Object.assign({}, best.data, { empId: empId });
+      setSess(rec);
+      setSessDocId(best.id);
+      btn.disabled = false;
+      btn.innerHTML = "✅ Check In";
+      document.getElementById("ciForm").style.display    = "none";
+      document.getElementById("coSection").style.display = "block";
+      document.getElementById("sessBadge").style.display = "block";
+      document.getElementById("sb-emp").textContent  = rec.empName + " (" + rec.empId + ")";
+      document.getElementById("sb-site").textContent = rec.site;
+      document.getElementById("sb-cin").textContent  = rec.checkinTime;
+      updateDur();
+      checkApprovedLeaveForEmp(rec.empId);
+      toast("ℹ️ You're already checked in since " + rec.checkinTime + " — switched you to check-out.", "t-ok");
+    })
+    .catch(function(e) {
+      console.warn("[v6.86] open-session lookup failed:", e && (e.code || e.message));
+      // Fail open rather than blocking the engineer entirely — fall through to
+      // the normal check-in flow if the lookup itself couldn't run.
+      onNoOpenSession();
+    });
 }
 
 // v6.64: Flip a pre-registered engineer's onboarding record to "active".
