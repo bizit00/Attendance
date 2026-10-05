@@ -2462,6 +2462,14 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // v6.89 — Blocked engineers: admin blocks an engineer after reviewing a fingerprint
+    // match. An engineer's check-in does a single `get` on their OWN id (no login), so
+    // `get` is public; listing and all writes are admin only.
+    match /blockedEngineers/{empId} {
+      allow get: if true;
+      allow list, write: if request.auth != null;
+    }
+
     // Work sites — admins/managers add, edit and remove sites (name + GPS);
     // everyone reads so the engineer check-in dropdown works before login
     match /workSites/{doc} {
@@ -2746,6 +2754,14 @@ service cloud.firestore {
     // Cleared buddy-punch cases — admin verifies a false positive and clears it
     match /clearedDeviceCases/{doc} {
       allow read, write: if request.auth != null;
+    }
+
+    // v6.89 — Blocked engineers: admin blocks an engineer after reviewing a fingerprint
+    // match. An engineer's check-in does a single `get` on their OWN id (no login), so
+    // `get` is public; listing and all writes are admin only.
+    match /blockedEngineers/{empId} {
+      allow get: if true;
+      allow list, write: if request.auth != null;
     }
 
     // Work sites — admins/managers add, edit and remove sites (name + GPS);
@@ -5574,6 +5590,35 @@ function _reportBuddyPunchAlert(empId, empName, myDevId, conflictRec) {
   }
 }
 
+// v6.89 — fingerprint match: notify admin instead of blocking the engineer.
+// One alert per (engineer pair + fingerprint): deterministic doc id, so repeat
+// check-ins don't spam. Engineers can only CREATE alerts; the repeat write is an
+// update, which rules deny (harmless — that is exactly the dedupe we want, and it
+// also means an admin's Approve/Block decision is never overwritten).
+function _reportFingerprintMatch(empId, empName, myDevId, other) {
+  if (!fbOk || !db || !other || !other.empId) return;
+  var now = new Date();
+  var pair = [empId, other.empId].sort().join("_");
+  var docId = "fpm_" + pair + "_" + String(myDevId).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 40);
+  var siteSel = (document.getElementById("empSite") || {}).value || "";
+  db.collection("buddyPunchAlerts").doc(docId).set({
+    kind:          "fingerprint-match",
+    status:        "new",
+    empId:         empId,
+    empName:       empName,
+    otherEmpId:    other.empId,
+    otherEmpName:  other.empName || "",
+    fingerprint:   myDevId,
+    newHwId:       getHwId(),
+    newDeviceToken:getDeviceToken(),
+    site:          siteSel,
+    date:          now.toLocaleDateString("en-SG"),
+    detectedAt:    now.getTime(),
+    detectedIso:   now.toISOString(),
+    _userAgent:    navigator.userAgent.slice(0, 120)
+  }).catch(function(e) { /* already reported (update denied) or transient — safe to ignore */ });
+}
+
 // ── Spot-Check globals ──────────────────────────────
 var scCurrentToken      = null; // token being verified on the spot-check screen
 var scCurrentData       = null; // loaded spotCheckRequests doc
@@ -6485,6 +6530,7 @@ function initDash() {
 
   // Load buddy punch alerts so the Device Audit badge updates in real-time
   if (typeof loadBuddyPunchAlerts === "function") loadBuddyPunchAlerts();
+  if (typeof loadBlockedEngineers === "function") loadBlockedEngineers();   // v6.89
 
   // Load admin-cleared (verified-not-buddy-punch) device cases
   if (typeof loadClearedDeviceCases === "function") loadClearedDeviceCases();
@@ -12123,19 +12169,145 @@ function loadBuddyPunchAlerts() {
     }, function(err) { console.warn("[AT] buddyPunchAlerts listener:", err); });
 }
 
+// ── v6.89: fingerprint-match review + engineer blocks ────────────────────────
+// v6.89 — safe string literal for use inside an inline onclick="..." attribute.
+function _jsAttr(v) {
+  return JSON.stringify(String(v == null ? "" : v)).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "\\u003c");
+}
+
+var blockedEngineersList = [];
+var fbBlockedUnsub = null;
+
+function loadBlockedEngineers() {
+  if (!fbOk || !db) return;
+  if (fbBlockedUnsub) fbBlockedUnsub();
+  fbBlockedUnsub = db.collection("blockedEngineers").onSnapshot(function(snap) {
+    blockedEngineersList = snap.docs.map(function(d){ return Object.assign({ id:d.id }, d.data()); });
+    var devTab = document.getElementById("dTab-device");
+    if (devTab && devTab.style.display !== "none") _renderBuddyPunchAlerts();
+  }, function(err) { console.warn("[AT] blockedEngineers listener:", err); });
+}
+
+function _adminWho() {
+  return (firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || "Admin";
+}
+
+// Admin: these are two separate phones (same model) or otherwise fine — clear, no suspicion.
+function _fpApprove(alertId) {
+  if (!fbOk || !db) return;
+  db.collection("buddyPunchAlerts").doc(alertId).update({
+    status: "approved", reviewedBy: _adminWho(), reviewedAt: Date.now()
+  }).then(function(){ toast("✅ Approved — engineers cleared, no suspicion.", "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
+}
+
+// Admin: block this engineer from checking in (until unblocked).
+function _fpBlock(alertId, empId, empName, otherEmpId) {
+  if (!fbOk || !db) return;
+  if (!confirm("Block " + empId + (empName ? " (" + empName + ")" : "") + " from checking in?\n\n" +
+               "They will see a message to contact admin and cannot check in until you unblock them " +
+               "(Device Audit → Blocked engineers). Anyone already checked in can still check out.")) return;
+  var batch = db.batch();
+  batch.set(db.collection("blockedEngineers").doc(empId), {
+    empId: empId, empName: empName || "", reason: "Fingerprint match with " + (otherEmpId || "another engineer"),
+    alertId: alertId, blockedBy: _adminWho(), blockedAt: Date.now()
+  });
+  batch.update(db.collection("buddyPunchAlerts").doc(alertId), {
+    status: "blocked", blockedEmpId: empId, reviewedBy: _adminWho(), reviewedAt: Date.now()
+  });
+  batch.commit()
+    .then(function(){ toast("🚫 " + empId + " blocked from checking in.", "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
+}
+
+function _fpReopen(alertId) {
+  if (!fbOk || !db) return;
+  db.collection("buddyPunchAlerts").doc(alertId).update({ status: "new" })
+    .then(function(){ toast("Re-opened for review.", "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
+}
+
+function _unblockEngineer(empId) {
+  if (!fbOk || !db) return;
+  if (!confirm("Unblock " + empId + "? They will be able to check in again.")) return;
+  db.collection("blockedEngineers").doc(empId).delete()
+    .then(function(){ toast("✅ " + empId + " unblocked.", "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
+}
+
+function _renderFingerprintReview() {
+  var fp = buddyPunchAlertsList.filter(function(a){ return a.kind === "fingerprint-match"; });
+  var pending  = fp.filter(function(a){ return a.status === "new"; });
+  var reviewed = fp.filter(function(a){ return a.status !== "new"; }).slice(0, 8);
+  var out = '';
+
+  if (pending.length) {
+    out += '<div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:2px solid #fcd34d;border-radius:var(--r2);padding:18px 20px;margin-bottom:12px">'
+      + '<div style="font-weight:800;color:#92400e;font-size:1rem;margin-bottom:4px">🔍 ' + pending.length + ' Fingerprint Match' + (pending.length > 1 ? "es" : "") + ' — Please Verify</div>'
+      + '<div style="font-size:.78rem;color:#92400e;margin-bottom:12px">These engineers checked in on phones that look identical to the system. It may be the <b>same phone</b> (buddy-punching) or just the <b>same model</b>. They were <b>not</b> blocked — check with them, then decide.</div>'
+      + pending.map(function(a) {
+          var when = a.detectedAt ? new Date(a.detectedAt).toLocaleString("en-SG") : "—";
+          var eid = sanitizeHtml(a.empId || ""), oid = sanitizeHtml(a.otherEmpId || "");
+          var ename = sanitizeHtml(a.empName || ""), oname = sanitizeHtml(a.otherEmpName || "");
+          var ejs = _jsAttr(a.empId || "");
+          var njs = _jsAttr(a.empName || "");
+          var ojs = _jsAttr(a.otherEmpId || "");
+          var onjs = _jsAttr(a.otherEmpName || "");
+          var ajs = _jsAttr(a.id);
+          var btn = 'padding:6px 12px;border-radius:8px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap;';
+          return '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;border:1px solid #fcd34d">'
+            + '<div style="font-weight:700;font-size:.9rem;margin-bottom:3px">👷 ' + ename + ' <span style="font-family:var(--mono);font-weight:400;color:#666">(' + eid + ')</span>'
+            + ' <span style="color:#92400e;font-weight:600">↔</span> '
+            + oname + ' <span style="font-family:var(--mono);font-weight:400;color:#666">(' + oid + ')</span></div>'
+            + '<div style="font-size:.76rem;color:#666;margin-bottom:10px">Site: ' + sanitizeHtml(a.site || "—") + ' · Detected: ' + when + '</div>'
+            + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+            + '<button onclick="_fpApprove(' + ajs + ')" style="' + btn + 'background:#16a34a;color:#fff;border:none">✅ Approve — no suspicion</button>'
+            + '<button onclick="_fpBlock(' + ajs + ',' + ejs + ',' + njs + ',' + ojs + ')" style="' + btn + 'background:#fff;color:#b91c1c;border:1.5px solid #fca5a5">🚫 Block ' + eid + '</button>'
+            + '<button onclick="_fpBlock(' + ajs + ',' + ojs + ',' + onjs + ',' + ejs + ')" style="' + btn + 'background:#fff;color:#b91c1c;border:1.5px solid #fca5a5">🚫 Block ' + oid + '</button>'
+            + '</div></div>';
+        }).join("")
+      + '</div>';
+  }
+
+  if (blockedEngineersList.length) {
+    out += '<div style="background:#fff;border:1.5px solid #fca5a5;border-radius:var(--r2);padding:14px 18px;margin-bottom:12px">'
+      + '<div style="font-weight:800;color:#b91c1c;font-size:.9rem;margin-bottom:8px">🚫 Blocked engineers (' + blockedEngineersList.length + ')</div>'
+      + blockedEngineersList.map(function(b) {
+          var ijs = _jsAttr(b.empId || b.id);
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-top:1px solid #fee2e2;flex-wrap:wrap">'
+            + '<div style="font-size:.82rem"><b>' + sanitizeHtml(b.empId || b.id) + '</b> ' + sanitizeHtml(b.empName || "")
+            + '<div style="font-size:.72rem;color:#888">' + sanitizeHtml(b.reason || "") + ' · by ' + sanitizeHtml(b.blockedBy || "") + '</div></div>'
+            + '<button onclick="_unblockEngineer(' + ijs + ')" style="padding:5px 12px;border-radius:8px;background:#fff;color:#15803d;border:1.5px solid #86efac;font-size:.76rem;font-weight:700;cursor:pointer">Unblock</button>'
+            + '</div>';
+        }).join("")
+      + '</div>';
+  }
+
+  if (reviewed.length) {
+    out += '<details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:.78rem;color:var(--ink3);font-weight:600">Recently reviewed fingerprint matches (' + reviewed.length + ')</summary>'
+      + reviewed.map(function(a) {
+          var ajs = _jsAttr(a.id);
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;font-size:.78rem;color:var(--ink2);flex-wrap:wrap">'
+            + '<span>' + sanitizeHtml(a.empId || "") + ' ↔ ' + sanitizeHtml(a.otherEmpId || "") + ' — <b>' + sanitizeHtml(a.status) + '</b>'
+            + (a.reviewedBy ? ' by ' + sanitizeHtml(a.reviewedBy) : '') + '</span>'
+            + '<button onclick="_fpReopen(' + ajs + ')" style="padding:3px 10px;border-radius:7px;background:#fff;border:1px solid var(--border);font-size:.72rem;cursor:pointer">Re-open</button></div>';
+        }).join("")
+      + '</div></details>';
+  }
+  return out;
+}
+
 function _renderBuddyPunchAlerts() {
   var wrap = document.getElementById("buddyPunchAlertsWrap");
   if (!wrap) return;
 
-  if (!buddyPunchAlertsList.length) {
-    wrap.innerHTML = '';
-    return;
-  }
+  var reviewHtml = _renderFingerprintReview();   // v6.89
 
-  var newAlerts = buddyPunchAlertsList.filter(function(a) { return a.status === "new"; });
-  if (!newAlerts.length) { wrap.innerHTML = ''; return; }
+  // Cross-device alerts only (fingerprint matches are shown by the review panel above).
+  var newAlerts = buddyPunchAlertsList.filter(function(a) { return a.status === "new" && a.kind !== "fingerprint-match"; });
+  if (!newAlerts.length) { wrap.innerHTML = reviewHtml; return; }
 
-  wrap.innerHTML = '<div style="background:linear-gradient(135deg,#fef2f2,#ffe4e6);border:2px solid #fca5a5;border-radius:var(--r2);padding:18px 20px;margin-bottom:4px">'
+  wrap.innerHTML = reviewHtml + '<div style="background:linear-gradient(135deg,#fef2f2,#ffe4e6);border:2px solid #fca5a5;border-radius:var(--r2);padding:18px 20px;margin-bottom:4px">'
     + '<div style="font-weight:800;color:#b91c1c;font-size:1rem;margin-bottom:12px">🚨 ' + newAlerts.length + ' Cross-Device Check-In Alert' + (newAlerts.length > 1 ? "s" : "") + ' — Buddy Punch Suspected</div>'
     + newAlerts.map(function(a) {
         var when = a.detectedIso ? new Date(a.detectedAt).toLocaleString("en-SG") : "—";
@@ -14034,10 +14206,22 @@ function verifyIdentityBinding(email, empId, empName, devId, cb) {
     var emailRef = db.collection("emailBindings").doc(emailKey);
     var empRef   = db.collection("empBindings").doc(empId);
 
-    Promise.all([emailRef.get(), empRef.get()])
+    // v6.89: admin can block an engineer from checking in (Device Audit → fingerprint
+    // review). Engineers may only `get` this one doc by their own ID. Fail OPEN on any
+    // read error so a rules/network hiccup never locks out a legitimate engineer.
+    var blockRef = db.collection("blockedEngineers").doc(empId);
+    Promise.all([emailRef.get(), empRef.get(), blockRef.get().catch(function(){ return null; })])
       .then(function(results) {
         var eDok = results[0]; // email doc
         var xDok = results[1]; // empId doc
+        var bDok = results[2]; // blockedEngineers doc (or null)
+
+        // 0. Blocked by admin after a fingerprint review?
+        if (bDok && bDok.exists) {
+          return cb({ ok:false, reason:
+            "⛔ Your check-in has been blocked by admin.\n\n" +
+            "Please contact your admin to have your account reviewed." });
+        }
 
         // 1. Is this email already owned by a DIFFERENT engineer?
         if (eDok.exists && eDok.data().empId !== empId) {
@@ -14079,13 +14263,11 @@ function verifyIdentityBinding(email, empId, empName, devId, cb) {
         }
 
         fpCheckPromise.then(function(fpConflict) {
-          if (fpConflict) {
-            return cb({ ok:false, reason:
-              "⛔ This device's hardware fingerprint is already registered to engineer " +
-              fpConflict.empId + " (" + fpConflict.empName + ").\n\n" +
-              "Each physical device can only be used by ONE engineer, even in a different browser. " +
-              "If you've been issued a new device, ask admin to reset your binding." });
-          }
+          // v6.89: a matching fingerprint no longer BLOCKS check-in. Same-model phones
+          // (especially iPhones) share one fingerprint, so this fired on engineers using
+          // different phones. Instead the engineer proceeds and admin is notified to
+          // verify (Device Audit → Approve or Block).
+          if (fpConflict) _reportFingerprintMatch(empId, empName, devId, fpConflict);
 
         // 4. All clear — update bindings
         var isNew = !eDok.exists;
@@ -17616,6 +17798,7 @@ const HELP_TOPICS = {
       "Review buddy punch alerts at the top — these flag cases where one device was used by more than one engineer on the same date. A separate purple 'GPS Proximity Match' section flags different engineers who checked in at nearly the same spot within a few minutes of each other, even when their device fingerprints look different (e.g. iOS Safari Private Browsing).",
       "Review the Device-Engineer Registry table for any rows flagged as suspicious.",
       "To investigate: note the Device ID, go to Live Status and search for the engineer IDs involved, and compare GPS coordinates and timestamps.",
+      "A yellow 'Fingerprint Match — Please Verify' panel appears when two engineers check in on phones that look identical to the system. The engineers are NOT blocked at check-in. Check with them whether it is the same phone or just the same model, then tap 'Approve' (clears them, no suspicion) or 'Block' next to the engineer you want to stop — a blocked engineer sees a 'contact admin' message and cannot check in until you tap 'Unblock' in the 'Blocked engineers' list.",
       "To clear a confirmed false positive, use the clear/resolve option on the alert.",
       "In the Email-Device Binding Registry, review any devices whose email changed after initial binding and reset the binding if needed."
     ],
@@ -17628,6 +17811,7 @@ const HELP_TOPICS = {
       "The Device Audit tab monitors for buddy punching — when one physical device is used to check in as two different engineers on the same day. This is detected by comparing Device Tokens across same-day attendance records. A Device Token is a random string generated and stored in the browser's local storage on first use; two identical phones of the same model will always get different tokens.",
       "In addition to Device Tokens, the system also records a Hardware ID derived from GPU, screen, and CPU characteristics. Hardware ID is kept as a secondary signal for older records but same-model Hardware ID collisions alone are no longer treated as buddy punches. Note: iOS Safari Private Browsing intentionally randomizes some of these hardware signals, so it can defeat this check entirely — the GPS Proximity Match section above is the fallback for that case.",
       "The GPS Proximity Match section flags different engineers who checked in within roughly 15 metres and 5 minutes of each other, regardless of what device fingerprint (if any) was reported. This catches buddy-punching that the fingerprint check alone would miss.",
+      "Fingerprint matches never block an engineer automatically (v6.89). The system raises a review request for admin instead; only an admin 'Block' stops an engineer from checking in. Blocks are stored in the blockedEngineers collection — see Setup Guide Step 7 for the rule, which must be published for blocking to work. An engineer who is already checked in can still check out while blocked.",
       "Reset Devices (from Eng Accounts) and Delete both clear that engineer's device bindings everywhere they appear, not just under their current email — so a hardware-fingerprint block should never survive a reset.",
       "The Email-Device Binding Registry tracks which email address each device was first associated with. If a device later reports a different email (possible account sharing), the row is flagged. Admin can view the email history for the device and choose to reset the binding."
     ]
