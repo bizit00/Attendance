@@ -2220,6 +2220,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       </div>
 
       <!-- Real-time buddy punch alerts (cross-device, same engineer) -->
+      <div style="margin-bottom:10px"><input id="fpSearch" type="search" placeholder="🔍 Search fingerprint reviews / blocked engineers by Engineer ID or name…" oninput="_renderBuddyPunchAlerts()" style="width:100%;max-width:440px;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-size:.85rem;background:#fff"/></div>
       <div id="buddyPunchAlertsWrap" style="margin-bottom:18px"></div>
 
       <!-- Historical suspicious flags (same device, different engineers) -->
@@ -2466,6 +2467,13 @@ service cloud.firestore {
     // match. An engineer's check-in does a single `get` on their OWN id (no login), so
     // `get` is public; listing and all writes are admin only.
     match /blockedEngineers/{empId} {
+      allow get: if true;
+      allow list, write: if request.auth != null;
+    }
+
+    // v6.90 — Trusted phone-model fingerprints: set when admin approves a fingerprint
+    // group. Engineers do a single `get` so repeat same-model check-ins stop raising alerts.
+    match /approvedFingerprints/{fp} {
       allow get: if true;
       allow list, write: if request.auth != null;
     }
@@ -2760,6 +2768,13 @@ service cloud.firestore {
     // match. An engineer's check-in does a single `get` on their OWN id (no login), so
     // `get` is public; listing and all writes are admin only.
     match /blockedEngineers/{empId} {
+      allow get: if true;
+      allow list, write: if request.auth != null;
+    }
+
+    // v6.90 — Trusted phone-model fingerprints: set when admin approves a fingerprint
+    // group. Engineers do a single `get` so repeat same-model check-ins stop raising alerts.
+    match /approvedFingerprints/{fp} {
       allow get: if true;
       allow list, write: if request.auth != null;
     }
@@ -5601,6 +5616,18 @@ function _reportFingerprintMatch(empId, empName, myDevId, other) {
   var pair = [empId, other.empId].sort().join("_");
   var docId = "fpm_" + pair + "_" + String(myDevId).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 40);
   var siteSel = (document.getElementById("empSite") || {}).value || "";
+  // v6.90: if admin already approved this fingerprint (same phone model, separate phones),
+  // don't raise another alert. Fail OPEN: if the lookup errors, report as before.
+  var fpSlug = String(myDevId).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 60);
+  db.collection("approvedFingerprints").doc(fpSlug).get()
+    .catch(function(){ return null; })
+    .then(function(trusted) {
+      if (trusted && trusted.exists) return;
+      _writeFingerprintAlert(docId, empId, empName, myDevId, other, siteSel, now);
+    });
+}
+
+function _writeFingerprintAlert(docId, empId, empName, myDevId, other, siteSel, now) {
   db.collection("buddyPunchAlerts").doc(docId).set({
     kind:          "fingerprint-match",
     status:        "new",
@@ -6531,6 +6558,7 @@ function initDash() {
   // Load buddy punch alerts so the Device Audit badge updates in real-time
   if (typeof loadBuddyPunchAlerts === "function") loadBuddyPunchAlerts();
   if (typeof loadBlockedEngineers === "function") loadBlockedEngineers();   // v6.89
+  if (typeof loadApprovedFingerprints === "function") loadApprovedFingerprints();   // v6.90
 
   // Load admin-cleared (verified-not-buddy-punch) device cases
   if (typeof loadClearedDeviceCases === "function") loadClearedDeviceCases();
@@ -12156,7 +12184,13 @@ function loadBuddyPunchAlerts() {
       buddyPunchAlertsList = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
 
       // Update badge on Device Audit tab
-      var newCount = buddyPunchAlertsList.filter(function(a) { return a.status === "new"; }).length;
+      var _fpSeen = {};
+      var newCount = buddyPunchAlertsList.filter(function(a) {
+        if (a.status !== "new") return false;
+        if (a.kind !== "fingerprint-match") return true;
+        var k = _fpSlug(a.fingerprint) || a.id;       // v6.90: one badge count per fingerprint group
+        if (_fpSeen[k]) return false; _fpSeen[k] = true; return true;
+      }).length;
       var badge = document.getElementById("buddyPunchBadge");
       if (badge) {
         if (newCount > 0) { badge.textContent = newCount; badge.style.display = "inline-block"; }
@@ -12192,34 +12226,6 @@ function _adminWho() {
   return (firebase && firebase.auth && firebase.auth().currentUser && firebase.auth().currentUser.email) || "Admin";
 }
 
-// Admin: these are two separate phones (same model) or otherwise fine — clear, no suspicion.
-function _fpApprove(alertId) {
-  if (!fbOk || !db) return;
-  db.collection("buddyPunchAlerts").doc(alertId).update({
-    status: "approved", reviewedBy: _adminWho(), reviewedAt: Date.now()
-  }).then(function(){ toast("✅ Approved — engineers cleared, no suspicion.", "t-ok"); })
-    .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
-}
-
-// Admin: block this engineer from checking in (until unblocked).
-function _fpBlock(alertId, empId, empName, otherEmpId) {
-  if (!fbOk || !db) return;
-  if (!confirm("Block " + empId + (empName ? " (" + empName + ")" : "") + " from checking in?\n\n" +
-               "They will see a message to contact admin and cannot check in until you unblock them " +
-               "(Device Audit → Blocked engineers). Anyone already checked in can still check out.")) return;
-  var batch = db.batch();
-  batch.set(db.collection("blockedEngineers").doc(empId), {
-    empId: empId, empName: empName || "", reason: "Fingerprint match with " + (otherEmpId || "another engineer"),
-    alertId: alertId, blockedBy: _adminWho(), blockedAt: Date.now()
-  });
-  batch.update(db.collection("buddyPunchAlerts").doc(alertId), {
-    status: "blocked", blockedEmpId: empId, reviewedBy: _adminWho(), reviewedAt: Date.now()
-  });
-  batch.commit()
-    .then(function(){ toast("🚫 " + empId + " blocked from checking in.", "t-ok"); })
-    .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
-}
-
 function _fpReopen(alertId) {
   if (!fbOk || !db) return;
   db.collection("buddyPunchAlerts").doc(alertId).update({ status: "new" })
@@ -12235,64 +12241,203 @@ function _unblockEngineer(empId) {
     .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
 }
 
-function _renderFingerprintReview() {
-  var fp = buddyPunchAlertsList.filter(function(a){ return a.kind === "fingerprint-match"; });
-  var pending  = fp.filter(function(a){ return a.status === "new"; });
-  var reviewed = fp.filter(function(a){ return a.status !== "new"; }).slice(0, 8);
-  var out = '';
+// ── v6.90: grouped fingerprint review (one card per shared fingerprint) + search ──
+var _fpGroups = {};            // key -> group, rebuilt on every render; used by the buttons
+var approvedFingerprintsList = [];
+var fbApprovedFpUnsub = null;
 
-  if (pending.length) {
+function _fpSlug(fp) { return String(fp == null ? "" : fp).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 60); }
+
+function loadApprovedFingerprints() {
+  if (!fbOk || !db) return;
+  if (fbApprovedFpUnsub) fbApprovedFpUnsub();
+  fbApprovedFpUnsub = db.collection("approvedFingerprints").onSnapshot(function(snap) {
+    approvedFingerprintsList = snap.docs.map(function(d){ return Object.assign({ id:d.id }, d.data()); });
+    var devTab = document.getElementById("dTab-device");
+    if (devTab && devTab.style.display !== "none") _renderBuddyPunchAlerts();
+  }, function(err) { console.warn("[AT] approvedFingerprints listener:", err); });
+}
+
+function _fpQuery() { return ((document.getElementById("fpSearch") || {}).value || "").trim().toLowerCase(); }
+function _fpHit(q, id, name) {
+  if (!q) return true;
+  return String(id || "").toLowerCase().indexOf(q) !== -1 || String(name || "").toLowerCase().indexOf(q) !== -1;
+}
+
+// Group the pending alerts by fingerprint → { key, fp, alerts[], emps{empId:name}, sites{} }
+function _fpBuildGroups() {
+  var groups = {};
+  buddyPunchAlertsList.forEach(function(a) {
+    if (a.kind !== "fingerprint-match" || a.status !== "new") return;
+    var key = _fpSlug(a.fingerprint) || a.id;
+    var g = groups[key] || (groups[key] = { key:key, fp:a.fingerprint || "", alerts:[], emps:{}, sites:{}, latest:0 });
+    g.alerts.push(a);
+    if (a.empId)      g.emps[a.empId]      = a.empName || g.emps[a.empId] || "";
+    if (a.otherEmpId) g.emps[a.otherEmpId] = a.otherEmpName || g.emps[a.otherEmpId] || "";
+    if (a.site) g.sites[a.site] = true;
+    if ((a.detectedAt || 0) > g.latest) g.latest = a.detectedAt || 0;
+  });
+  return groups;
+}
+
+function _fpBatchUpdate(batch, alerts, patch) {
+  alerts.forEach(function(a){ batch.update(db.collection("buddyPunchAlerts").doc(a.id), patch); });
+}
+
+// Approve one group: clears every engineer in it AND trusts the fingerprint, so
+// further engineers on the same phone model stop raising alerts.
+function _fpApproveGroup(key) {
+  var g = _fpGroups[key]; if (!g || !fbOk || !db) return;
+  var ids = Object.keys(g.emps);
+  if (!confirm("Approve " + ids.length + " engineers (" + ids.join(", ") + ") as clear?\n\n" +
+               "This marks them as using separate phones of the same model, and stops further alerts for this phone model.")) return;
+  var batch = db.batch();
+  _fpBatchUpdate(batch, g.alerts, { status:"approved", reviewedBy:_adminWho(), reviewedAt:Date.now() });
+  if (_fpSlug(g.fp)) {
+    batch.set(db.collection("approvedFingerprints").doc(_fpSlug(g.fp)), {
+      fingerprint: g.fp, engineers: ids, approvedBy: _adminWho(), approvedAt: Date.now()
+    });
+  }
+  batch.commit()
+    .then(function(){ toast("✅ Approved " + ids.length + " engineers — no suspicion.", "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
+}
+
+function _fpApproveAll() {
+  if (!fbOk || !db) return;
+  var keys = Object.keys(_fpGroups);
+  if (!keys.length) return;
+  if (!confirm("Approve ALL " + keys.length + " pending fingerprint group(s) as clear?\n\nOnly do this if you are happy none of them is one phone being shared.")) return;
+  var batch = db.batch(), n = 0;
+  keys.forEach(function(k) {
+    var g = _fpGroups[k];
+    _fpBatchUpdate(batch, g.alerts, { status:"approved", reviewedBy:_adminWho(), reviewedAt:Date.now() });
+    if (_fpSlug(g.fp)) batch.set(db.collection("approvedFingerprints").doc(_fpSlug(g.fp)), {
+      fingerprint: g.fp, engineers: Object.keys(g.emps), approvedBy: _adminWho(), approvedAt: Date.now()
+    });
+    n += g.alerts.length;
+  });
+  if (n > 400) { toast("Too many at once — approve a few groups at a time.", "t-err"); return; }
+  batch.commit()
+    .then(function(){ toast("✅ All " + keys.length + " group(s) approved.", "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
+}
+
+// Block ONE engineer inside a group (e.g. the one actually sharing a phone).
+function _fpBlockInGroup(key, empId) {
+  var g = _fpGroups[key]; if (!g || !fbOk || !db) return;
+  var empName = g.emps[empId] || "";
+  if (!confirm("Block " + empId + (empName ? " (" + empName + ")" : "") + " from checking in?\n\n" +
+               "They will see a message to contact admin and cannot check in until you unblock them " +
+               "(Device Audit → Blocked engineers). Anyone already checked in can still check out.")) return;
+  var batch = db.batch();
+  batch.set(db.collection("blockedEngineers").doc(empId), {
+    empId:empId, empName:empName, reason:"Fingerprint match (shared with " + Object.keys(g.emps).filter(function(x){ return x !== empId; }).join(", ") + ")",
+    blockedBy:_adminWho(), blockedAt:Date.now()
+  });
+  var mine = g.alerts.filter(function(a){ return a.empId === empId || a.otherEmpId === empId; });
+  _fpBatchUpdate(batch, mine, { status:"blocked", blockedEmpId:empId, reviewedBy:_adminWho(), reviewedAt:Date.now() });
+  batch.commit()
+    .then(function(){ toast("🚫 " + empId + " blocked from checking in.", "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
+}
+
+function _fpRevokeTrusted(slug) {
+  if (!fbOk || !db) return;
+  if (!confirm("Stop trusting this phone-model fingerprint? Future engineers on it will raise alerts again.")) return;
+  db.collection("approvedFingerprints").doc(slug).delete()
+    .then(function(){ toast("Trust removed.", "t-ok"); })
+    .catch(function(e){ toast("Failed: " + (e.message || e), "t-err"); });
+}
+
+function _renderFingerprintReview() {
+  var q = _fpQuery();
+  var out = '';
+  _fpGroups = _fpBuildGroups();
+  var btn = 'padding:6px 12px;border-radius:8px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap;';
+
+  // ── Pending groups ──
+  var keys = Object.keys(_fpGroups).filter(function(k) {
+    if (!q) return true;
+    var g = _fpGroups[k];
+    return Object.keys(g.emps).some(function(id){ return _fpHit(q, id, g.emps[id]); });
+  }).sort(function(a, b){ return _fpGroups[b].latest - _fpGroups[a].latest; });
+
+  if (keys.length) {
     out += '<div style="background:linear-gradient(135deg,#fffbeb,#fef3c7);border:2px solid #fcd34d;border-radius:var(--r2);padding:18px 20px;margin-bottom:12px">'
-      + '<div style="font-weight:800;color:#92400e;font-size:1rem;margin-bottom:4px">🔍 ' + pending.length + ' Fingerprint Match' + (pending.length > 1 ? "es" : "") + ' — Please Verify</div>'
-      + '<div style="font-size:.78rem;color:#92400e;margin-bottom:12px">These engineers checked in on phones that look identical to the system. It may be the <b>same phone</b> (buddy-punching) or just the <b>same model</b>. They were <b>not</b> blocked — check with them, then decide.</div>'
-      + pending.map(function(a) {
-          var when = a.detectedAt ? new Date(a.detectedAt).toLocaleString("en-SG") : "—";
-          var eid = sanitizeHtml(a.empId || ""), oid = sanitizeHtml(a.otherEmpId || "");
-          var ename = sanitizeHtml(a.empName || ""), oname = sanitizeHtml(a.otherEmpName || "");
-          var ejs = _jsAttr(a.empId || "");
-          var njs = _jsAttr(a.empName || "");
-          var ojs = _jsAttr(a.otherEmpId || "");
-          var onjs = _jsAttr(a.otherEmpName || "");
-          var ajs = _jsAttr(a.id);
-          var btn = 'padding:6px 12px;border-radius:8px;font-size:.78rem;font-weight:700;cursor:pointer;white-space:nowrap;';
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:6px">'
+      + '<div style="font-weight:800;color:#92400e;font-size:1rem">🔍 ' + keys.length + ' Fingerprint Group' + (keys.length > 1 ? "s" : "") + ' — Please Verify</div>'
+      + (keys.length > 1 && !q ? '<button onclick="_fpApproveAll()" style="' + btn + 'background:#16a34a;color:#fff;border:none">✅ Approve all ' + keys.length + ' groups</button>' : '')
+      + '</div>'
+      + '<div style="font-size:.78rem;color:#92400e;margin-bottom:12px">Each group is engineers whose phones look identical to the system. It may be the <b>same phone</b> (buddy-punching) or just the <b>same model</b>. Nobody was blocked — check with them, then approve the group or block the individual engineer.</div>'
+      + keys.map(function(k) {
+          var g = _fpGroups[k];
+          var ids = Object.keys(g.emps);
+          var kjs = _jsAttr(k);
+          var sites = Object.keys(g.sites).join(", ") || "—";
+          var when = g.latest ? new Date(g.latest).toLocaleString("en-SG") : "—";
           return '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;border:1px solid #fcd34d">'
-            + '<div style="font-weight:700;font-size:.9rem;margin-bottom:3px">👷 ' + ename + ' <span style="font-family:var(--mono);font-weight:400;color:#666">(' + eid + ')</span>'
-            + ' <span style="color:#92400e;font-weight:600">↔</span> '
-            + oname + ' <span style="font-family:var(--mono);font-weight:400;color:#666">(' + oid + ')</span></div>'
-            + '<div style="font-size:.76rem;color:#666;margin-bottom:10px">Site: ' + sanitizeHtml(a.site || "—") + ' · Detected: ' + when + '</div>'
-            + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-            + '<button onclick="_fpApprove(' + ajs + ')" style="' + btn + 'background:#16a34a;color:#fff;border:none">✅ Approve — no suspicion</button>'
-            + '<button onclick="_fpBlock(' + ajs + ',' + ejs + ',' + njs + ',' + ojs + ')" style="' + btn + 'background:#fff;color:#b91c1c;border:1.5px solid #fca5a5">🚫 Block ' + eid + '</button>'
-            + '<button onclick="_fpBlock(' + ajs + ',' + ojs + ',' + onjs + ',' + ejs + ')" style="' + btn + 'background:#fff;color:#b91c1c;border:1.5px solid #fca5a5">🚫 Block ' + oid + '</button>'
-            + '</div></div>';
+            + '<div style="font-weight:700;font-size:.9rem;margin-bottom:2px">👥 ' + ids.length + ' engineers on identical-looking phones</div>'
+            + '<div style="font-size:.74rem;color:#666;margin-bottom:8px">Site(s): ' + sanitizeHtml(sites) + ' · Latest: ' + when + '</div>'
+            + ids.map(function(id) {
+                var hit = q && _fpHit(q, id, g.emps[id]);
+                return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 8px;margin-bottom:3px;border-radius:7px;background:' + (hit ? '#fef08a' : '#f9fafb') + '">'
+                  + '<span style="font-size:.84rem"><b style="font-family:var(--mono)">' + sanitizeHtml(id) + '</b> ' + sanitizeHtml(g.emps[id] || "") + '</span>'
+                  + '<button onclick="_fpBlockInGroup(' + kjs + ',' + _jsAttr(id) + ')" style="padding:3px 10px;border-radius:7px;background:#fff;color:#b91c1c;border:1.5px solid #fca5a5;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap">🚫 Block</button>'
+                  + '</div>';
+              }).join("")
+            + '<div style="margin-top:8px"><button onclick="_fpApproveGroup(' + kjs + ')" style="' + btn + 'background:#16a34a;color:#fff;border:none">✅ Approve all ' + ids.length + ' — no suspicion</button></div>'
+            + '</div>';
         }).join("")
       + '</div>';
+  } else if (q && Object.keys(_fpGroups).length) {
+    out += '<div style="font-size:.8rem;color:var(--ink3);margin-bottom:10px">No pending fingerprint matches for “' + sanitizeHtml(q) + '”.</div>';
   }
 
-  if (blockedEngineersList.length) {
+  // ── Blocked engineers ──
+  var blocked = blockedEngineersList.filter(function(b){ return _fpHit(q, b.empId || b.id, b.empName); });
+  if (blocked.length) {
     out += '<div style="background:#fff;border:1.5px solid #fca5a5;border-radius:var(--r2);padding:14px 18px;margin-bottom:12px">'
-      + '<div style="font-weight:800;color:#b91c1c;font-size:.9rem;margin-bottom:8px">🚫 Blocked engineers (' + blockedEngineersList.length + ')</div>'
-      + blockedEngineersList.map(function(b) {
-          var ijs = _jsAttr(b.empId || b.id);
+      + '<div style="font-weight:800;color:#b91c1c;font-size:.9rem;margin-bottom:8px">🚫 Blocked engineers (' + blocked.length + ')</div>'
+      + blocked.map(function(b) {
           return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-top:1px solid #fee2e2;flex-wrap:wrap">'
             + '<div style="font-size:.82rem"><b>' + sanitizeHtml(b.empId || b.id) + '</b> ' + sanitizeHtml(b.empName || "")
             + '<div style="font-size:.72rem;color:#888">' + sanitizeHtml(b.reason || "") + ' · by ' + sanitizeHtml(b.blockedBy || "") + '</div></div>'
-            + '<button onclick="_unblockEngineer(' + ijs + ')" style="padding:5px 12px;border-radius:8px;background:#fff;color:#15803d;border:1.5px solid #86efac;font-size:.76rem;font-weight:700;cursor:pointer">Unblock</button>'
+            + '<button onclick="_unblockEngineer(' + _jsAttr(b.empId || b.id) + ')" style="padding:5px 12px;border-radius:8px;background:#fff;color:#15803d;border:1.5px solid #86efac;font-size:.76rem;font-weight:700;cursor:pointer">Unblock</button>'
             + '</div>';
         }).join("")
       + '</div>';
   }
 
+  // ── Trusted phone-model fingerprints (from group approvals) ──
+  var trusted = approvedFingerprintsList.filter(function(t) {
+    if (!q) return true;
+    return (t.engineers || []).some(function(id){ return String(id).toLowerCase().indexOf(q) !== -1; });
+  });
+  if (trusted.length) {
+    out += '<details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:.78rem;color:var(--ink3);font-weight:600">Trusted phone-model fingerprints (' + trusted.length + ') — no alerts raised for these</summary>'
+      + trusted.map(function(t) {
+          return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;font-size:.78rem;color:var(--ink2);flex-wrap:wrap">'
+            + '<span>' + sanitizeHtml((t.engineers || []).join(", ")) + ' · approved by ' + sanitizeHtml(t.approvedBy || "") + '</span>'
+            + '<button onclick="_fpRevokeTrusted(' + _jsAttr(t.id) + ')" style="padding:3px 10px;border-radius:7px;background:#fff;border:1px solid var(--border);font-size:.72rem;cursor:pointer">Revoke</button></div>';
+        }).join("")
+      + '</details>';
+  }
+
+  // ── Recently reviewed ──
+  var reviewed = buddyPunchAlertsList.filter(function(a) {
+    return a.kind === "fingerprint-match" && a.status !== "new"
+      && (_fpHit(q, a.empId, a.empName) || _fpHit(q, a.otherEmpId, a.otherEmpName));
+  }).slice(0, q ? 30 : 10);
   if (reviewed.length) {
-    out += '<details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:.78rem;color:var(--ink3);font-weight:600">Recently reviewed fingerprint matches (' + reviewed.length + ')</summary>'
+    out += '<details style="margin-bottom:12px"' + (q ? ' open' : '') + '><summary style="cursor:pointer;font-size:.78rem;color:var(--ink3);font-weight:600">Recently reviewed fingerprint matches (' + reviewed.length + ')</summary>'
       + reviewed.map(function(a) {
-          var ajs = _jsAttr(a.id);
           return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;font-size:.78rem;color:var(--ink2);flex-wrap:wrap">'
             + '<span>' + sanitizeHtml(a.empId || "") + ' ↔ ' + sanitizeHtml(a.otherEmpId || "") + ' — <b>' + sanitizeHtml(a.status) + '</b>'
             + (a.reviewedBy ? ' by ' + sanitizeHtml(a.reviewedBy) : '') + '</span>'
-            + '<button onclick="_fpReopen(' + ajs + ')" style="padding:3px 10px;border-radius:7px;background:#fff;border:1px solid var(--border);font-size:.72rem;cursor:pointer">Re-open</button></div>';
+            + '<button onclick="_fpReopen(' + _jsAttr(a.id) + ')" style="padding:3px 10px;border-radius:7px;background:#fff;border:1px solid var(--border);font-size:.72rem;cursor:pointer">Re-open</button></div>';
         }).join("")
-      + '</div></details>';
+      + '</details>';
   }
   return out;
 }
@@ -17811,7 +17956,7 @@ const HELP_TOPICS = {
       "The Device Audit tab monitors for buddy punching — when one physical device is used to check in as two different engineers on the same day. This is detected by comparing Device Tokens across same-day attendance records. A Device Token is a random string generated and stored in the browser's local storage on first use; two identical phones of the same model will always get different tokens.",
       "In addition to Device Tokens, the system also records a Hardware ID derived from GPU, screen, and CPU characteristics. Hardware ID is kept as a secondary signal for older records but same-model Hardware ID collisions alone are no longer treated as buddy punches. Note: iOS Safari Private Browsing intentionally randomizes some of these hardware signals, so it can defeat this check entirely — the GPS Proximity Match section above is the fallback for that case.",
       "The GPS Proximity Match section flags different engineers who checked in within roughly 15 metres and 5 minutes of each other, regardless of what device fingerprint (if any) was reported. This catches buddy-punching that the fingerprint check alone would miss.",
-      "Fingerprint matches never block an engineer automatically (v6.89). The system raises a review request for admin instead; only an admin 'Block' stops an engineer from checking in. Blocks are stored in the blockedEngineers collection — see Setup Guide Step 7 for the rule, which must be published for blocking to work. An engineer who is already checked in can still check out while blocked.",
+      "Fingerprint matches never block an engineer automatically (v6.89). The system raises a review request for admin instead; only an admin 'Block' stops an engineer from checking in. Matches are grouped: one card per shared fingerprint listing every engineer on it, with a single 'Approve all' (which also trusts that phone model so no more alerts are raised for it), a per-engineer 'Block', an 'Approve all groups' shortcut, and a search box (Engineer ID or name). Blocks are stored in the blockedEngineers collection — see Setup Guide Step 7 for the rule, which must be published for blocking to work. An engineer who is already checked in can still check out while blocked.",
       "Reset Devices (from Eng Accounts) and Delete both clear that engineer's device bindings everywhere they appear, not just under their current email — so a hardware-fingerprint block should never survive a reset.",
       "The Email-Device Binding Registry tracks which email address each device was first associated with. If a device later reports a different email (possible account sharing), the row is flagged. Admin can view the email history for the device and choose to reset the binding."
     ]
