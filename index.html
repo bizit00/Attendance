@@ -2220,7 +2220,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       </div>
 
       <!-- Real-time buddy punch alerts (cross-device, same engineer) -->
-      <div style="margin-bottom:10px"><input id="fpSearch" type="search" placeholder="🔍 Search fingerprint reviews / blocked engineers by Engineer ID or name…" oninput="_renderBuddyPunchAlerts()" style="width:100%;max-width:440px;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-size:.85rem;background:#fff"/></div>
+      <div style="margin-bottom:10px"><input id="fpSearch" type="search" placeholder="🔍 Search Device Audit by Engineer ID or name…" oninput="_fpSearchInput()" style="width:100%;max-width:440px;padding:9px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-size:.85rem;background:#fff"/></div>
       <div id="buddyPunchAlertsWrap" style="margin-bottom:18px"></div>
 
       <!-- Historical suspicious flags (same device, different engineers) -->
@@ -12258,6 +12258,21 @@ function loadApprovedFingerprints() {
   }, function(err) { console.warn("[AT] approvedFingerprints listener:", err); });
 }
 
+
+// v6.91 — search box also filters the flag cards, device registry and email-binding tables
+function _fpFilterDom() {
+  var q = _fpQuery();
+  function filt(nodes) {
+    Array.prototype.forEach.call(nodes, function(n) {
+      n.style.display = (!q || n.textContent.toLowerCase().indexOf(q) !== -1) ? "" : "none";
+    });
+  }
+  filt(document.querySelectorAll("#deviceFlagsWrap div[style*='background:#fff;border-radius']"));
+  filt(document.querySelectorAll("#deviceTblBody tr"));
+  filt(document.querySelectorAll("#emailBindTblBody tr"));
+}
+function _fpSearchInput() { _renderBuddyPunchAlerts(); _fpFilterDom(); }
+
 function _fpQuery() { return ((document.getElementById("fpSearch") || {}).value || "").trim().toLowerCase(); }
 function _fpHit(q, id, name) {
   if (!q) return true;
@@ -14114,7 +14129,7 @@ function renderDeviceAudit() {
   var badge = document.getElementById("suspiciousBadge");
   if (badge) { badge.style.display = suspiciousDevices.length > 0 ? "inline" : "none"; }
 
-  var proxGroups = _gpsProximitySuspects();
+  var proxGroups = [];   // v6.91: GPS-proximity section removed
 
   // Render flags summary
   var flagsWrap = document.getElementById("deviceFlagsWrap");
@@ -14307,6 +14322,7 @@ function renderDeviceAudit() {
 
   // ✅ Render email–device binding registry below the device table
   renderEmailBindings();
+  _fpFilterDom();
 }
 
 // ══════════════════════════════════════════════════════
