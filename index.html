@@ -3595,8 +3595,9 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
   }
   else {
     var sess = getSess();
-    site = sess ? WORK_SITES.find(function(s){ return s.name===sess.site; }) : null;
-    if (!site) { setGpsUI(dir,"error","Session site not found.",null); return; }
+    if (!sess) { _noSessionRecover(); return; }   // v6.88: no dead end
+    site = WORK_SITES.find(function(s){ return s.name===sess.site; });
+    if (!site) { setGpsUI(dir,"error","Your session's site (" + sanitizeHtml(sess.site || "unknown") + ") was renamed or removed by admin — use manual confirmation below.",null); return; }
   }
 
   // v6.7 — Anti-WiFi-Spoof GPS:
@@ -3838,7 +3839,8 @@ function _hasOpenPending(empId, dir, cb) {
 function requestManualConfirm(dir) {
   if (dir === "out") {
     var sess = getSess();
-    if (!sess || !sess.checkinTimestamp || sess.checkoutTimestamp) {
+    if (!sess) { _noSessionRecover(); return; }   // v6.88: no dead end
+    if (!sess.checkinTimestamp || sess.checkoutTimestamp) {
       toast("No active session to check out from", "t-err"); return;
     }
     _hasOpenPending(sess.empId, "out", function(exists, doc){
@@ -4182,10 +4184,49 @@ function setGpsUI(dir, state, name, dist, acc) {
 }
 
 // ── Session helpers ────────────────────────────────
-function getSess() { try { return JSON.parse(localStorage.getItem("at_sess")||"null"); } catch(e){ return null; } }
-function setSess(d) { localStorage.setItem("at_sess", d ? JSON.stringify(d) : "null"); }
-function getSessDocId() { return localStorage.getItem("at_sess_doc") || null; }
-function setSessDocId(id) { if(id) localStorage.setItem("at_sess_doc",id); else localStorage.removeItem("at_sess_doc"); }
+// v6.88 — the session is also mirrored in memory. Private/incognito tabs (Safari
+// especially) can lose localStorage while the page itself is still open; the
+// page then showed the Check-Out screen but getSess() returned null, so every
+// check-out path dead-ended ("Session site not found" / "No active session").
+// If storage comes back empty but this page already knows the session, use that
+// and write it back. Legit clears go through setSess(null), which clears both.
+var _sessMem = null, _sessDocMem = null;
+function getSess() {
+  try {
+    var s = JSON.parse(localStorage.getItem("at_sess")||"null");
+    if (s) { _sessMem = s; return s; }
+  } catch(e){}
+  if (_sessMem) { try { localStorage.setItem("at_sess", JSON.stringify(_sessMem)); } catch(_){} return _sessMem; }
+  return null;
+}
+function setSess(d) {
+  _sessMem = d || null;
+  try { localStorage.setItem("at_sess", d ? JSON.stringify(d) : "null"); } catch(e){ console.warn("[v6.88] could not persist session:", e && e.message); }
+}
+function getSessDocId() {
+  var v = null;
+  try { v = localStorage.getItem("at_sess_doc"); } catch(e){}
+  return v || _sessDocMem || null;
+}
+function setSessDocId(id) {
+  _sessDocMem = id || null;
+  try { if(id) localStorage.setItem("at_sess_doc",id); else localStorage.removeItem("at_sess_doc"); } catch(e){}
+}
+
+// v6.88 — no local session AND nothing in memory (fresh private tab, cleared
+// storage, new phone). Instead of a dead-end error, send the engineer back to
+// the check-in form: its identity-verified lookup (v6.86) finds their open
+// record in the database and switches them straight to check-out.
+function _noSessionRecover() {
+  var ci = document.getElementById("ciForm");        if (ci) ci.style.display = "block";
+  var co = document.getElementById("coSection");     if (co) co.style.display = "none";
+  var sb = document.getElementById("sessBadge");     if (sb) sb.style.display = "none";
+  var rc = document.getElementById("resultCard");    if (rc) rc.style.display = "none";
+  resetGps("out");
+  resetGps("in");
+  toast("ℹ️ We couldn't find your session on this device. Fill in your details and tap Check In — we'll find your open check-in and take you straight to check-out.", "t-warn");
+  if (ci && ci.scrollIntoView) ci.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 // Real-time force-checkout listener (unsubscribe fn stored here)
 var _forceCoListener = null;
@@ -6214,7 +6255,7 @@ function _saveCheckin(empId, empName, siteVal, empEmail, devId, btn) {
 function doCheckout() {
   var gps  = GPS.out;
   var sess = getSess();
-  if (!sess) { toast("No active session found","t-err"); return; }
+  if (!sess) { _noSessionRecover(); return; }   // v6.88: no dead end
   if (!gps || !gps.ok) { toast("Please verify your GPS location before checking out","t-err"); return; }
 
   var now  = new Date();
