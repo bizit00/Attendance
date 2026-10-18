@@ -3874,13 +3874,18 @@ function requestManualConfirm(dir) {
     if (!sess.checkinTimestamp || sess.checkoutTimestamp) {
       toast("No active session to check out from", "t-err"); return;
     }
-    _hasOpenPending(sess.empId, "out", function(exists, doc){
-      if (exists && doc && doc.data().linkedAttendanceId === getSessDocId()) { _showPendingState(doc.id, "out"); return; }
-      openManualCard({
-        dir: "out", empId: sess.empId, empName: sess.empName, empEmail: sess.empEmail || "",
-        site: sess.site, devId: sess.deviceId || null, linkedAttendanceId: getSessDocId()
+    // v6.92: admin can only close a record it can find — make sure we have its id.
+    var _go = function() {
+      _hasOpenPending(sess.empId, "out", function(exists, doc){
+        if (exists && doc && doc.data().linkedAttendanceId === getSessDocId()) { _showPendingState(doc.id, "out"); return; }
+        openManualCard({
+          dir: "out", empId: sess.empId, empName: sess.empName, empEmail: sess.empEmail || "",
+          site: sess.site, devId: sess.deviceId || null, linkedAttendanceId: getSessDocId()
+        });
       });
-    });
+    };
+    if (getSessDocId()) { _go(); }
+    else _lookupOpenAttendanceStrict(sess.empId, function(ok, best) { if (ok && best) setSessDocId(best.id); _go(); });
     return;
   }
 
@@ -4412,6 +4417,7 @@ function _checkForceCoSignal(sess, sessDoc) {
         document.getElementById("sb-cin").textContent  = s.checkinTime;
         updateDur();
         checkApprovedLeaveForEmp(s.empId);
+        _reconcileLocalSession();   // v6.92: listener was blocked — verify with the DB instead
       }
     }
   }).catch(function() {});
@@ -5329,6 +5335,7 @@ function initEmp() {
     document.getElementById("sb-cin").textContent  = s.checkinTime;
     updateDur();
     checkApprovedLeaveForEmp(s.empId);
+    _reconcileLocalSession();   // v6.92: verify against the database
   }
   // Always reset leave section to hidden, show buttons
   var ls = document.getElementById("leaveSection"); if(ls) ls.style.display="none";
@@ -6184,6 +6191,64 @@ function _lookupOpenAttendance(empId, callback) {
     });
 }
 
+// v6.92 — like _lookupOpenAttendance, but tells the caller whether the lookup
+// actually SUCCEEDED: cb(ok, best). ok=false means "couldn't ask" (rules/network),
+// so callers must not treat best=null as proof that nothing is open.
+function _lookupOpenAttendanceStrict(empId, cb) {
+  if (!fbOk || !db || !empId) { cb(false, null); return; }
+  db.collection("attendance").where("empId", "==", empId).where("status", "==", "in").get()
+    .then(function(qs) {
+      var best = null;
+      qs.forEach(function(doc) {
+        var d = doc.data();
+        if (!best || (d.checkinTimestamp || 0) > (best.data.checkinTimestamp || 0)) best = { id: doc.id, data: d };
+      });
+      cb(true, best);
+    })
+    .catch(function(e) { console.warn("[v6.92] strict open lookup failed:", e && (e.code || e.message)); cb(false, null); });
+}
+
+// v6.92 — the local session says "checked in", but the database is the truth.
+// If this engineer was already checked out (another tab/device, a private tab,
+// admin/manual confirmation, or a check-out that landed after the page lost
+// track), the local session is stale: clear it instead of showing yesterday's
+// check-out dashboard. If the open record is a different doc, follow the DB.
+var _reconcileBusy = false;
+function _reconcileLocalSession() {
+  var sess = getSess();
+  if (!sess || !sess.empId || !sess.checkinTimestamp || sess.checkoutTimestamp || _reconcileBusy) return;
+  var co = document.getElementById("coSection");
+  if (!co || co.style.display !== "block") return;
+  _reconcileBusy = true;
+  _lookupOpenAttendanceStrict(sess.empId, function(ok, best) {
+    _reconcileBusy = false;
+    if (!ok) return;                               // can't verify → keep local session (fail open)
+    var cur = getSess();
+    if (!cur || cur.empId !== sess.empId) return;  // changed while we were asking
+    if (!best) {
+      if (_forceCoListener) { try { _forceCoListener(); } catch(e){} _forceCoListener = null; }
+      setSess(null); setSessDocId(null);
+      ["sessBadge","coSection","resultCard"].forEach(function(id){ var el = document.getElementById(id); if (el) el.style.display = "none"; });
+      var ci = document.getElementById("ciForm"); if (ci) ci.style.display = "block";
+      resetGps("out"); resetGps("in");
+      toast("ℹ️ You're already checked out — this screen was out of date. You can check in again when you're ready.", "t-ok");
+      return;
+    }
+    if (best.id !== getSessDocId()) {              // DB has a different open record → follow it
+      setSess(Object.assign({}, best.data, { empId: sess.empId }));
+      setSessDocId(best.id);
+      var rec = getSess();
+      var e1 = document.getElementById("sb-emp");  if (e1) e1.textContent  = rec.empName + " (" + rec.empId + ")";
+      var e2 = document.getElementById("sb-site"); if (e2) e2.textContent = rec.site;
+      var e3 = document.getElementById("sb-cin");  if (e3) e3.textContent  = rec.checkinTime;
+      updateDur();
+    }
+  });
+}
+document.addEventListener("visibilitychange", function() {
+  if (document.visibilityState === "visible") { try { _reconcileLocalSession(); } catch(e){} }
+});
+
 // Used by doCheckin's normal GPS flow — if an open session exists, resume it
 // and switch straight to the check-out screen instead of creating a duplicate.
 function _tryResumeOpenSession(empId, empName, empEmail, devId, btn, onNoOpenSession) {
@@ -6360,11 +6425,34 @@ function doCheckout() {
     setTimeout(function(){ checkApprovedLeaveForEmp(sess.empId); }, 1200);
   }
 
+  // v6.92: the old code called onSaved() even when the database write FAILED —
+  // the phone showed "Checked out" and cleared its session while the record stayed
+  // "in", so next day the engineer was asked to check out again. Now: only clear
+  // the session after the database confirms; otherwise keep it and say so.
+  function _coFail(e) {
+    console.warn("[v6.92] check-out write failed:", e && (e.code || e.message));
+    btn.disabled = false;
+    btn.innerHTML = "🔴 Check Out";
+    toast("⚠️ Check-out was NOT saved (" + ((e && (e.code || e.message)) || "network problem") + "). Check your connection and tap Check Out again — you're still checked in.", "t-err");
+  }
+  function _writeCo(docId, attempt) {
+    db.collection("attendance").doc(docId).update(updates)
+      .then(function(){ setSessDocId(docId); onSaved(); })
+      .catch(function(e){
+        if (attempt < 2) { setTimeout(function(){ _writeCo(docId, attempt + 1); }, 1200); }
+        else _coFail(e);
+      });
+  }
   var docId = getSessDocId();
   if (fbOk && db && docId) {
-    db.collection("attendance").doc(docId).update(updates)
-      .then(function(){ onSaved(); })
-      .catch(function(e){ console.warn(e); onSaved(); });
+    _writeCo(docId, 0);
+  } else if (fbOk && db) {
+    // Session has no record id (lost with local storage) — find the open record first.
+    _lookupOpenAttendanceStrict(sess.empId, function(ok, best) {
+      if (ok && best) _writeCo(best.id, 0);
+      else if (ok) { onSaved(); toast("ℹ️ No open check-in found for you — you're already checked out.", "t-ok"); }
+      else _coFail({ message: "could not reach the server" });
+    });
   } else {
     var idx = localRecs.findIndex(function(r){ return r.empId===sess.empId && r.checkinTimestamp===sess.checkinTimestamp; });
     if (idx>-1){ localRecs[idx]=Object.assign({},localRecs[idx],updates); localStorage.setItem("at_recs",JSON.stringify(localRecs)); }
