@@ -4232,12 +4232,21 @@ function getSess() {
     var s = JSON.parse(localStorage.getItem("at_sess")||"null");
     if (s) { _sessMem = s; return s; }
   } catch(e){}
+  // v6.93: only heal a session that storage LOST (private tab, wiped cache). If the
+  // session was deliberately cleared (check-out / admin close / reconcile) another
+  // tab leaves a tombstone — then a stale tab must not write its old copy back.
+  var _cleared = null;
+  try { _cleared = localStorage.getItem("at_sess_cleared"); } catch(e){}
+  if (_cleared) { _sessMem = null; return null; }
   if (_sessMem) { try { localStorage.setItem("at_sess", JSON.stringify(_sessMem)); } catch(_){} return _sessMem; }
   return null;
 }
 function setSess(d) {
   _sessMem = d || null;
-  try { localStorage.setItem("at_sess", d ? JSON.stringify(d) : "null"); } catch(e){ console.warn("[v6.88] could not persist session:", e && e.message); }
+  try {
+    localStorage.setItem("at_sess", d ? JSON.stringify(d) : "null");
+    if (d) localStorage.removeItem("at_sess_cleared"); else localStorage.setItem("at_sess_cleared", String(Date.now()));
+  } catch(e){ console.warn("[v6.88] could not persist session:", e && e.message); }
 }
 function getSessDocId() {
   var v = null;
