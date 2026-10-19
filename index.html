@@ -11730,6 +11730,46 @@ function createManagerAuthAccount(email, password) {
     });
 }
 
+// v6.94 — "Delete manager" only removes the Firestore record; the Firebase LOGIN stays
+// (a browser can't delete another user's login). So re-adding the same email used to fail
+// with "already has a login". Now: reuse the login if the entered password matches it,
+// otherwise tell the caller so it can email a password-reset link instead.
+function ensureManagerLogin(email, password) {
+  return createManagerAuthAccount(email, password)
+    .then(function() { return { mode: "created" }; })
+    .catch(function(err) {
+      if (!err || err.code !== "auth/email-already-in-use") throw err;
+      var sec = firebase.apps.filter(function(a){ return a.name === "ManagerCreator"; })[0];
+      if (!sec) throw err;
+      return sec.auth().signInWithEmailAndPassword(email, password)
+        .then(function() { return sec.auth().signOut(); })
+        .then(function() { return { mode: "reused" }; })
+        .catch(function(e2) {
+          try { sec.auth().signOut(); } catch(_) {}
+          var c = e2 && e2.code;
+          if (c === "auth/wrong-password" || c === "auth/invalid-credential" || c === "auth/invalid-login-credentials")
+            return { mode: "other-password" };
+          throw e2;
+        });
+    });
+}
+
+// v6.94 — admin "edit password": a browser cannot set another person's password directly
+// (that needs the Firebase Admin SDK). The safe equivalent is a reset email: the manager
+// gets a link and chooses a new password. Admin never sees or types it.
+function resetManagerPassword(id) {
+  var m = teamManagersList.find(function(x){ return x.id === id; });
+  if (!m || !m.email) return;
+  if (!confirm("Send a password-reset email to " + m.email + "?\n\n" + m.name + " will get a link to choose a new password. Their current password keeps working until they use the link.")) return;
+  if (!fbOk) { toast("Firebase not configured.", "t-err"); return; }
+  firebase.auth().sendPasswordResetEmail(m.email)
+    .then(function(){ toast("📧 Password-reset email sent to " + m.email, "t-ok"); })
+    .catch(function(e){
+      var msg = (e && e.code === "auth/user-not-found") ? "No login exists for that email (the account may have been removed in Firebase)." : ((e && e.message) || String(e));
+      toast("Failed: " + msg, "t-err");
+    });
+}
+
 function _mgrSiteNames() {
   return WORK_SITES.map(function(s){ return s.name; });
 }
@@ -11768,8 +11808,14 @@ function submitNewManager() {
     return fail("A manager with that email already exists.");
 
   ok("Creating login…");
-  createManagerAuthAccount(email, pass)
-    .then(function() {
+  var _loginMode = "created";
+  ensureManagerLogin(email, pass)
+    .then(function(res) {
+      _loginMode = res.mode;
+      if (res.mode === "other-password" &&
+          !confirm("That email already has a login (from an earlier manager record) with a different password.\n\nCreate the manager record anyway and email " + email + " a password-reset link so they can set a new password?")) {
+        throw { code: "cancelled" };
+      }
       var adminEmail = (firebase.auth().currentUser && firebase.auth().currentUser.email) || "Admin";
       return db.collection("teamManagers").add({
         name:name, email:email, phone:phone, sites:sites, active:true, canAdminTasks:canAdminTasks,
@@ -11777,6 +11823,12 @@ function submitNewManager() {
       });
     })
     .then(function() {
+      if (_loginMode === "other-password") {
+        firebase.auth().sendPasswordResetEmail(email).catch(function(e){ console.warn("[v6.94] reset email failed:", e && e.code); });
+        ok("✓ Manager created: " + name + " — password-reset email sent to " + email);
+      } else if (_loginMode === "reused") {
+        ok("✓ Manager created: " + name + " — existing login reused (same password).");
+      } else
       ok("✓ Manager created: " + name);
       ["mgrName","mgrEmail","mgrPhone","mgrPass"].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=""; });
       document.querySelectorAll(".mgr-site-cb").forEach(function(cb){ cb.checked=false; });
@@ -11784,21 +11836,35 @@ function submitNewManager() {
       toast("👔 Team manager added: " + name, "t-ok");
     })
     .catch(function(e) {
+      if (e && e.code === "cancelled") return fail("Cancelled — nothing was created.");
       var m = (e && e.code === "auth/email-already-in-use")
-        ? "That email already has a login. Use a different email, or deactivate the old record."
+        ? "That email still has an old login in Firebase. Delete it in Firebase → Authentication → Users, then add the manager again (or use a different email)."
         : (e && e.message) || String(e);
       fail("Failed: " + m);
     });
 }
 
+var _mgrDeleteNotice = null;   // v6.95: {name,email} of the last deleted manager
+function _mgrDismissNotice() { _mgrDeleteNotice = null; renderManagersList(); }
+function _mgrNoticeHtml() {
+  if (!_mgrDeleteNotice) return "";
+  var pid = (typeof FIREBASE_CONFIG !== "undefined" && FIREBASE_CONFIG.projectId) || "";
+  var url = "https://console.firebase.google.com/project/" + encodeURIComponent(pid) + "/authentication/users";
+  return '<div style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;padding:12px 14px;margin-bottom:10px;font-size:.8rem;color:#92400e;line-height:1.6">'
+    + '<b>✅ ' + sanitizeHtml(_mgrDeleteNotice.name) + ' removed from the list.</b><br>'
+    + 'To re-create <b>' + sanitizeHtml(_mgrDeleteNotice.email) + '</b> with a new password, also delete their login: '
+    + '<a href="' + url + '" target="_blank" rel="noopener" style="color:#b45309;font-weight:700">open Firebase → Authentication → Users</a>, '
+    + 'tick the email, then Delete. After that, add the manager again here.'
+    + ' <button class="tb-btn" style="margin-left:6px" onclick="_mgrDismissNotice()">Dismiss</button></div>';
+}
 function renderManagersList() {
   var wrap = document.getElementById("managersList");
   if (!wrap) return;
   if (!teamManagersList.length) {
-    wrap.innerHTML = '<div style="font-size:.8rem;color:var(--ink3);padding:8px 2px">No team managers yet — add one above.</div>';
+    wrap.innerHTML = _mgrNoticeHtml() + '<div style="font-size:.8rem;color:var(--ink3);padding:8px 2px">No team managers yet — add one above.</div>';
     return;
   }
-  wrap.innerHTML = teamManagersList.map(function(m){
+  wrap.innerHTML = _mgrNoticeHtml() + teamManagersList.map(function(m){
     var inactive = m.active === false;
     var canAT = m.canAdminTasks !== false;   // v6.83: undefined/true = has access
     var sites = (m.sites||[]).map(function(s){ return '<span style="font-size:.7rem;background:#eff6ff;color:var(--blue);border-radius:20px;padding:1px 8px;margin-right:4px;white-space:nowrap">'+sanitizeHtml(s)+'</span>'; }).join("");
@@ -11861,9 +11927,9 @@ function toggleManagerActive(id) {
 function deleteManagerRecord(id) {
   var m = teamManagersList.find(function(x){ return x.id === id; });
   if (!m) return;
-  if (!confirm("Delete manager record for " + m.name + "?\n\n⚠️ Their LOGIN account cannot be removed from here (that needs the Firebase Console). Deleting only removes them from the dropdown and manager list. To fully block access, prefer Deactivate and/or reset their password in the Firebase Console.")) return;
+  if (!confirm("Delete team manager " + m.name + " (" + m.email + ")?\n\nThey disappear from the manager list. Their login stays in Firebase until you delete it there too — the next screen shows you where (needed only if you want to re-create the same email with a new password).")) return;
   db.collection("teamManagers").doc(id).delete()
-    .then(function(){ toast("Removed manager: " + m.name, "t-ok"); })
+    .then(function(){ _mgrDeleteNotice = { name: m.name, email: m.email }; renderManagersList(); toast("Removed manager: " + m.name, "t-ok"); })
     .catch(function(e){ toast("Failed: " + (e.message||e), "t-err"); });
 }
 
