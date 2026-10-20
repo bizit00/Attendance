@@ -6377,10 +6377,28 @@ function _saveCheckin(empId, empName, siteVal, empEmail, devId, btn) {
         }, 1600);
       }
 
+      // v6.96 — the old code treated a FAILED database write as success: it kept a copy
+      // in this phone's storage, told the engineer "Checked in successfully!" and moved
+      // them to the check-out screen — but the record never reached the database, so the
+      // admin dashboard showed nothing (and their later check-out also stayed local).
+      // Now a check-in only counts once the database confirms it.
       if (fbOk && db) {
+        var _settled = false, _ciTimer = null;
+        function _ciFail(e) {
+          if (_settled) return; _settled = true; clearTimeout(_ciTimer);
+          console.warn("[v6.96] check-in write failed:", e && (e.code || e.message));
+          btn.disabled = false;
+          btn.innerHTML = "✅ Check In";
+          var why = (e && e.code === "permission-denied")
+            ? "the server refused the record (permission denied) — tell your admin"
+            : "could not reach the server — check your connection";
+          toast("⚠️ Check-in was NOT recorded: " + why + ". Tap Check In again once fixed.", "t-err");
+          alert("⚠️ Your check-in was NOT recorded.\n\nReason: " + why + ".\n\nPlease tap Check In again. If it keeps failing, use “Request manual confirmation” or contact your admin.");
+        }
+        _ciTimer = setTimeout(function(){ _ciFail({ message: "timeout" }); }, 20000);
         db.collection("attendance").add(rec)
-          .then(function(ref){ onSaved(ref.id); })
-          .catch(function(e){ console.warn(e); saveLocal(rec); onSaved(null); });
+          .then(function(ref){ if (_settled) return; _settled = true; clearTimeout(_ciTimer); onSaved(ref.id); })
+          .catch(_ciFail);
       } else {
         saveLocal(rec); onSaved(null);
       }
