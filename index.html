@@ -1638,6 +1638,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
     <!-- LIVE TAB -->
     <div id="dTab-live">
+      <div id="liveWaitBanner" style="display:none"></div>
       <div id="spotCheckRemindersWrap" style="margin-bottom:4px"></div>
       <div id="nineHrIndicatorWrap" style="margin-bottom:4px"></div>
       <div class="toolbar">
@@ -3861,8 +3862,18 @@ function _hasOpenPending(empId, dir, cb) {
   if (!fbOk || !db) { cb(false); return; }
   db.collection("pendingAttendance")
     .where("empId", "==", empId).where("dir", "==", dir).where("status", "==", "pending")
-    .limit(1).get()
-    .then(function(snap){ cb(!snap.empty, snap.empty ? null : snap.docs[0]); })
+    .limit(5).get()
+    .then(function(snap){
+      // v6.97: only a RECENT open request counts. An old one that nobody confirmed used to
+      // block every new request — the engineer was shown a stale "waiting" screen and no
+      // new request ever reached the admin.
+      var fresh = null;
+      snap.forEach(function(d){
+        var c = (d.data() || {}).createdAt || 0;
+        if (!fresh && (Date.now() - c) < 12 * 3600 * 1000) fresh = d;
+      });
+      cb(!!fresh, fresh);
+    })
     .catch(function(e){ console.warn("[Manual] pending dedupe check failed:", e); cb(false); });
 }
 
@@ -6755,7 +6766,24 @@ function _diagAttendance(msg) {
 var pendingListCache = [];
 var _waitListUnsub   = null;
 
+// v6.97 — manual requests are NOT attendance records until an admin confirms them, so
+// they never appear in Live Status. Say so right there, instead of the admin (and the
+// engineer) assuming the check-in was lost.
+function _renderLiveWaitBanner() {
+  var el = document.getElementById("liveWaitBanner");
+  if (!el) return;
+  var list = (typeof pendingListCache !== "undefined" && pendingListCache) ? pendingListCache : [];
+  if (!list.length) { el.style.display = "none"; el.innerHTML = ""; return; }
+  var oldest = list.reduce(function(a, x){ return Math.min(a, x.createdAt || Date.now()); }, Date.now());
+  var mins = Math.max(0, Math.round((Date.now() - oldest) / 60000));
+  var age = mins >= 120 ? Math.round(mins/60) + " h" : mins + " min";
+  el.style.display = "block";
+  el.innerHTML = '<div style="background:#fffbeb;border:2px solid #fcd34d;border-radius:12px;padding:12px 16px;margin-bottom:10px;font-size:.85rem;color:#92400e">'
+    + '⏳ <b>' + list.length + ' manual check-in/out request' + (list.length > 1 ? 's' : '') + ' waiting</b> (oldest ' + age + ') — these engineers are <b>not in the table below until you confirm</b>. '
+    + 'Go to <b>Admin Tasks → Waiting List</b>, verify they are on site, then Confirm.</div>';
+}
 function _updateWaitlistBadge(n) {
+  try { _renderLiveWaitBanner(); } catch(_){}
   var badge = document.getElementById("waitlistPendingBadge");
   if (!badge) return;
   badge.textContent = n;
@@ -6787,11 +6815,16 @@ function confirmPending(id, btn) {
   if (btn) { btn.disabled = true; btn.textContent = "⏳…"; }
   var who = _adminTag(), when = Date.now();
 
-  function markResolved(attendanceId) {
+  function markResolved(attendanceId, attempt) {
+    attempt = attempt || 0;
     db.collection("pendingAttendance").doc(id).update({
       status: "confirmed", attendanceId: attendanceId || null, confirmedBy: who, confirmedAt: when
     }).then(function(){ toast("✅ Confirmed " + e.empId, "t-ok"); })
-      .catch(function(err){ console.warn("[WaitList] mark confirmed failed:", err); });
+      .catch(function(err){
+        console.warn("[WaitList] mark confirmed failed:", err);
+        if (attempt < 2) { setTimeout(function(){ markResolved(attendanceId, attempt + 1); }, 1500); }
+        else toast("⚠️ Attendance saved, but the request could not be marked done — refresh and press Confirm again (it will not duplicate).", "t-err");
+      });
   }
 
   if (e.dir === "in") {
@@ -6808,13 +6841,36 @@ function confirmPending(id, btn) {
       lastReminderHour: 0,
       viaManualConfirm: true, confirmedBy: who, confirmedAt: when
     };
-    db.collection("attendance").add(rec)
-      .then(function(ref){ markResolved(ref.id); })
+    // v6.97: fixed document id per request → pressing Confirm twice (or after a partial
+    // failure) rewrites the same record instead of creating a duplicate.
+    var _attId = "manual_in_" + id;
+    db.collection("attendance").doc(_attId).set(rec)
+      .then(function(){ markResolved(_attId); })
       .catch(function(err){ console.error("[WaitList] attendance write failed:", err); toast("❌ Write failed", "t-err"); if (btn){ btn.disabled=false; btn.textContent="✅ Confirm"; } });
   } else {
     // Check-OUT: patch the linked attendance doc using the recorded time.
-    if (!e.linkedAttendanceId) { toast("No linked session to check out", "t-err"); if (btn){ btn.disabled=false; btn.textContent="✅ Confirm"; } return; }
-    db.collection("attendance").doc(e.linkedAttendanceId).get().then(function(snap){
+    // v6.97: if the request carries no usable record id (session lost on the phone, or the
+    // linked record is gone), find the engineer's open record instead of failing.
+    var _linked = e.linkedAttendanceId || null;
+    var _resolveLinked = _linked
+      ? db.collection("attendance").doc(_linked).get().then(function(sn){ return sn.exists ? _linked : null; })
+      : Promise.resolve(null);
+    _resolveLinked.then(function(found){
+      if (found) return found;
+      return db.collection("attendance").where("empId","==",e.empId).where("status","==","in").get().then(function(qs){
+        var best = null;
+        qs.forEach(function(d){ var t = d.data().checkinTimestamp || 0; if (!best || t > best.t) best = { id:d.id, t:t }; });
+        return best ? best.id : null;
+      });
+    }).then(function(linkId){
+      if (!linkId) {
+        toast("No open check-in found for " + e.empId + " — nothing to check out. Reject this request.", "t-err");
+        if (btn){ btn.disabled=false; btn.textContent="✅ Confirm"; }
+        throw { _handled: true };
+      }
+      e.linkedAttendanceId = linkId;
+      return db.collection("attendance").doc(linkId).get();
+    }).then(function(snap){
       var cit = snap.exists ? (snap.data().checkinTimestamp || e.reqTimestamp) : e.reqTimestamp;
       var ms = Math.max(0, e.reqTimestamp - cit);
       var h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000);
@@ -6826,7 +6882,7 @@ function confirmPending(id, btn) {
       };
       return db.collection("attendance").doc(e.linkedAttendanceId).update(updates);
     }).then(function(){ markResolved(e.linkedAttendanceId); })
-      .catch(function(err){ console.error("[WaitList] checkout patch failed:", err); toast("❌ Write failed", "t-err"); if (btn){ btn.disabled=false; btn.textContent="✅ Confirm"; } });
+      .catch(function(err){ if (err && err._handled) return; console.error("[WaitList] checkout patch failed:", err); toast("❌ Write failed", "t-err"); if (btn){ btn.disabled=false; btn.textContent="✅ Confirm"; } });
   }
 }
 
@@ -6868,7 +6924,8 @@ function renderWaitingList() {
       +   '<div style="font-weight:700">' + dirLabel + '</div>'
       + '</div>'
       + '<div style="font-size:.84rem;margin-top:4px;line-height:1.7">'
-      +   '<div>📍 <strong>' + _esc(e.site) + '</strong> · 🕒 ' + _esc(e.reqTime) + ' · ' + _esc(e.reqDate) + '</div>'
+      +   '<div>📍 <strong>' + _esc(e.site) + '</strong> · 🕒 ' + _esc(e.reqTime) + ' · ' + _esc(e.reqDate)
+      +     ((Date.now() - (e.createdAt || Date.now())) > 3600000 ? ' <span style="color:#b91c1c;font-weight:700">· waiting ' + Math.round((Date.now() - e.createdAt)/3600000) + ' h</span>' : '') + '</div>'
       +   '<div>✉️ ' + _esc(e.empEmail || '—') + '</div>'
       +   '<div style="color:#92400e">📡 ' + gps + '</div>'
       + '</div>'
