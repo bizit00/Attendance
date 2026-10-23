@@ -434,7 +434,7 @@ tr:hover td{background:#fafdf8}
 .an-kpi-red::before{background:var(--red)}
 
 /* ── CHARTS LAYOUT ── */
-.an-charts-row{display:grid;grid-template-columns:1fr 340px;gap:16px;margin-bottom:16px}
+.an-charts-row{display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:16px}   /* v6.101: Leave by Period sits below Attendance Status by Site */
 .an-chart-main,.an-chart-side{margin-bottom:0}
 
 /* ── COMPACT GAP ROWS (Manpower Gap) ── */
@@ -8344,7 +8344,7 @@ function _anRenderBreakdownChart(rows) {
   // Chart-level plugin: draw "checkedIn/target" label after each bar row
   var bdTotalsPlugin = {
     id: "bdTotals",
-    afterDraw: function(chart) {
+    afterDatasetsDraw: function(chart) {   // v6.101: was afterDraw — that runs after the tooltip and painted "0/6" on top of it
       var ctx = chart.ctx;
       var xScale = chart.scales.x;
       var meta0  = chart.getDatasetMeta(0);
@@ -8446,48 +8446,73 @@ function _anRenderBreakdownChart(rows) {
           ' <span style="color:var(--ink3);font-weight:400">(' + recs.length + ' engineers)</span>' +
           '<span style="float:right;font-size:.75rem;color:var(--ink3);font-weight:400">' + checkedIn + '/' + total + ' checked in' + (stillIn ? ' · ' + stillIn + ' still in' : '') + '</span>';
 
-        if (!recs.length) {
-          body.style.columnCount = "";
-          body.textContent = "No engineers in this category.";
-        } else if (cats[di] === "absent") {
-          // Absent: just names in 2-column list (no time data)
-          body.style.columnCount = "2";
-          body.innerHTML = recs.map(function(r){
-            return '<span style="display:block;padding:2px 0">• ' + sanitizeHtml(r.name) +
-              ' <span style="color:var(--ink3);font-size:.72rem">(' + sanitizeHtml(r.empId) + ')</span></span>';
-          }).join("");
-        } else {
-          // On Time / Late: full detail — name, ID, date, check-in time, check-out time, duration
-          body.style.columnCount = "";
-          body.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:.77rem">'
-            + '<thead><tr style="border-bottom:1.5px solid var(--border);color:var(--ink3)">'
-            + '<th style="text-align:left;padding:4px 6px;font-weight:600">Engineer</th>'
-            + '<th style="text-align:left;padding:4px 6px;font-weight:600">ID</th>'
-            + '<th style="text-align:left;padding:4px 6px;font-weight:600">Date</th>'
-            + '<th style="text-align:left;padding:4px 6px;font-weight:600">Check-in</th>'
-            + '<th style="text-align:left;padding:4px 6px;font-weight:600">Check-out</th>'
-            + '<th style="text-align:left;padding:4px 6px;font-weight:600">Duration</th>'
-            + '</tr></thead><tbody>'
-            + recs.map(function(r){
-                var outCell = r.checkoutTime
-                  ? sanitizeHtml(r.checkoutTime)
-                  : '<span style="color:#f59e0b;font-weight:600">Still In</span>';
-                return '<tr style="border-bottom:1px solid #f3f4f6">'
-                  + '<td style="padding:5px 6px;font-weight:600">' + sanitizeHtml(r.name) + '</td>'
-                  + '<td style="padding:5px 6px;font-family:var(--mono);font-size:.7rem;color:var(--ink3)">' + sanitizeHtml(r.empId) + '</td>'
-                  + '<td style="padding:5px 6px">' + sanitizeHtml(r.checkinDate) + '</td>'
-                  + '<td style="padding:5px 6px">' + sanitizeHtml(r.checkinTime) + '</td>'
-                  + '<td style="padding:5px 6px">' + outCell + '</td>'
-                  + '<td style="padding:5px 6px;color:var(--ink3)">' + sanitizeHtml(r.duration || '—') + '</td>'
-                  + '</tr>';
-              }).join("")
-            + '</tbody></table>';
-        }
+        _anBdState = { recs: recs, cat: cats[di], page: 0 };
+        _anBdRender();
         panel.style.display = "block";
         panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
     }
   });
+}
+
+// ── v6.101: paged detail list under the Attendance Status chart (10 per page) ──
+var _anBdState = { recs: [], cat: "onTime", page: 0 };
+var AN_BD_PAGE_SIZE = 10;
+function _anBdGo(delta) {
+  var pages = Math.max(1, Math.ceil(_anBdState.recs.length / AN_BD_PAGE_SIZE));
+  _anBdState.page = Math.min(pages - 1, Math.max(0, _anBdState.page + delta));
+  _anBdRender();
+}
+function _anBdRender() {
+  var body = document.getElementById("anBreakdownDetailBody");
+  if (!body) return;
+  var recs = _anBdState.recs, cat = _anBdState.cat;
+  if (!recs.length) { body.style.columnCount = ""; body.textContent = "No engineers in this category."; return; }
+  var total = recs.length, pages = Math.ceil(total / AN_BD_PAGE_SIZE);
+  if (_anBdState.page > pages - 1) _anBdState.page = pages - 1;
+  var start = _anBdState.page * AN_BD_PAGE_SIZE;
+  var pageRecs = recs.slice(start, start + AN_BD_PAGE_SIZE);
+  var html;
+  if (cat === "absent") {
+    html = '<div style="column-count:2">' + pageRecs.map(function(r){
+      return '<span style="display:block;padding:2px 0">• ' + sanitizeHtml(r.name) +
+        ' <span style="color:var(--ink3);font-size:.72rem">(' + sanitizeHtml(r.empId) + ')</span></span>';
+    }).join("") + '</div>';
+  } else {
+    html = '<table style="width:100%;border-collapse:collapse;font-size:.77rem">'
+      + '<thead><tr style="border-bottom:1.5px solid var(--border);color:var(--ink3)">'
+      + '<th style="text-align:left;padding:4px 6px;font-weight:600">Engineer</th>'
+      + '<th style="text-align:left;padding:4px 6px;font-weight:600">ID</th>'
+      + '<th style="text-align:left;padding:4px 6px;font-weight:600">Date</th>'
+      + '<th style="text-align:left;padding:4px 6px;font-weight:600">Check-in</th>'
+      + '<th style="text-align:left;padding:4px 6px;font-weight:600">Check-out</th>'
+      + '<th style="text-align:left;padding:4px 6px;font-weight:600">Duration</th>'
+      + '</tr></thead><tbody>'
+      + pageRecs.map(function(r){
+          var outCell = r.checkoutTime ? sanitizeHtml(r.checkoutTime) : '<span style="color:#f59e0b;font-weight:600">Still In</span>';
+          return '<tr style="border-bottom:1px solid #f3f4f6">'
+            + '<td style="padding:5px 6px;font-weight:600">' + sanitizeHtml(r.name) + '</td>'
+            + '<td style="padding:5px 6px;font-family:var(--mono);font-size:.7rem;color:var(--ink3)">' + sanitizeHtml(r.empId) + '</td>'
+            + '<td style="padding:5px 6px">' + sanitizeHtml(r.checkinDate) + '</td>'
+            + '<td style="padding:5px 6px">' + sanitizeHtml(r.checkinTime) + '</td>'
+            + '<td style="padding:5px 6px">' + outCell + '</td>'
+            + '<td style="padding:5px 6px;color:var(--ink3)">' + sanitizeHtml(r.duration || '—') + '</td>'
+            + '</tr>';
+        }).join("")
+      + '</tbody></table>';
+  }
+  if (pages > 1) {
+    var btn = 'padding:4px 12px;border-radius:7px;border:1.5px solid var(--border);background:#fff;font-size:.76rem;font-weight:600;cursor:pointer;';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">'
+      + '<span style="color:var(--ink3)">Showing ' + (start + 1) + '–' + Math.min(start + AN_BD_PAGE_SIZE, total) + ' of ' + total + '</span>'
+      + '<span style="display:inline-flex;align-items:center;gap:8px">'
+      + '<button type="button" style="' + btn + (_anBdState.page === 0 ? 'opacity:.4;cursor:default' : '') + '" ' + (_anBdState.page === 0 ? 'disabled' : '') + ' onclick="_anBdGo(-1)">◀ Prev</button>'
+      + '<span>Page ' + (_anBdState.page + 1) + ' of ' + pages + '</span>'
+      + '<button type="button" style="' + btn + (_anBdState.page >= pages - 1 ? 'opacity:.4;cursor:default' : '') + '" ' + (_anBdState.page >= pages - 1 ? 'disabled' : '') + ' onclick="_anBdGo(1)">Next ▶</button>'
+      + '</span></div>';
+  }
+  body.style.columnCount = "";
+  body.innerHTML = html;
 }
 
 // ── Public actions wired to UI ──────────────────────
