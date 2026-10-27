@@ -3405,6 +3405,16 @@ var GEOFENCE_M = 500;
 
 // ── Firebase ──────────────────────────────────────
 var db = null;
+// v6.102 — all "YYYY-MM-DD" day keys use SINGAPORE time. They used toISOString() (UTC), so a
+// check-in between 00:00 and 08:00 SGT (e.g. 7:30 am) was filed under YESTERDAY'S date and
+// vanished from the admin's "today" views, even though the engineer's phone showed success.
+var _SG_DAY_FMT = (function(){ try { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Singapore", year: "numeric", month: "2-digit", day: "2-digit" }); } catch(e) { return null; } })();
+function _sgDay(d) {
+  d = (d instanceof Date) ? d : new Date(d);
+  if (isNaN(d)) return "";
+  if (_SG_DAY_FMT) return _SG_DAY_FMT.format(d);                    // en-CA → YYYY-MM-DD
+  return new Date(d.getTime() + 8 * 3600000).toISOString().slice(0, 10);   // fallback: UTC+8 shift
+}
 var fbOk = false;
 var authReady = false;
 
@@ -6647,7 +6657,7 @@ function initDash() {
   if (typeof loadHrEmail === "function") loadHrEmail();
   // set today's date in filter
   var fd = document.getElementById("fDate");
-  if (fd && !fd.value) fd.value = new Date().toISOString().split("T")[0];
+  if (fd && !fd.value) fd.value = _sgDay(new Date());
 
   // populate site filter (live tab)
   var fs = document.getElementById("fSite");
@@ -6670,7 +6680,7 @@ function initDash() {
 
   // Default the manpower as-of-date picker to today
   var asOf = document.getElementById("anAsOfDate");
-  if (asOf && !asOf.value) asOf.value = new Date().toISOString().split("T")[0];
+  if (asOf && !asOf.value) asOf.value = _sgDay(new Date());
 
   // Subscribe to manpower config so the gap analysis updates live
   if (typeof _anSubscribeManpower === "function") _anSubscribeManpower();
@@ -7035,7 +7045,7 @@ function filtered() {
     if (s && r.site!==s) return false;
     if (st==="in" && r.status!=="in") return false;
     if (st==="out" && r.status!=="out") return false;
-    if (d) { var rd=new Date(r.checkinTimestamp).toISOString().split("T")[0]; if(rd!==d) return false; }
+    if (d) { var rd=_sgDay(new Date(r.checkinTimestamp)); if(rd!==d) return false; }
     return true;
   });
 }
@@ -7198,7 +7208,7 @@ function renderSpotCheckByLocation() {
   // ago) kept showing as "on-site" forever, even with nobody actually there. Only count
   // check-ins from TODAY as currently on-site; an old unclosed session should be force
   // checked out from Live Status instead of haunting this panel indefinitely.
-  var _scToday = new Date().toISOString().split("T")[0];
+  var _scToday = _sgDay(new Date());
   var roster = {}; // site -> [empId,...]
   (allRecs || []).forEach(function(r){
     if (r.status !== 'in' || !r.site) return;
@@ -7386,7 +7396,7 @@ function renderFeed() {
     if (fSt && r.site !== fSt) return false;
     if (fTy && e.type !== fTy) return false;
     if (fDt) {
-      var ed = new Date(e.ts).toISOString().split("T")[0];
+      var ed = _sgDay(new Date(e.ts));
       if (ed !== fDt) return false;
     }
     return true;
@@ -7901,7 +7911,7 @@ function dTab(id, el) {
       });
     }
     var asOfEl = document.getElementById("anAsOfDate");
-    if (asOfEl && !asOfEl.value) asOfEl.value = new Date().toISOString().split("T")[0];
+    if (asOfEl && !asOfEl.value) asOfEl.value = _sgDay(new Date());
     if (!leaveRecs.length && db) { loadLeaves(); }
     renderCalendar();
   }
@@ -7995,7 +8005,7 @@ function exportCSV() {
   }));
   var blob = new Blob([lines.join("\n")],{type:"text/csv"});
   var a = document.createElement("a"); a.href=URL.createObjectURL(blob);
-  a.download="attendance_"+new Date().toISOString().split("T")[0]+".csv"; a.click();
+  a.download="attendance_"+_sgDay(new Date())+".csv"; a.click();
   toast("CSV exported","t-ok");
 }
 
@@ -8018,9 +8028,9 @@ var _anMainGroupBy = "site";
 
 // Convert a record into a YYYY-MM-DD string (independent of locale formatting)
 function _anIsoDate(r) {
-  if (r.checkinISO && typeof r.checkinISO === "string") return r.checkinISO.split("T")[0];
+  if (r.checkinISO && typeof r.checkinISO === "string") { var _d0 = new Date(r.checkinISO); if (!isNaN(_d0)) return _sgDay(_d0); }
   if (r.checkinTimestamp) {
-    try { return new Date(r.checkinTimestamp).toISOString().split("T")[0]; } catch(_){}
+    try { return _sgDay(new Date(r.checkinTimestamp)); } catch(_){}
   }
   // Fallback: parse en-SG locale "DD/MM/YYYY"
   if (r.checkinDate) {
@@ -8169,8 +8179,8 @@ function _anBuildBreakdown(rows) {
   // ── Roster-based Absent (default site from onboarding) ──
   // As-of day = the "To" date filter, else today.
   var toVal  = (document.getElementById("anDateTo") || {}).value || "";
-  var asOf   = toVal || new Date().toISOString().split("T")[0];
-  var todayIso = new Date().toISOString().split("T")[0];
+  var asOf   = toVal || _sgDay(new Date());
+  var todayIso = _sgDay(new Date());
   // Cutoff gate: absent only counts once 09:00 has passed on the as-of day.
   var cutoffPassed = (asOf < todayIso) || (asOf === todayIso && new Date().getHours() >= WORK_HOUR_LATE);
 
@@ -8626,7 +8636,7 @@ function renderAnalytics() {
   // "Today's Check-ins"  = check-in events recorded today (independent of the
   //                        date-range filter, but still honours the site filter).
   // "Checked Out Today"  = today's records that have checked out (status "out").
-  var _today   = new Date().toISOString().split("T")[0];
+  var _today   = _sgDay(new Date());
   var _siteSel = (document.getElementById("anSite") || {}).value || "";
   var _todayCheckins = 0, _todayCheckouts = 0;
   allRecs.forEach(function(r){
@@ -8857,7 +8867,7 @@ function _anRenderLeaveStatusChart() {
   if (!canvas) return;
 
   // Use the From → To date range filter; if neither set, use today as both ends
-  var todayIso = new Date().toISOString().split("T")[0];
+  var todayIso = _sgDay(new Date());
   var fromEl   = document.getElementById("anDateFrom");
   var toEl     = document.getElementById("anDateTo");
   var rangeFrom = (fromEl && fromEl.value) ? fromEl.value : todayIso;
@@ -9031,7 +9041,7 @@ function _anRenderTrendChart(rows) { return; // chart removed
   for (var i = 13; i >= 0; i--) {
     var d = new Date(today);
     d.setDate(d.getDate() - i);
-    var iso = d.toISOString().split("T")[0];
+    var iso = _sgDay(d);
     days.push(iso);
     counts[iso] = 0;
   }
@@ -9159,7 +9169,7 @@ function exportAnalyticsXLSX() {
   var siteFilter = (document.getElementById("anSite")    ||{}).value || "";
   var df         = (document.getElementById("anDateFrom")||{}).value || "";
   var dt         = (document.getElementById("anDateTo")  ||{}).value || "";
-  var asOf       = (document.getElementById("anAsOfDate")||{}).value || new Date().toISOString().split("T")[0];
+  var asOf       = (document.getElementById("anAsOfDate")||{}).value || _sgDay(new Date());
   var summary = [
     { Metric: "Site Filter",       Value: siteFilter || "All Sites" },
     { Metric: "Date From",         Value: df || "—" },
@@ -9413,7 +9423,7 @@ function exportAnalyticsXLSX() {
   autoWidth(ws8, histRows.length ? histRows : [{ Note: "x" }]);
   XLSX.utils.book_append_sheet(wb, ws8, "Historical Snapshots");
 
-  var stamp = new Date().toISOString().split("T")[0];
+  var stamp = _sgDay(new Date());
   var fname = "attendance_analytics_" + stamp + ".xlsx";
   XLSX.writeFile(wb, fname);
   var sheetCount = 6 + (forecastRows.length ? 1 : 0) + (histRows.length ? 1 : 0);
@@ -9545,7 +9555,7 @@ function exportBreakdownXLSX() {
   XLSX.utils.book_append_sheet(wb, ws5, "On Leave");
   XLSX.utils.book_append_sheet(wb, ws4, "Still In");
 
-  var stamp = new Date().toISOString().split("T")[0];
+  var stamp = _sgDay(new Date());
   XLSX.writeFile(wb, "attendance_breakdown_" + stamp + ".xlsx");
   toast("📊 Exported · " + sites.length + " sites · " + checkInRows.length + " check-ins · " + absentRows.length + " absent · 4 sheets", "t-ok");
 }
@@ -9663,7 +9673,7 @@ function _anGapAnalysis(isoDate) {
   // availability with engineers who did not show up (absent, no leave record).
   // For future dates we keep capacity-planning mode (roster - approved leave)
   // because we have no check-in data yet.
-  var today    = new Date().toISOString().split("T")[0];
+  var today    = _sgDay(new Date());
   var isFuture = isoDate > today;
 
   // Build per-site actual check-in sets for today / past (single pass over allRecs)
@@ -9715,19 +9725,19 @@ function _anGapAnalysis(isoDate) {
 function _anGetAsOfDate() {
   var el = document.getElementById("anAsOfDate");
   var v = el ? el.value : "";
-  if (!v) v = new Date().toISOString().split("T")[0];
+  if (!v) v = _sgDay(new Date());
   return v;
 }
 function anAsOfToday() {
   var el = document.getElementById("anAsOfDate");
-  if (el) { el.value = new Date().toISOString().split("T")[0]; renderAnalytics(); }
+  if (el) { el.value = _sgDay(new Date()); renderAnalytics(); }
 }
 function anAsOfShift(days) {
   var el = document.getElementById("anAsOfDate");
   if (!el) return;
   var cur = el.value ? new Date(el.value + "T00:00:00") : new Date();
   cur.setDate(cur.getDate() + days);
-  el.value = cur.toISOString().split("T")[0];
+  el.value = _sgDay(cur);
   renderAnalytics();
 }
 
@@ -9939,7 +9949,7 @@ function renderManpowerGap() {
   var displayPlan = siteFilter ? _anReallocationPlan(displayGaps) : plan;
 
   // Header subtitle
-  var humanDate = isoDate + (isoDate === new Date().toISOString().split("T")[0] ? "  (today)" : "");
+  var humanDate = isoDate + (isoDate === _sgDay(new Date()) ? "  (today)" : "");
   setText("anGapSub", "Reallocation based on available vs required — as of " + humanDate);
   setText("anLeaveListSub", "As of " + humanDate);
 
@@ -10752,7 +10762,7 @@ function renderCalendar() {
   lbl.textContent = months[calMonth] + " " + calYear;
 
   var siteFilter = (document.getElementById("calSite") || {}).value || "";
-  var todayISO   = new Date().toISOString().slice(0,10);
+  var todayISO   = _sgDay(new Date());
 
   var dows = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   var html = dows.map(function(d){ return '<div class="cal-dow">' + d + '</div>'; }).join("");
@@ -10848,7 +10858,7 @@ function _anRenderManpowerLayer() {
   if (!document.getElementById("dTab-analytics")) return;
   // Ensure the as-of-date defaults to today on first render
   var el = document.getElementById("anAsOfDate");
-  if (el && !el.value) el.value = new Date().toISOString().split("T")[0];
+  if (el && !el.value) el.value = _sgDay(new Date());
   try { renderManpowerGap(); }
   catch(e) { console.warn("Manpower render error:", e && e.message); }
   // Feature 2 — render forecast grid
@@ -10876,12 +10886,12 @@ function _anRenderManpowerLayer() {
  * where each site: { site, gap, status }
  */
 function _anForecastSweep(days) {
-  var today = new Date().toISOString().split("T")[0];
+  var today = _sgDay(new Date());
   var result = [];
   for (var i = 0; i < days; i++) {
     var d = new Date();
     d.setDate(d.getDate() + i);
-    var iso = d.toISOString().split("T")[0];
+    var iso = _sgDay(d);
     var human = d.toLocaleDateString("en-SG", { month:"short", day:"numeric" });
     var dayShort = d.toLocaleDateString("en-SG", { weekday:"short" });
     var gaps = _anGapAnalysis(iso);
@@ -11042,7 +11052,7 @@ function _anBuildSnapshotDoc(isoDate) {
 
 /** Save today's snapshot (manual = true shows success toast) */
 function _anSaveSnapshot(manual) {
-  var today = new Date().toISOString().split("T")[0];
+  var today = _sgDay(new Date());
   if (typeof firebase === "undefined" || !firebase.firestore) {
     if (manual) toast("Firebase not ready", "t-err");
     return;
@@ -11075,7 +11085,7 @@ function _anSaveSnapshot(manual) {
 /** Auto-save if it's past 17:00 and no snapshot exists for today */
 function _anAutoSnapshotCheck() {
   var now   = new Date();
-  var today = now.toISOString().split("T")[0];
+  var today = _sgDay(now);
   if (_anTodaySnapshotExists) return; // already saved
   if (now.getHours() < 17) return;   // too early
 
@@ -11098,7 +11108,7 @@ function _anAutoSnapshotCheck() {
 
 /** Update the save-controls status chip */
 function _anUpdateSnapStatus() {
-  var today = new Date().toISOString().split("T")[0];
+  var today = _sgDay(new Date());
   var dateEl = document.getElementById("anSnapSaveDate");
   if (dateEl) dateEl.textContent = today;
   var statusEl = document.getElementById("anSnapSaveStatus");
@@ -11138,7 +11148,7 @@ function _anSubscribeHistory() {
         _anHistorySnaps.push(doc.data());
       });
       // Check if today's snapshot exists
-      var today = new Date().toISOString().split("T")[0];
+      var today = _sgDay(new Date());
       _anTodaySnapshotExists = _anHistorySnaps.some(function(s){ return s.date === today; });
       _anUpdateSnapStatus();
       renderHistoryPanel();
@@ -11292,7 +11302,7 @@ function renderHistoryPanel() {
       var ng = gs.netGap != null ? gs.netGap : "—";
       var ngCls = ng === "—" ? "" : (ng < 0 ? "ht-deficit" : ng > 0 ? "ht-surplus" : "ht-ok");
       var ngTxt = ng === "—" ? "—" : (ng >= 0 ? "+" + ng : "" + ng);
-      var isToday = s.date === new Date().toISOString().split("T")[0];
+      var isToday = s.date === _sgDay(new Date());
       rows += '<tr' + (isToday ? ' style="background:#eff6ff"' : "") + '>';
       rows += '<td class="ht-date">' + sanitizeHtml(s.date) + (isToday ? ' <span style="font-size:.65rem;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 5px">TODAY</span>' : "") + '</td>';
       rows += '<td>' + (gs.totalAvailable != null ? gs.totalAvailable : "—") + '</td>';
@@ -12997,7 +13007,7 @@ function initLeaveForm() {
     LEAVE_TYPES.forEach(function(t){ var o=document.createElement("option"); o.value=t; o.textContent=t; lt.appendChild(o); });
   }
   // Set today as default min date
-  var today = new Date().toISOString().split("T")[0];
+  var today = _sgDay(new Date());
   var lf = document.getElementById("leaveFrom"); if(lf) lf.min = today;
   var lt2 = document.getElementById("leaveTo");  if(lt2) lt2.min = today;
   // Clear state
@@ -14985,7 +14995,7 @@ function adminShowEmailHistory(devId) {
 // Returns the matching leave record via callback (null = not on leave).
 function _isOnApprovedLeaveToday(empId, callback) {
   if (!empId) { callback(null); return; }
-  var today = new Date().toISOString().split("T")[0];
+  var today = _sgDay(new Date());
 
   function scan(recs) {
     var hit = recs.find(function(r){
@@ -15024,7 +15034,7 @@ function _isOnApprovedLeaveToday(empId, callback) {
 // approved, rejected, or pending applications so they know instantly.
 function checkApprovedLeaveForEmp(empId) {
   if (!empId) return;
-  var today = new Date().toISOString().split("T")[0];
+  var today = _sgDay(new Date());
 
   function processLeaves(recs) {
     // Sort: most recently applied first
@@ -15204,7 +15214,7 @@ function showLsnMultiple(recs, today) {
 }
 
 function showLsnDetailFrom(el, id) {
-  var today = new Date().toISOString().split("T")[0];
+  var today = _sgDay(new Date());
   var recs = window._lsnRecs || [];
   var r = recs.find(function(x){ return x.id===id; });
   if (r) showLsnSingle(r, today);
@@ -15645,7 +15655,7 @@ function exportLeaveCSV() {
   var blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
   var a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "leave_applications_" + new Date().toISOString().split("T")[0] + ".csv";
+  a.download = "leave_applications_" + _sgDay(new Date()) + ".csv";
   a.click();
   toast("📋 Leave CSV exported (" + rows.length + " records)", "t-ok");
 }
@@ -15679,7 +15689,7 @@ function exportCombinedCSV() {
   leaveRecs.filter(function(r){return r.status==="approved";}).forEach(function(r){
     var from = new Date(r.fromDate), to = new Date(r.toDate);
     for (var d = new Date(from); d <= to; d.setDate(d.getDate()+1)) {
-      var dateStr = d.toISOString().split("T")[0];
+      var dateStr = _sgDay(d);
       lines.push([
         '"Leave"',
         '"'+(r.empId||"")+'"',
@@ -15698,7 +15708,7 @@ function exportCombinedCSV() {
   var blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
   var a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "full_attendance_leave_" + new Date().toISOString().split("T")[0] + ".csv";
+  a.download = "full_attendance_leave_" + _sgDay(new Date()) + ".csv";
   a.click();
   toast("📋 Full report exported", "t-ok");
 }
@@ -16901,7 +16911,7 @@ function onbExportExcel() {
   var ws = XLSX.utils.json_to_sheet(rows);
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Onboarding");
-  XLSX.writeFile(wb, "engineer_onboarding_" + new Date().toISOString().slice(0,10) + ".xlsx");
+  XLSX.writeFile(wb, "engineer_onboarding_" + _sgDay(new Date()) + ".xlsx");
   toast("Excel exported", "t-ok");
 }
 // ══ END ONBOARDING ════════════════════════════════════
