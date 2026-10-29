@@ -15295,11 +15295,15 @@ var TS_C = {
   NPL     :"FFFFFF00", // yellow         – Unpaid / No Pay Leave
   WEEKEND :"FF4EA72E", // green          – Weekends
   OFFBOARD:"FF1A1A1A", // near-black     – Offboarded
+  OCL     :"FFC0504D", // red            – OCL / Back to School (v6.103)
   WD      :"FF83CAEB", // pale blue      – Working Days cell
   WHITE   :"FFFFFFFF",
   LTGRAY  :"FFF0F4F8",
   HEADER  :"FF1E3A5F",
 };
+
+// v6.103 — a check-in at the "OCL/Back to School" location is shown as a red BLANK cell (not "1").
+function tsIsOclSite(name) { return /ocl|back\s*to\s*school/i.test(String(name || "")); }
 
 var TS_DAY_NAMES   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 var TS_MONTH_NAMES = ["January","February","March","April","May","June",
@@ -15414,7 +15418,10 @@ function tsBuildData(year, month, phDays, siteFilter) {
     var d=parseInt(parts[0]), m=parseInt(parts[1]), y=parseInt(parts[2]);
     if (y!==year || m!==month) return;
     if (!attendByEng[r.empId]) attendByEng[r.empId]={};
-    attendByEng[r.empId][d]=true;
+    // v6.103: "O" = every check-in that day was at OCL/Back to School; any normal-site check-in makes it "N"
+    var _isO = tsIsOclSite(r.site), _prev = attendByEng[r.empId][d];
+    if (!_prev) attendByEng[r.empId][d] = _isO ? "O" : "N";
+    else if (_prev === "O" && !_isO) attendByEng[r.empId][d] = "N";
   });
 
   // Build per-engineer days object
@@ -15430,6 +15437,7 @@ function tsBuildData(year, month, phDays, siteFilter) {
         if (dayStr>=lv.from && dayStr<=lv.to) leaveCode=lv.code;
       });
       if (leaveCode)                                          days[dc.day]=leaveCode;
+      else if (attendByEng[eng.empId]&&attendByEng[eng.empId][dc.day]==="O") days[dc.day]="OCL";   // v6.103: red, blank, not counted as "1"
       else if (attendByEng[eng.empId]&&attendByEng[eng.empId][dc.day]) days[dc.day]="1";
       // else absent → no entry (blank cell)
     });
@@ -15510,7 +15518,7 @@ function tsGenerateSheet(wb, year, month, engineers, phDays) {
   ws[tsRef(R6,WD_COL)]=tsXc("",TS_C.WD);
 
   // ── Engineer rows ────────────────────────────────────────────────────
-  var bgMap={"1":TS_C.WHITE,"AL":TS_C.AL,"MC":TS_C.MC,"UL":TS_C.UL,"NPL":TS_C.NPL};
+  var bgMap={"1":TS_C.WHITE,"AL":TS_C.AL,"MC":TS_C.MC,"UL":TS_C.UL,"NPL":TS_C.NPL,"OCL":TS_C.OCL};
   engineers.forEach(function(eng,ei){
     var row=6+ei, wd=tsCountWD(eng.days,dateCols);
     ws[tsRef(row,0)]=tsXc(String(eng.sn),TS_C.WHITE,false,"n");
@@ -15527,7 +15535,7 @@ function tsGenerateSheet(wb, year, month, engineers, phDays) {
         var val=eng.days[dc.day]||"";
         var bg=bgMap[val]||TS_C.WHITE;
         var bold=(val==="AL"||val==="MC"||val==="UL"||val==="NPL");
-        cell={v:val,t:"s",s:tsCs(bg,bold,"center","FF000000")};
+        cell={v:(val==="OCL"?"":val),t:"s",s:tsCs(bg,bold,"center","FF000000")};   // OCL: red fill, blank text
       }
       ws[tsRef(row,col)]=cell;
     });
@@ -15554,7 +15562,7 @@ function tsGenerateSheet(wb, year, month, engineers, phDays) {
     {row:FRC,left:{s:"PH", l:"Public Holiday", bg:TS_C.PH,       fg:"FF000000"},
              right:{s:"",  l:"Offboarded",      bg:TS_C.OFFBOARD, fg:"FFFFFFFF"}},
     {row:FRD,left:{s:"UL", l:"Urgent Leave",   bg:TS_C.UL,       fg:"FF000000"},
-             right:null},
+             right:{s:"",  l:"OCL/Back to School", bg:TS_C.OCL,    fg:"FF000000", noMerge:true}},
   ];
   LEG.forEach(function(entry){
     var fr=entry.row;
@@ -15565,8 +15573,10 @@ function tsGenerateSheet(wb, year, month, engineers, phDays) {
     if (entry.right) {
       ws[tsRef(fr,31)]={v:entry.right.s,t:"s",s:tsCs(entry.right.bg,true,"center",entry.right.fg)};
       ws[tsRef(fr,32)]=tsXc(entry.right.l,TS_C.WHITE,false,"s","left");
-      ws[tsRef(fr,33)]={v:"",t:"s",s:tsCs(TS_C.WHITE)};
-      ws[tsRef(fr,34)]={v:"",t:"s",s:tsCs(TS_C.WHITE)};
+      if (!entry.right.noMerge) {   // the long OCL label is left unmerged so it can run past the 3 narrow columns
+        ws[tsRef(fr,33)]={v:"",t:"s",s:tsCs(TS_C.WHITE)};
+        ws[tsRef(fr,34)]={v:"",t:"s",s:tsCs(TS_C.WHITE)};
+      }
     }
   });
 
@@ -15592,6 +15602,48 @@ function closeTimesheetModal() {
 }
 
 // ── Main export entry point ──────────────────────────────────────────────
+// ── v6.103: save the workbook with columns A:B frozen ──────────────────────
+// xlsx-js-style cannot write freeze panes, so after writing we add the <pane> element to the
+// sheet XML with JSZip. If JSZip can't be loaded, the plain file is still downloaded.
+function _tsLoadJsZip(cb) {
+  if (window.JSZip) return cb(true);
+  var urls = ["https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js", "https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"];
+  (function tryNext(i) {
+    if (i >= urls.length) return cb(false);
+    var sc = document.createElement("script");
+    sc.src = urls[i];
+    sc.onload  = function(){ cb(!!window.JSZip); };
+    sc.onerror = function(){ tryNext(i + 1); };
+    document.head.appendChild(sc);
+  })(0);
+}
+function tsSaveWorkbook(wb, fname, done) {
+  function plain() { XLSX.writeFile(wb, fname); done(false); }
+  _tsLoadJsZip(function(ok) {
+    if (!ok) return plain();
+    try {
+      var buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      JSZip.loadAsync(buf).then(function(zip) {
+        var path = "xl/worksheets/sheet1.xml";
+        return zip.file(path).async("string").then(function(xml) {
+          var views = '<sheetViews><sheetView workbookViewId="0"><pane xSplit="2" topLeftCell="C1" activePane="topRight" state="frozen"/>'
+                    + '<selection pane="topRight" activeCell="C1" sqref="C1"/></sheetView></sheetViews>';
+          var out = xml.replace(/<sheetViews>[\s\S]*?<\/sheetViews>/, views);
+          if (out === xml) throw new Error("sheetViews not found");
+          zip.file(path, out);
+          return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        });
+      }).then(function(blob) {
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = fname;
+        document.body.appendChild(a); a.click();
+        setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+        done(true);
+      }).catch(function(e) { console.warn("[v6.103] freeze panes failed, saving plain file:", e && e.message); plain(); });
+    } catch (e) { console.warn("[v6.103] freeze panes failed:", e && e.message); plain(); }
+  });
+}
+
 function generateTimesheetXLSX() {
   if (typeof XLSX==="undefined" || typeof XLSX.writeFile!=="function") {
     toast("❌ Excel library not loaded — refresh and try again", "t-err"); return;
@@ -15621,9 +15673,10 @@ function generateTimesheetXLSX() {
   tsGenerateSheet(wb, year, month, data.engineers, phDays);
 
   var fname="Timesheet_"+TS_MONTH_NAMES[month-1]+"_"+year+(site?"_"+site.replace(/\s+/g,"_"):"")+".xlsx";
-  XLSX.writeFile(wb, fname);
-  closeTimesheetModal();
-  toast("✅ Timesheet downloaded · "+data.engineers.length+" engineers · "+TS_MONTH_NAMES[month-1]+" "+year+(site?" · "+site:""), "t-ok");
+  tsSaveWorkbook(wb, fname, function(frozen) {
+    closeTimesheetModal();
+    toast("✅ Timesheet downloaded · "+data.engineers.length+" engineers · "+TS_MONTH_NAMES[month-1]+" "+year+(site?" · "+site:"") + (frozen ? "" : " (freeze panes unavailable)"), "t-ok");
+  });
 }
 
 // ── Export Leave CSV ────────────────────────────────
