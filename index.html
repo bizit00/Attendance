@@ -15488,6 +15488,7 @@ function tsGenerateSheet(wb, year, month, engineers, phDays) {
     // Legend right labels AG(32):AI(34)
     {s:{r:FRA,c:32},e:{r:FRA,c:34}},{s:{r:FRB,c:32},e:{r:FRB,c:34}},
     {s:{r:FRC,c:32},e:{r:FRC,c:34}},
+    {s:{r:FRD,c:32},e:{r:FRD,c:35}},   // v6.104: OCL/Back to School label spans AG:AJ
   ];
 
   // ── Row 5: title / Balance / day names / WD ─────────────────────────
@@ -15549,7 +15550,7 @@ function tsGenerateSheet(wb, year, month, engineers, phDays) {
   for(var fc=13;fc<=17;fc++) ws[tsRef(FRA,fc)]={v:"",t:"s",s:tsCs(TS_C.WHITE,false,"center","FF000000",TOP)};
   ws[tsRef(FRA,20)]={v:"Signature:",t:"s",s:tsCs(TS_C.WHITE,true,"center","FF000000",TOP)};
   for(var fc2=21;fc2<=25;fc2++) ws[tsRef(FRA,fc2)]={v:"",t:"s",s:tsCs(TS_C.WHITE,false,"center","FF000000",TOP)};
-  ws[tsRef(FRB,20)]=tsXc("Marcus Poh",TS_C.WHITE,false,"s","center");
+  ws[tsRef(FRB,20)]=tsXc("",TS_C.WHITE,false,"s","center");   // v6.104: name removed — left blank for signing
   for(var fc3=21;fc3<=25;fc3++) ws[tsRef(FRB,fc3)]=tsXc("",TS_C.WHITE);
 
   // ── Footer legend (4 rows) ───────────────────────────────────────────
@@ -15573,10 +15574,9 @@ function tsGenerateSheet(wb, year, month, engineers, phDays) {
     if (entry.right) {
       ws[tsRef(fr,31)]={v:entry.right.s,t:"s",s:tsCs(entry.right.bg,true,"center",entry.right.fg)};
       ws[tsRef(fr,32)]=tsXc(entry.right.l,TS_C.WHITE,false,"s","left");
-      if (!entry.right.noMerge) {   // the long OCL label is left unmerged so it can run past the 3 narrow columns
-        ws[tsRef(fr,33)]={v:"",t:"s",s:tsCs(TS_C.WHITE)};
-        ws[tsRef(fr,34)]={v:"",t:"s",s:tsCs(TS_C.WHITE)};
-      }
+      ws[tsRef(fr,33)]={v:"",t:"s",s:tsCs(TS_C.WHITE)};
+      ws[tsRef(fr,34)]={v:"",t:"s",s:tsCs(TS_C.WHITE)};
+      if (entry.right.noMerge) ws[tsRef(fr,35)]={v:"",t:"s",s:tsCs(TS_C.WHITE)};   // 4th cell of the AG:AJ merge
     }
   });
 
