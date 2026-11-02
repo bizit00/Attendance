@@ -1708,13 +1708,13 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <select id="anSite" onchange="_raDebounced()">
           <option value="">🏢 All Sites</option>
         </select>
-        <input type="date" id="anDateFrom" onchange="_raDebounced()" title="From date"/>
-        <span class="an-filter-sep">→</span>
-        <input type="date" id="anDateTo" onchange="_raDebounced()" title="To date"/>
+        <!-- v6.105: one date picker. The hidden "to" field mirrors it so all existing range logic keeps working. -->
+        <input type="date" id="anDateFrom" onchange="_anSyncSingleDate()" title="Select date"/>
+        <input type="date" id="anDateTo" style="display:none" tabindex="-1" aria-hidden="true"/>
         <button class="tb-btn tb-out" onclick="anToday()" title="Jump to today's data" style="gap:6px">📅 Today</button>
         <div style="flex:1"></div>
         <button class="tb-btn tb-out" onclick="startSlideshow()" title="Present charts as a slideshow" style="gap:6px">▶ Slideshow</button>
-        <button class="tb-btn tb-pri" onclick="exportAnalyticsXLSX()" title="Download filtered dataset as Excel">⬇ Excel</button>
+        <button class="tb-btn tb-pri" onclick="openTimesheetModal()" title="Download monthly timesheet as Excel" style="background:#059669">📋 Timesheet</button>
         <button class="tb-btn tb-out" onclick="analyticsClearFilters()">✕ Clear</button>
         <span class="help-dot" data-help="analytics-kpi" title="Help">?</span>
       </div>
@@ -2163,7 +2163,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <button class="tb-btn tb-out" onclick="exportCombinedCSV()">⬇ Full Report</button>
         <button class="tb-btn tb-out" onclick="leaveClearFilters()" title="Clear all filters">✕ Clear</button>
         <!-- v6.76 (Issue 4): Entitlements moved to Admin Tasks > Team > Onboarding (sub-tab action bar) -->
-        <button class="tb-btn tb-pri" onclick="openTimesheetModal()" title="Download monthly timesheet as Excel" style="background:#059669">📋 Timesheet</button>
+        <!-- v6.105: Timesheet button moved to Tracking > Analytics -->
       </div>
 
       <!-- Leave Table -->
@@ -8536,10 +8536,21 @@ function anSetChartType(type) {
 
 function analyticsClearFilters() {
   var s = document.getElementById("anSite");      if (s) s.value = "";
-  var f = document.getElementById("anDateFrom");  if (f) f.value = "";
-  var t = document.getElementById("anDateTo");    if (t) t.value = "";
+  var _td = _sgDay(new Date());   // v6.105: single date — Clear goes back to today
+  var f = document.getElementById("anDateFrom");  if (f) f.value = _td;
+  var t = document.getElementById("anDateTo");    if (t) t.value = _td;
   var g = document.getElementById("anGroupBy");   if (g) g.value = "site";
   renderAnalytics();
+}
+
+// v6.105 — single date picker: the (hidden) "to" date always equals the chosen date.
+// An emptied picker falls back to today so the view is never an unbounded "all dates" range.
+function _anSyncSingleDate() {
+  var f = document.getElementById("anDateFrom"), t = document.getElementById("anDateTo");
+  if (!f || !t) return;
+  if (!f.value) f.value = _sgDay(new Date());
+  t.value = f.value;
+  _raDebounced();
 }
 
 // ── Jump all charts/KPIs to today's data (sets the date range to today) ──
