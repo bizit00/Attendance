@@ -16455,10 +16455,10 @@ function _onbRenderTable() {
       + '<td>' + sanitizeHtml(r.phone||"—") + '</td>'
       + '<td style="font-size:.82rem">' + sanitizeHtml(r.email||"—") + '</td>'
       + '<td><span style="font-size:.78rem;font-weight:700;color:' + statusColor + '">' + statusLabel + '</span></td>'
-      + '<td><div style="display:flex;gap:6px;flex-wrap:wrap">'
-      + '<button class="leave-act-btn" style="background:#ecfdf5;color:#047857" title="Copy the welcome / credentials message to paste into WhatsApp" onclick="onbCopyWelcomeMessage(\'' + sanitizeHtml(r._id) + '\')">💬 Message</button>'
-      + '<button class="leave-act-btn" style="background:#eff6ff;color:var(--blue)" onclick="onbOpenForm(\'' + sanitizeHtml(r._id) + '\')">✏️ Edit</button>'
-      + '<button class="leave-act-btn" style="background:#fef2f2;color:var(--red)" onclick="onbPromptDelete(\'' + sanitizeHtml(r._id) + '\')">🗑️</button>'
+      + '<td><div style="display:flex;gap:6px;flex-wrap:nowrap;white-space:nowrap">'
+      + '<button class="leave-act-btn" style="background:#ecfdf5;color:#047857" title="Copy the welcome / credentials message to paste into WhatsApp" onclick="onbCopyWelcomeMessage(\'' + sanitizeHtml(r._id) + '\')">Message</button>'
+      + '<button class="leave-act-btn" style="background:#eff6ff;color:var(--blue)" onclick="onbOpenForm(\'' + sanitizeHtml(r._id) + '\')">Edit</button>'
+      + '<button class="leave-act-btn" style="background:#fef2f2;color:var(--red)" onclick="onbPromptDelete(\'' + sanitizeHtml(r._id) + '\')">Delete</button>'
       + '</div></td>'
       + '</tr>';
   }).join("");
