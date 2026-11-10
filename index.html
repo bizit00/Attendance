@@ -13050,10 +13050,10 @@ function initLeaveForm() {
     lt.innerHTML = '<option value="">— Select leave type —</option>';
     LEAVE_TYPES.forEach(function(t){ var o=document.createElement("option"); o.value=t; o.textContent=t; lt.appendChild(o); });
   }
-  // Set today as default min date
-  var today = _sgDay(new Date());
-  var lf = document.getElementById("leaveFrom"); if(lf) lf.min = today;
-  var lt2 = document.getElementById("leaveTo");  if(lt2) lt2.min = today;
+  // v6.109: no earliest date — an engineer who forgot to submit leave (e.g. MC on 2–3 Nov) can still
+  // submit it later for the past days. (This used to be locked to today onwards.)
+  var lf = document.getElementById("leaveFrom"); if(lf) lf.removeAttribute("min");
+  var lt2 = document.getElementById("leaveTo");  if(lt2) lt2.removeAttribute("min");
   // Clear state
   leaveAttachment = null;
   var an = document.getElementById("leaveAttName"); if(an) an.textContent = "";
@@ -13431,7 +13431,7 @@ function onLeaveTypeChange() {
 
   if (!leaveType || !empId || empId === "Eng") { hint.style.display = "none"; return; }
 
-  var year     = new Date().getFullYear();
+  var year     = parseInt(fromDate.slice(0,4), 10) || new Date().getFullYear();   // v6.109: same year basis as submitLeave (past-year leave)
   var numDays  = (fromDate && toDate) ? Math.round((new Date(toDate) - new Date(fromDate)) / 86400000) + 1 : 0;
 
   // v6.73: forceRefresh=true so this hint can't show "safe" from a stale cache
