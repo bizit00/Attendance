@@ -6743,6 +6743,7 @@ function initDash() {
     fbUnsub = db.collection("attendance").orderBy("checkinTimestamp","desc")
       .onSnapshot(function(snap){
         allRecs = snap.docs.map(function(d){ return Object.assign({id:d.id},d.data()); });
+        try { _applyOnbNames(); } catch(_){}   // v6.110
         // ── v6.43 DIAGNOSTIC: confirm the read actually returned data ──
         console.log("[ATTENDANCE READ] success — Firestore returned " + snap.size + " record(s).");
         _diagAttendance(snap.size > 0
@@ -8235,7 +8236,7 @@ function _anBuildBreakdown(rows) {
   var nameOf = {};
   (allRecs || []).forEach(function(r){ if (r.empId) nameOf[r.empId] = r.empName || r.empId; });
   (typeof _onbRecords !== "undefined" ? _onbRecords : []).forEach(function(r){
-    var id = r.engId || r._id; if (id && r.name) nameOf[id] = nameOf[id] || r.name;
+    var id = r.engId || r._id; if (id && r.name) nameOf[id] = r.name;   // v6.110: the admin-maintained onboarding name wins over what was typed at check-in
   });
 
   // On-leave empIds at the as-of day (reuse existing helper if present).
@@ -8347,7 +8348,7 @@ function _anRenderBreakdownChart(rows) {
   if (emptyEl) emptyEl.style.display = "none";
   canvas.style.display = "block";
   // Module-level — always current; read by onClick and afterDraw plugin (no stale closure)
-  _anBreakdownShortLabels = _anBreakdownSites.map(function(s){ return s.replace(/^(Site [A-Z] - |HQ - )/, ""); });
+  _anBreakdownShortLabels = _anBreakdownSites.map(function(s){ return s; });   // v6.110: show the site name exactly as configured in Work Sites (was stripping "HQ - " / "Site X - ")
 
   var onTimeCounts  = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].onTime.length; });
   var lateCounts    = _anBreakdownSites.map(function(s){ return _anBreakdownCache[s].late.length; });
@@ -16338,6 +16339,21 @@ function _onbMatches(r) {
   return hay.indexOf(_onbSearch) !== -1;
 }
 
+// v6.110 — the name an engineer typed on their phone at check-in (e.g. "iphone3") was shown on the
+// dashboard forever, even after the admin corrected it in Onboarding. The Onboarding name is the
+// official one: apply it to the in-memory attendance rows (display only — the database record is unchanged).
+function _applyOnbNames() {
+  if (typeof _onbRecords === "undefined" || !_onbRecords.length || typeof allRecs === "undefined" || !allRecs) return false;
+  var map = {};
+  _onbRecords.forEach(function(r){ var k = _normIdKey(r.engId || r._id); if (k && r.name) map[k] = r.name; });
+  var changed = false;
+  allRecs.forEach(function(r){
+    var k = _normIdKey(r.empId);
+    if (k && map[k] && r.empName !== map[k]) { r.empName = map[k]; changed = true; }
+  });
+  return changed;
+}
+
 // ── Load & render ────────────────────────────────────
 function loadOnboarding() {
   var tbody = document.getElementById("onbTbody");
@@ -16354,6 +16370,7 @@ function loadOnboarding() {
       _onbRecords = [];
       snap.forEach(function(d) { _onbRecords.push(Object.assign({ _id: d.id }, d.data())); });
       _onbRenderTable();
+      if (_applyOnbNames() && typeof renderAll === "function") renderAll();   // v6.110: dashboard picks up corrected names
       // v6.67: repair any stored status the derived badge just contradicted.
       _onbReconcileActivations(_onbRecords, _onbActiveIdSet(typeof allRecs !== "undefined" ? allRecs : []));
     })
