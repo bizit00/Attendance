@@ -3537,6 +3537,26 @@ function _handleGpsFailureOutcome(dir) {
   }
 }
 
+// v6.108 — the light "Still can't get a reliable fix — retrying…" state is only honest while a
+// retry is really scheduled/running. Several early-exit paths (location blocked, site missing,
+// site without coordinates, an exception) showed it and then did nothing, leaving the engineer
+// stuck with no manual-confirmation option. If nothing is happening 4 s later, show the recovery card.
+var _gpsWdTimer = { in: null, out: null };
+function _gpsWatchdog(dir) {
+  if (dir !== "in") return;
+  clearTimeout(_gpsWdTimer[dir]);
+  _gpsWdTimer[dir] = setTimeout(function() {
+    var b = document.getElementById("gpsCiBtn");
+    if (_gpsRetryTimer[dir]) return;                          // a retry is scheduled
+    if (b && /\bchecking\b/.test(b.className)) return;        // a detection is running
+    if (GPS[dir] && GPS[dir].ok) return;                       // already verified
+    if (_gpsGaveUp[dir] || (_gpsAttempt[dir] || 0) >= MAX_GPS_ATTEMPTS) return;   // full card already shown
+    console.warn("[v6.108] GPS retry stalled — showing recovery options");
+    _gpsAttempt[dir] = 0; _gpsGaveUp[dir] = true;
+    _gpsRecover(dir);
+  }, 4000);
+}
+
 function _gpsRecover(dir) {
   if (dir === "out") {
     // Cases 1–3 twice on check-out → open the manual-checkout card (frozen time,
@@ -3612,6 +3632,7 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
   console.log("[v6.57] GPS verify start:", dir);
 
   if (!navigator.geolocation) {
+    _gpsAttempt[dir] = MAX_GPS_ATTEMPTS;   // v6.108: no retry will come — show the full card + manual option
     setGpsUI(dir,"error","Geolocation not supported by this browser.",null); return;
   }
 
@@ -3622,6 +3643,7 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
       navigator.permissions.query({ name: "geolocation" }).then(function(status) {
         console.log("[v6.57] geolocation permission:", status.state);
         if (status.state === "denied") {
+          _gpsAttempt[dir] = MAX_GPS_ATTEMPTS;   // v6.108: blocked — a retry can't fix it; show the full guidance + manual option
           setGpsUI(dir, "error",
             "Location is blocked for this site. Tap the padlock/site-settings icon in your browser's address bar, set Location to Allow, then tap “Refresh GPS”. If that doesn't help, use “Reset app” below.",
             null);
@@ -3633,7 +3655,14 @@ function verifyGps(dir, isAutoRetry) { // v6.65: isAutoRetry continues the retry
   var site;
   if (dir==="in") {
     site = siteByName(siteVal);
-    if (!site) { setGpsUI(dir,"error","That work site no longer exists — pick another from the list.",null); return; }
+    if (!site) { _gpsAttempt[dir] = MAX_GPS_ATTEMPTS; setGpsUI(dir,"error","That work site no longer exists — pick another from the list.",null); return; }
+    // v6.108: a site saved without usable coordinates (e.g. a school / OCL location with no fixed address)
+    // can never pass the distance check — say so and go straight to manual confirmation.
+    if (site.lat == null || site.lng == null || !isFinite(+site.lat) || !isFinite(+site.lng)) {
+      _gpsAttempt[dir] = MAX_GPS_ATTEMPTS;
+      setGpsUI(dir,"error", sanitizeHtml(site.name) + " has no GPS location set, so your position can't be checked automatically. Tap “Request manual confirmation” below — an admin will confirm you.", null);
+      return;
+    }
   }
   else {
     var sess = getSess();
@@ -4185,6 +4214,7 @@ function setGpsUI(dir, state, name, dist, acc) {
       btn.className="gps-btn fail";
       ic.textContent="⏳"; tx.textContent="Still can't get a reliable fix — retrying…";
       st.innerHTML="";
+      _gpsWatchdog(dir);   // v6.108: never leave this "retrying" message up without a retry actually coming
     } else {
       btn.className="gps-btn fail";
       ic.textContent="🔄"; tx.textContent="Tap to try location again";
@@ -4203,6 +4233,7 @@ function setGpsUI(dir, state, name, dist, acc) {
       btn.className="gps-btn fail";
       ic.textContent="⏳"; tx.textContent="Still can't get a reliable fix — retrying…";
       st.innerHTML="";
+      _gpsWatchdog(dir);   // v6.108: never leave this "retrying" message up without a retry actually coming
     } else {
       btn.className="gps-btn fail";
       ic.textContent="🔄"; tx.textContent="Tap to try location again";
@@ -4218,6 +4249,7 @@ function setGpsUI(dir, state, name, dist, acc) {
       btn.className="gps-btn fail";
       ic.textContent="⏳"; tx.textContent="Still can't get a reliable fix — retrying…";
       st.innerHTML="";
+      _gpsWatchdog(dir);   // v6.108: never leave this "retrying" message up without a retry actually coming
     } else {
       btn.className="gps-btn fail";
       ic.textContent="🔄"; tx.textContent="Tap to try location again";
@@ -4232,6 +4264,7 @@ function setGpsUI(dir, state, name, dist, acc) {
       btn.className="gps-btn fail";
       ic.textContent="⏳"; tx.textContent="Still can't get a reliable fix — retrying…";
       st.innerHTML="";
+      _gpsWatchdog(dir);   // v6.108: never leave this "retrying" message up without a retry actually coming
     } else {
       btn.className="gps-btn fail";
       ic.textContent="🔄"; tx.textContent="Tap to try location again";
