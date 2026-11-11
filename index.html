@@ -1476,7 +1476,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
 
       <div class="card">
         <div class="card-lbl">📎 Supporting Documents <span style="color:var(--red);font-size:.75rem;font-weight:800">REQUIRED</span></div>
-        <p style="font-size:.82rem;color:var(--ink3);margin-bottom:12px">Upload a photo or screenshot of your physical leave application form / MC slip. <strong style="color:var(--red)">This is mandatory</strong> — leave applications without an attachment will not be accepted. (Max 700 KB — JPG, PNG, or PDF)</p>
+        <p style="font-size:.82rem;color:var(--ink3);margin-bottom:12px">Upload a photo or screenshot of your physical leave application form / MC slip. <strong style="color:var(--red)">This is mandatory</strong> — leave applications without an attachment will not be accepted. (JPG, PNG, or PDF — photos are compressed automatically; PDF max 700 KB)</p>
         <div class="file-upload-wrap" id="leaveAttWrap">
           <div class="fu-icon">📄</div>
           <div class="fu-txt">Tap to upload from gallery / files<br><strong>Leave Form / MC / Supporting Document</strong></div>
@@ -13095,44 +13095,78 @@ function calcLeaveDays() {
 }
 
 // ── Handle Attachment Upload ────────────────────────
+// v6.111: images over 700 KB are compressed automatically (resized + JPEG quality steps). PDFs cannot be compressed: max 700 KB.
+function _leaveAttError(input, html) {
+  var wrap = document.getElementById("leaveAttWrap");
+  var an = document.getElementById("leaveAttName");
+  if (an) an.innerHTML = '<span style="color:var(--red)">' + html + '</span>';
+  if (wrap) { wrap.style.borderColor="var(--red)"; wrap.style.background="#fef2f2"; }
+  input.value=""; leaveAttachment=null;
+}
+function _leaveAttReady(file, dataUrl, bytes, note) {
+  var wrap = document.getElementById("leaveAttWrap");
+  if (wrap) { wrap.style.borderColor=""; wrap.style.background=""; }
+  leaveAttachment = { name: file.name, type: file.type, base64: dataUrl };
+  var an = document.getElementById("leaveAttName");
+  if (an) an.textContent = "";
+  if (an) an.innerHTML = '✅ <strong>' + String(file.name).replace(/</g,"&lt;") + '</strong> ('
+    + Math.round(bytes/1024) + ' KB' + (note||"") + ') — ready to upload';
+  var prevWrap = document.getElementById("leaveAttPreview");
+  var prevImg  = document.getElementById("leaveAttPreviewImg");
+  if (prevWrap && prevImg) {
+    if (dataUrl.indexOf("data:image") === 0) { prevImg.src = dataUrl; prevWrap.style.display = "block"; }
+    else prevWrap.style.display = "none";
+  }
+  var clrBtn = document.getElementById("leaveAttClearBtn");
+  if (clrBtn) clrBtn.style.display = "flex";
+  toast("📎 Attachment ready", "t-ok");
+}
+function _compressImageFile(file, maxBytes, cb) {
+  var url = URL.createObjectURL(file);
+  var img = new Image();
+  img.onload = function() {
+    var scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    var best = null;
+    for (var round = 0; round < 4 && !best; round++) {
+      var w = Math.max(1, Math.round(img.naturalWidth * scale)), h = Math.max(1, Math.round(img.naturalHeight * scale));
+      var cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+      var ctx = cv.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0,0,w,h); ctx.drawImage(img,0,0,w,h);
+      var qs = [0.8, 0.65, 0.5, 0.4];
+      for (var i = 0; i < qs.length; i++) {
+        var d = cv.toDataURL("image/jpeg", qs[i]);
+        if (Math.round((d.length - d.indexOf(",") - 1) * 0.75) <= maxBytes) { best = d; break; }
+      }
+      scale *= 0.75;
+    }
+    URL.revokeObjectURL(url);
+    cb(best ? { dataUrl: best, bytes: Math.round((best.length - best.indexOf(",") - 1) * 0.75) } : null);
+  };
+  img.onerror = function() { URL.revokeObjectURL(url); cb(null); };
+  img.src = url;
+}
 function handleLeaveAttachment(input) {
   var file = input.files[0]; if (!file) return;
   var MAX_BYTES = 700 * 1024; // 700 KB raw → ~940 KB base64, safe under Firestore 1MB limit
-  var wrap = document.getElementById("leaveAttWrap");
-  if (file.size > MAX_BYTES) {
-    var an = document.getElementById("leaveAttName");
-    if (an) an.innerHTML = '<span style="color:var(--red)">❌ File too large ('
-      + Math.round(file.size/1024) + ' KB). Max 700 KB.<br>'
-      + 'Tip: use 📷 <strong>Take Photo with Camera</strong> instead — it auto-compresses, or compress at <a href="https://tinypng.com" target="_blank" style="color:var(--blue)">tinypng.com</a>.</span>';
-    if (wrap) { wrap.style.borderColor="var(--red)"; wrap.style.background="#fef2f2"; }
-    input.value=""; leaveAttachment=null; return;
+  var isImg = (file.type || "").indexOf("image/") === 0;
+  var isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+  if (!isImg && !isPdf) { _leaveAttError(input, '❌ Unsupported file. Please upload a JPG, PNG or PDF.'); return; }
+  if (file.size <= MAX_BYTES) {
+    var reader = new FileReader();
+    reader.onload = function(e) { _leaveAttReady(file, e.target.result, file.size, ""); };
+    reader.readAsDataURL(file);
+    return;
   }
-  if (wrap) { wrap.style.borderColor=""; wrap.style.background=""; }
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    leaveAttachment = { name: file.name, type: file.type, base64: e.target.result };
-    var an = document.getElementById("leaveAttName");
-    if (an) an.innerHTML = '✅ <strong>' + file.name + '</strong> ('
-      + Math.round(file.size/1024) + ' KB) — ready to upload';
-
-    // Show image preview thumbnail (only for images, not PDFs)
-    var prevWrap = document.getElementById("leaveAttPreview");
-    var prevImg  = document.getElementById("leaveAttPreviewImg");
-    if (prevWrap && prevImg) {
-      if (file.type && file.type.indexOf("image/") === 0) {
-        prevImg.src = e.target.result;
-        prevWrap.style.display = "block";
-      } else {
-        prevWrap.style.display = "none";
-      }
-    }
-    // Show clear/remove button
-    var clrBtn = document.getElementById("leaveAttClearBtn");
-    if (clrBtn) clrBtn.style.display = "flex";
-
-    toast("📎 Attachment ready", "t-ok");
-  };
-  reader.readAsDataURL(file);
+  if (isPdf) {
+    _leaveAttError(input, '❌ PDF too large (' + Math.round(file.size/1024) + ' KB). Max 700 KB.<br>'
+      + 'Tip: take a photo or screenshot of the document instead (it is compressed automatically), or compress the PDF at <a href="https://www.ilovepdf.com/compress_pdf" target="_blank" style="color:var(--blue)">ilovepdf.com</a>.');
+    return;
+  }
+  var an = document.getElementById("leaveAttName"); if (an) an.textContent = "⏳ Compressing image…";
+  _compressImageFile(file, MAX_BYTES, function(res) {
+    if (!res) { _leaveAttError(input, '❌ Could not compress this image (' + Math.round(file.size/1024) + ' KB). Try a JPG/PNG screenshot or use 📷 Take Photo with Camera.'); return; }
+    var nm = file.name.replace(/\.[^.]+$/, "") + ".jpg";
+    _leaveAttReady({ name: nm, type: "image/jpeg" }, res.dataUrl, res.bytes, ", compressed from " + Math.round(file.size/1024) + " KB");
+  });
 }
 
 // ── Clear Leave Attachment (used by both upload + camera) ──
@@ -18077,7 +18111,7 @@ const HELP_TOPICS = {
     ],
     "troubleshooting": [
       "If the Manager dropdown shows no options, your site may not have a manager assigned — contact admin.",
-      "If the attachment upload fails, check the file size (max 700 KB) and format (JPG, PNG, or PDF only).",
+      "If the attachment upload fails, check the file format (JPG, PNG, or PDF). Photos are compressed automatically; PDFs must be under 700 KB.",
       "If you have insufficient leave balance for the selected type, the app will show a warning with your remaining days.",
       "If you have a pending or approved leave that overlaps the requested dates, the submission may be blocked — check your existing applications in 'My Leaves'."
     ],
