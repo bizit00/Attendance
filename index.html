@@ -959,6 +959,10 @@ tr.on-leave-row td{background:#f0f9ff!important}
 .cal-cell.other-month .cal-day-num{color:#cbd5e1}
 .cal-cell.other-month{background:#fafaf8}
 .cal-cell.today{box-shadow:inset 0 0 0 2px var(--green)}
+.cal-clickable{cursor:pointer}
+.cal-clickable:hover{background:#f0fdf4}
+.cal-add{position:absolute;top:4px;right:6px;font-size:.8rem;font-weight:700;color:var(--green);opacity:0;transition:opacity .15s}
+.cal-clickable:hover .cal-add{opacity:1}
 .cal-day-num{font-size:.72rem;font-weight:700;color:var(--ink3);margin-bottom:2px;line-height:1}
 .cal-chip{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:.68rem;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;line-height:1.4}
 .cal-more{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:.68rem;font-weight:700;background:#e5e7eb;color:#374151}
@@ -3093,6 +3097,36 @@ service cloud.firestore {
 <div id="toast"></div>
 
 <!-- ══ MANPOWER CONFIG MODAL ════════════════════════ -->
+<!-- ══ ADMIN: ADD MISSING ATTENDANCE (v6.112) ═══════ -->
+<div id="adminAddAttModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:480px">
+    <button class="modal-close" onclick="adminAddAttClose()">✕</button>
+    <div class="modal-title">➕ Add Missing Attendance</div>
+    <div class="modal-sub">For a day the engineer worked but forgot to check in/out. The record is marked <strong>Added by admin</strong> with your name and the reason.</div>
+    <div style="display:grid;gap:10px;margin-top:10px">
+      <label style="font-size:.78rem;font-weight:700">Date
+        <input type="date" id="aaDate" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px" onchange="adminAddAttCheck()"/></label>
+      <label style="font-size:.78rem;font-weight:700">Engineer
+        <select id="aaEng" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px" onchange="adminAddAttEngChange()"></select></label>
+      <label style="font-size:.78rem;font-weight:700">Work site
+        <select id="aaSite" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"></select></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label style="font-size:.78rem;font-weight:700">Check-in time
+          <input type="time" id="aaIn" value="08:00" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
+        <label style="font-size:.78rem;font-weight:700">Check-out time
+          <input type="time" id="aaOut" value="17:00" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
+      </div>
+      <label style="font-size:.78rem;font-weight:700">Reason <span style="color:var(--red)">*</span>
+        <input type="text" id="aaReason" maxlength="200" placeholder="e.g. Phone battery died, confirmed by site supervisor" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
+    </div>
+    <div id="aaStatus" style="font-size:.78rem;color:var(--ink3);margin-top:10px;min-height:18px"></div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="adminAddAttClose()">Cancel</button>
+      <button class="modal-btn-confirm" id="aaSaveBtn" onclick="adminAddAttSave()">💾 Add Record</button>
+    </div>
+  </div>
+</div>
+
 <div id="manpowerConfigModal" class="modal-overlay">
   <div class="modal-box" style="max-width:520px">
     <button class="modal-close" onclick="anCloseManpowerConfig()">✕</button>
@@ -10798,6 +10832,93 @@ function _anRenderLeaveTrendChart(siteFilter) { return; // chart removed
   });
 }
 
+// ── v6.112: Admin adds a missing attendance record ──────────────────
+// The engineer worked but never checked in/out. Admin picks a day (Calendar → click the day),
+// the engineer, site and times; a normal attendance record is written, flagged addedByAdmin.
+function adminAddAttOpen(isoDate) {
+  var m = document.getElementById("adminAddAttModal"); if (!m) return;
+  var engSel = document.getElementById("aaEng");
+  var list = (typeof _onbRecords !== "undefined" ? _onbRecords : []).filter(function(r){ return (r.engId || r._id) && r.name; })
+    .sort(function(a,b){ return a.name.localeCompare(b.name); });
+  engSel.innerHTML = '<option value="">— Select engineer —</option>' + list.map(function(r){
+    var id = r.engId || r._id;
+    return '<option value="' + String(id).replace(/"/g,"&quot;") + '">' + String(r.name).replace(/</g,"&lt;") + ' (' + String(id).replace(/</g,"&lt;") + ')</option>';
+  }).join("");
+  var siteSel = document.getElementById("aaSite");
+  siteSel.innerHTML = WORK_SITES.map(function(s){ return '<option value="' + String(s.name).replace(/"/g,"&quot;") + '">' + String(s.name).replace(/</g,"&lt;") + '</option>'; }).join("");
+  document.getElementById("aaDate").value = isoDate || _sgDay(new Date());
+  document.getElementById("aaIn").value = "08:00";
+  document.getElementById("aaOut").value = "17:00";
+  document.getElementById("aaReason").value = "";
+  document.getElementById("aaStatus").textContent = list.length ? "" : "⚠️ No engineers in Onboarding yet.";
+  document.getElementById("aaSaveBtn").disabled = false;
+  m.classList.add("open");
+}
+function adminAddAttClose() { var m = document.getElementById("adminAddAttModal"); if (m) m.classList.remove("open"); }
+function adminAddAttEngChange() {
+  var id = document.getElementById("aaEng").value;
+  var ds = (typeof _onbDefaultSiteMap === "function" ? _onbDefaultSiteMap() : {})[id];
+  if (ds) { var sel = document.getElementById("aaSite"); if (Array.prototype.some.call(sel.options, function(o){ return o.value === ds; })) sel.value = ds; }
+  adminAddAttCheck();
+}
+// Returns the engineer's existing records on the chosen Singapore day.
+function _aaExisting(empId, iso) {
+  var k = _normIdKey(empId);
+  return (allRecs || []).filter(function(r){
+    return _normIdKey(r.empId) === k && r.checkinTimestamp && _sgDay(new Date(r.checkinTimestamp)) === iso;
+  });
+}
+function adminAddAttCheck() {
+  var id = document.getElementById("aaEng").value, iso = document.getElementById("aaDate").value;
+  var st = document.getElementById("aaStatus"); if (!st) return;
+  if (!id || !iso) { st.textContent = ""; return; }
+  var ex = _aaExisting(id, iso);
+  st.innerHTML = ex.length ? '<span style="color:var(--red)">⚠️ This engineer already has ' + ex.length + ' record(s) on ' + iso + ' (' + ex.map(function(r){ return (r.checkinTime||"?") + (r.checkoutTime ? "–" + r.checkoutTime : " (no check-out)"); }).join(", ") + '). A duplicate will not be added.</span>' : "";
+}
+function adminAddAttSave() {
+  var id = document.getElementById("aaEng").value, iso = document.getElementById("aaDate").value;
+  var site = document.getElementById("aaSite").value, tIn = document.getElementById("aaIn").value, tOut = document.getElementById("aaOut").value;
+  var reason = (document.getElementById("aaReason").value || "").trim();
+  var st = document.getElementById("aaStatus"), btn = document.getElementById("aaSaveBtn");
+  function bad(m){ st.innerHTML = '<span style="color:var(--red)">' + m + '</span>'; }
+  if (!id) return bad("Select an engineer.");
+  if (!iso) return bad("Select a date.");
+  if (iso > _sgDay(new Date())) return bad("Cannot add attendance for a future date.");
+  if (!site) return bad("Select a work site.");
+  if (!tIn || !tOut) return bad("Enter both check-in and check-out times.");
+  if (!reason) return bad("Please enter a reason.");
+  var inD = new Date(iso + "T" + tIn + ":00+08:00"), outD = new Date(iso + "T" + tOut + ":00+08:00");
+  if (isNaN(inD) || isNaN(outD)) return bad("Invalid time.");
+  if (outD <= inD) return bad("Check-out must be after check-in.");
+  if (_aaExisting(id, iso).length) return bad("This engineer already has a record on that day. Edit or delete that record instead.");
+  if (!fbOk || !db) return bad("Firestore not available.");
+  var onb = (_onbRecords || []).find(function(r){ return (r.engId || r._id) === id; }) || {};
+  var ms = outD - inD, h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000);
+  var who = _adminTag(), now = Date.now();
+  var rec = {
+    empId: id, empName: onb.name || id, empEmail: onb.email || "", site: site,
+    defaultSite: null, siteMismatch: false,
+    checkinTime: inD.toLocaleTimeString("en-SG"), checkinDate: inD.toLocaleDateString("en-SG"), checkinISO: inD.toISOString(), checkinTimestamp: inD.getTime(),
+    checkinLat: null, checkinLng: null, checkinDist: null, checkinAcc: null,
+    checkoutTime: outD.toLocaleTimeString("en-SG"), checkoutISO: outD.toISOString(), checkoutTimestamp: outD.getTime(),
+    checkoutLat: null, checkoutLng: null, checkoutDist: null,
+    status: "out", isLate: _isLateForSite(new Date(iso + "T" + tIn + ":00"), site), isOvertime: h >= _siteOtHours(site), duration: h + "h " + m + "m",
+    deviceId: null, hwId: null, deviceToken: null, emailConflict: false,
+    _source: "admin-added", _userAgent: "admin",
+    addedByAdmin: true, addedBy: who, addedAt: now, addedReason: reason.slice(0, 200)
+  };
+  btn.disabled = true; st.textContent = "⏳ Saving…";
+  // fixed id → pressing Save twice rewrites the same record, never duplicates
+  var docId = "admin_" + _normIdKey(id) + "_" + iso;
+  db.collection("attendance").doc(docId).set(rec).then(function(){
+    toast("✅ Added attendance for " + rec.empName + " on " + iso, "t-ok");
+    adminAddAttClose();
+  }).catch(function(err){
+    console.error("[AdminAdd] write failed:", err);
+    btn.disabled = false; bad("❌ Save failed: " + ((err && err.message) || err));
+  });
+}
+
 function renderCalendar() {
   var lbl = document.getElementById("calMonthLbl");
   var grid = document.getElementById("calGrid");
@@ -10835,9 +10956,10 @@ function renderCalendar() {
     shown.forEach(function(r){ chips += _calChip(r); });
     if (extra > 0) chips += '<span class="cal-more">+' + extra + '</span>';
 
-    html += '<div class="cal-cell' + (isToday ? " today" : "") + '">'
+    html += '<div class="cal-cell cal-clickable' + (isToday ? " today" : "") + '" onclick="adminAddAttOpen(\'' + isoDate + '\')" title="Click to add missing attendance for ' + isoDate + '">'
       + '<div class="cal-day-num">' + d + '</div>'
       + chips
+      + '<span class="cal-add">＋</span>'
       + '</div>';
   }
 
