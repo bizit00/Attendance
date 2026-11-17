@@ -2029,6 +2029,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
               title="Set required manpower per site">⚙️ Configure Manpower</button>
       <button id="teamSubBtnSites" class="team-sub-act" onclick="openSitesModal()"
               title="Add, edit or remove work sites (name + GPS)">📍 Work Sites</button>
+      <button id="teamSubBtnHolidays" class="team-sub-act" onclick="phOpen()"
+              title="Set public holiday dates (used by the Timesheet and leave day counts)">🎌 Public Holidays</button>
       <button id="teamSubBtnOtpPolicy" class="team-sub-act" onclick="openOtpPolicyModal()"
               title="Enable or disable email OTP verification on first check-in">🔐 Check-in Security</button>
     </div>
@@ -2668,6 +2670,10 @@ service cloud.firestore {
                     && request.resource.data.empName.size() &lt;= 60
                     && request.resource.data.status == 'in';
 
+      // v6.112 — signed-in admin can add a completed ("out") record for a day the
+      // engineer forgot to check in/out (Calendar → click a day → Add Missing Attendance).
+      allow create: if request.auth != null;
+
       // Engineers can check out (update only allowed fields)
       allow update: if request.resource.data.diff(resource.data)
                       .affectedKeys().hasOnly([
@@ -2939,7 +2945,7 @@ service cloud.firestore {
   <div class="modal-box" style="max-width:480px">
     <button class="modal-close" onclick="closeTimesheetModal()">✕</button>
     <div class="modal-title">📊 Export Timesheet <span class="help-dot" data-help="timesheet-export" title="Help">?</span></div>
-    <div class="modal-sub">Generates a coloured Excel timesheet using live attendance &amp; approved leave data. Singapore public holidays are auto-detected.</div>
+    <div class="modal-sub">Generates a coloured Excel timesheet using live attendance &amp; approved leave data. Public holidays come from the built-in Singapore calendar plus any dates the admin sets in Admin Tasks › Team › Public Holidays.</div>
     <div style="display:flex;gap:12px;margin-bottom:14px">
       <div style="flex:1">
         <label style="font-size:.82rem;font-weight:600;color:var(--ink2);display:block;margin-bottom:5px">Month</label>
@@ -3097,6 +3103,46 @@ service cloud.firestore {
 <div id="toast"></div>
 
 <!-- ══ MANPOWER CONFIG MODAL ════════════════════════ -->
+<!-- ══ PUBLIC HOLIDAYS (v6.115) ═══════════════════ -->
+<div id="phModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:520px">
+    <button class="modal-close" onclick="phClose()">✕</button>
+    <div class="modal-title">🎌 Public Holidays</div>
+    <div class="modal-sub">These dates appear as <strong>PH</strong> in the Timesheet and are not deducted from leave. The list starts with the built-in Singapore calendar; add or remove dates to match the official gazette.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <label style="font-size:.78rem;font-weight:700">Year</label>
+      <select id="phYear" onchange="phRender()" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px"></select>
+    </div>
+    <div id="phList" style="max-height:38vh;overflow-y:auto;margin-top:8px;border:1px solid var(--border);border-radius:8px"></div>
+    <div style="display:grid;grid-template-columns:150px 1fr auto;gap:8px;margin-top:10px;align-items:end">
+      <label style="font-size:.74rem;font-weight:700">Date<input type="date" id="phNewDate" style="width:100%;padding:7px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
+      <label style="font-size:.74rem;font-weight:700">Name<input type="text" id="phNewName" maxlength="60" placeholder="e.g. Polling Day" style="width:100%;padding:7px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
+      <button class="modal-btn-confirm" onclick="phAdd()" style="padding:8px 14px">＋ Add</button>
+    </div>
+    <div id="phStatus" style="font-size:.78rem;color:var(--ink3);margin-top:8px;min-height:18px"></div>
+    <div class="modal-actions"><button class="modal-btn-cancel" onclick="phClose()">Close</button></div>
+  </div>
+</div>
+
+<!-- ══ ADMIN: CHANGE LEAVE TYPE (v6.113) ═══════════ -->
+<div id="adminLeaveTypeModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:440px">
+    <button class="modal-close" onclick="adminLeaveTypeClose()">✕</button>
+    <div class="modal-title">✏️ Change Leave Type</div>
+    <div class="modal-sub" id="altSub"></div>
+    <input type="hidden" id="altId"/>
+    <label style="font-size:.78rem;font-weight:700;display:block;margin-top:10px">New leave type
+      <select id="altType" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"></select></label>
+    <label style="font-size:.78rem;font-weight:700;display:block;margin-top:10px">Reason for change <span style="color:var(--red)">*</span>
+      <input type="text" id="altReason" maxlength="200" placeholder="e.g. Engineer applied Annual Leave but was on MC" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
+    <div id="altStatus" style="font-size:.78rem;color:var(--ink3);margin-top:10px;min-height:18px"></div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="adminLeaveTypeClose()">Cancel</button>
+      <button class="modal-btn-confirm" id="altSaveBtn" onclick="adminLeaveTypeSave()">💾 Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ ADMIN: ADD MISSING ATTENDANCE (v6.112) ═══════ -->
 <div id="adminAddAttModal" class="modal-overlay">
   <div class="modal-box" style="max-width:480px">
@@ -7777,7 +7823,7 @@ function _backupBuildRow(row){
     if (!out.fromDate || !out.toDate) out.warnings.push("Missing/invalid leave dates");
     if (frmR.warning) out.warnings.push("From: " + frmR.warning);
     if (todR.warning) out.warnings.push("To: " + todR.warning);
-    var _nd = (out.fromDate && out.toDate) ? (Math.round((new Date(out.toDate) - new Date(out.fromDate))/(1000*60*60*24)) + 1) : 0;
+    var _nd = (out.fromDate && out.toDate) ? _workDays(out.fromDate, out.toDate) : 0;
     var _appNow = new Date();
     out.record = Object.assign({
       empId: out.empId, empName: out.empName, empEmail: out.empEmail, site: out.site,
@@ -9097,7 +9143,7 @@ function _anRenderLeaveStatusChart() {
               '<td style="padding:5px 6px;font-family:var(--mono);font-size:.7rem;color:var(--ink3)">' + sanitizeHtml(r.empId   || "")   + '</td>' +
               '<td style="padding:5px 6px">'                                                           + sanitizeHtml(r.fromDate|| "—")  + '</td>' +
               '<td style="padding:5px 6px">'                                                           + sanitizeHtml(r.toDate  || "—")  + '</td>' +
-              '<td style="padding:5px 6px;text-align:right;font-family:var(--mono)">'                  + (r.numDays || "—")              + '</td>' +
+              '<td style="padding:5px 6px;text-align:right;font-family:var(--mono)">'                  + (_leaveDays(r) || "—")              + '</td>' +
               '</tr>';
           }).join("") +
           '</tbody></table>';
@@ -9343,12 +9389,9 @@ function exportAnalyticsXLSX() {
 
   // ── Sheet 5: Leave Snapshot (engineers on leave on as-of date) ──
   var leaveSheet = leavesOnDate.map(function(r){
-    var totalDays = r.numDays || 0;
-    if (!totalDays && r.fromDate && r.toDate) {
-      totalDays = Math.round((new Date(r.toDate)-new Date(r.fromDate))/86400000) + 1;
-    }
+    var totalDays = _leaveDays(r);
     var dayIdx = 0;
-    if (r.fromDate) dayIdx = Math.round((new Date(asOf)-new Date(r.fromDate))/86400000) + 1;
+    if (r.fromDate) dayIdx = _leaveDayIdx(r, asOf);
     return {
       "Engineer ID":   r.empId    || "",
       "Name":          r.empName  || "",
@@ -10428,13 +10471,10 @@ function _anRenderLeaveList(leaves, isoDate) {
 
   // Compute "day X of N" for each
   list.innerHTML = deduped.map(function(r){
-    var totalDays = r.numDays || 0;
-    if (!totalDays && r.fromDate && r.toDate) {
-      totalDays = Math.round((new Date(r.toDate)-new Date(r.fromDate))/(86400000)) + 1;
-    }
-    // Day index (1-based) within the leave period
+    var totalDays = _leaveDays(r);
+    // Day index (1-based) within the leave period (working days)
     var dayIdx = 0;
-    if (r.fromDate) dayIdx = Math.round((new Date(isoDate)-new Date(r.fromDate))/(86400000)) + 1;
+    if (r.fromDate) dayIdx = _leaveDayIdx(r, isoDate);
     if (dayIdx < 1) dayIdx = 1;
     if (totalDays && dayIdx > totalDays) dayIdx = totalDays;
 
@@ -10773,7 +10813,7 @@ function _anRenderLeaveTrendChart(siteFilter) { return; // chart removed
         var lastDay = new Date(parseInt(mk.slice(0,4),10), parseInt(mk.slice(5,7),10), 0).getDate();
         var mEnd   = mk + "-" + String(lastDay).padStart(2,"0");
         if (r.fromDate > mEnd || r.toDate < mStart) return;
-        total += parseInt(r.numDays, 10) || 0;
+        total += _leaveDays(r);
       });
       return total;
     });
@@ -11594,7 +11634,7 @@ function _anComputeUsed(empId, year, leaveType, recs) {
     if (!r.fromDate) return;
     var y = parseInt((r.fromDate || "").slice(0, 4), 10);
     if (y !== year) return;
-    used += (parseInt(r.numDays, 10) || 0);
+    used += (_leaveDays(r));
   });
   return used;
 }
@@ -11874,6 +11914,7 @@ function loadCustomSites() {
       .sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); });
     _rebuildWorkSites();
   }, function(err){ console.warn("[AT] workSites listener:", err); });
+  try { phStartListener(); } catch(_){}   // v6.115
 }
 
 // Repopulate every site dropdown in the app, preserving the current selection.
@@ -13203,6 +13244,85 @@ function initLeaveForm() {
 }
 
 // ── Calculate Leave Days ────────────────────────────
+// ── v6.115: Public holidays = built-in SG_PH calendar + admin additions − admin removals ──
+// Stored in Firestore appConfig/publicHolidays { custom:{ "YYYY-MM-DD": name }, removed:{ "YYYY-MM-DD": true } }
+// (appConfig already allows public read / admin write, so no new Firestore rule is needed).
+var PH_CUSTOM = {}, PH_REMOVED = {}, _phUnsub = null;
+function phName(iso) {
+  if (PH_CUSTOM[iso]) return PH_CUSTOM[iso];
+  if (typeof SG_PH !== "undefined" && SG_PH[iso] && !PH_REMOVED[iso]) return SG_PH[iso];
+  return "";
+}
+function phStartListener() {
+  if (!fbOk || !db || _phUnsub) return;
+  _phUnsub = db.collection("appConfig").doc("publicHolidays").onSnapshot(function(d) {
+    var x = d.exists ? d.data() : {};
+    PH_CUSTOM = x.custom || {}; PH_REMOVED = x.removed || {};
+    if (document.getElementById("phModal") && document.getElementById("phModal").classList.contains("open")) phRender();
+    try { if (typeof renderLeaveTable === "function") renderLeaveTable(); } catch(_){}
+  }, function(err){ console.warn("[AT] publicHolidays listener:", err); });
+}
+function phOpen() {
+  var ys = document.getElementById("phYear"), cy = new Date().getFullYear();
+  ys.innerHTML = ""; for (var y = cy - 1; y <= cy + 2; y++) { var o = document.createElement("option"); o.value = y; o.textContent = y; if (y === cy) o.selected = true; ys.appendChild(o); }
+  document.getElementById("phStatus").textContent = "";
+  document.getElementById("phModal").classList.add("open"); phRender();
+}
+function phClose() { document.getElementById("phModal").classList.remove("open"); }
+function phRender() {
+  var y = document.getElementById("phYear").value, rows = {};
+  Object.keys(typeof SG_PH !== "undefined" ? SG_PH : {}).forEach(function(k){ if (k.indexOf(y) === 0) rows[k] = { name: SG_PH[k], builtin: true, removed: !!PH_REMOVED[k] }; });
+  Object.keys(PH_CUSTOM).forEach(function(k){ if (k.indexOf(y) === 0) rows[k] = { name: PH_CUSTOM[k], builtin: false, removed: false }; });
+  var keys = Object.keys(rows).sort(), dn = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  document.getElementById("phList").innerHTML = keys.length ? keys.map(function(k){
+    var r = rows[k], dow = dn[new Date(k + "T00:00:00Z").getUTCDay()];
+    return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:.82rem' + (r.removed ? ';opacity:.5;text-decoration:line-through' : '') + '">'
+      + '<span style="font-family:var(--mono);min-width:96px">' + k + '</span><span style="width:30px;color:var(--ink3)">' + dow + '</span>'
+      + '<span style="flex:1">' + sanitizeHtml(r.name) + (r.builtin ? ' <span style="font-size:.68rem;color:var(--ink3)">(built-in)</span>' : '') + '</span>'
+      + (r.builtin
+          ? (r.removed ? '<button class="leave-act-btn" onclick="phRestore(\'' + k + '\')">↩ Restore</button>' : '<button class="leave-act-btn leave-reject" onclick="phRemoveBuiltin(\'' + k + '\')">Remove</button>')
+          : '<button class="leave-act-btn leave-reject" onclick="phDeleteCustom(\'' + k + '\')">Delete</button>')
+      + '</div>';
+  }).join("") : '<div style="padding:14px;color:var(--ink3);font-size:.82rem">No holidays for ' + y + '. Add them below.</div>';
+}
+function _phSave(mutate, okMsg) {
+  if (!fbOk || !db) { document.getElementById("phStatus").innerHTML = '<span style="color:var(--red)">Firestore not available.</span>'; return; }
+  var c = Object.assign({}, PH_CUSTOM), r = Object.assign({}, PH_REMOVED); mutate(c, r);
+  document.getElementById("phStatus").textContent = "⏳ Saving…";
+  db.collection("appConfig").doc("publicHolidays").set({ custom: c, removed: r, updatedBy: _adminTag(), updatedAt: Date.now() })
+    .then(function(){ PH_CUSTOM = c; PH_REMOVED = r; document.getElementById("phStatus").textContent = "✅ " + okMsg; phRender(); try { renderLeaveTable(); } catch(_){} })
+    .catch(function(e){ document.getElementById("phStatus").innerHTML = '<span style="color:var(--red)">❌ Save failed: ' + sanitizeHtml((e && e.message) || String(e)) + (/permission/i.test((e && e.message) || "") ? ' — check that Firestore rules allow admin write on appConfig.' : '') + '</span>'; });
+}
+function phAdd() {
+  var d = document.getElementById("phNewDate").value, n = (document.getElementById("phNewName").value || "").trim();
+  if (!d) { document.getElementById("phStatus").innerHTML = '<span style="color:var(--red)">Pick a date.</span>'; return; }
+  if (!n) { document.getElementById("phStatus").innerHTML = '<span style="color:var(--red)">Enter a holiday name.</span>'; return; }
+  _phSave(function(c, r){ c[d] = n; delete r[d]; }, "Added " + n + " (" + d + ")");
+  document.getElementById("phNewDate").value = ""; document.getElementById("phNewName").value = "";
+  var y = d.slice(0, 4), ys = document.getElementById("phYear"); if (Array.prototype.some.call(ys.options, function(o){ return o.value === y; })) { ys.value = y; }
+}
+function phDeleteCustom(k) { if (confirm("Delete " + k + " (" + PH_CUSTOM[k] + ")?")) _phSave(function(c){ delete c[k]; }, "Deleted " + k); }
+function phRemoveBuiltin(k) { if (confirm("Remove built-in holiday " + k + " (" + SG_PH[k] + ")? It will no longer count as a public holiday.")) _phSave(function(c, r){ r[k] = true; }, "Removed " + k); }
+function phRestore(k) { _phSave(function(c, r){ delete r[k]; }, "Restored " + k); }
+
+// ── v6.114: leave days = WORKING days (Mon–Fri, excluding public holidays). Weekends and public holidays are not counted or deducted. ──
+function _workDays(fromISO, toISO) {
+  if (!fromISO || !toISO) return 0;
+  var a = new Date(fromISO + "T00:00:00Z"), b = new Date(toISO + "T00:00:00Z");
+  if (isNaN(a) || isNaN(b) || b < a) return 0;
+  var n = 0;
+  for (var d = new Date(a); d <= b; d.setUTCDate(d.getUTCDate() + 1)) { var w = d.getUTCDay(); if (w !== 0 && w !== 6 && !phName(d.toISOString().slice(0, 10))) n++; }
+  return n;
+}
+// Days charged for a leave record. Recomputed from the dates so leave saved BEFORE v6.114
+// (which counted weekends) is also corrected everywhere without touching the database.
+function _leaveDays(r) {
+  if (r && r.fromDate && r.toDate) return _workDays(r.fromDate, r.toDate);
+  return parseInt(r && r.numDays, 10) || 0;
+}
+// 1-based working-day position of isoDate inside the leave
+function _leaveDayIdx(r, isoDate) { return Math.max(1, _workDays(r.fromDate, isoDate)); }
+
 function calcLeaveDays() {
   var f = (document.getElementById("leaveFrom")||{}).value;
   var t = (document.getElementById("leaveTo")||{}).value;
@@ -13211,9 +13331,9 @@ function calcLeaveDays() {
   if (!f || !t) { nd.value = ""; return; }
   var from = new Date(f), to = new Date(t);
   if (to < from) { nd.value = "❌"; nd.style.color = "var(--red)"; return; }
-  var diff = Math.round((to - from) / (1000*60*60*24)) + 1;
-  nd.value = diff + " day" + (diff !== 1 ? "s" : "");
-  nd.style.color = "var(--blue)";
+  var diff = _workDays(f, t);
+  nd.value = diff + " working day" + (diff !== 1 ? "s" : "") + " (weekends & public holidays excluded)";
+  nd.style.color = diff > 0 ? "var(--blue)" : "var(--red)";
 }
 
 // ── Handle Attachment Upload ────────────────────────
@@ -13589,7 +13709,7 @@ function onLeaveTypeChange() {
   if (!leaveType || !empId || empId === "Eng") { hint.style.display = "none"; return; }
 
   var year     = parseInt(fromDate.slice(0,4), 10) || new Date().getFullYear();   // v6.109: same year basis as submitLeave (past-year leave)
-  var numDays  = (fromDate && toDate) ? Math.round((new Date(toDate) - new Date(fromDate)) / 86400000) + 1 : 0;
+  var numDays  = (fromDate && toDate) ? _workDays(fromDate, toDate) : 0;
 
   // v6.73: forceRefresh=true so this hint can't show "safe" from a stale cache
   // entry that predates the admin actually setting up the entitlement.
@@ -13616,7 +13736,7 @@ function onLeaveTypeChange() {
         snap.forEach(function(d) {
           var r = d.data();
           var y = parseInt((r.fromDate || "").slice(0, 4), 10);
-          if (y === year) used += (parseInt(r.numDays, 10) || 0);
+          if (y === year) used += (_leaveDays(r));
         });
         var balance = quota + adj - used;
         var afterThis = (numDays > 0) ? balance - numDays : null;
@@ -13690,7 +13810,8 @@ function submitLeave() {
     return;
   }
 
-  var numDays = Math.round((new Date(toDate)-new Date(fromDate))/(1000*60*60*24))+1;
+  var numDays = _workDays(fromDate, toDate);
+  if (numDays < 1) { showLeaveError("📅 The selected dates are only weekends / public holidays, which are not counted as leave — please choose at least one working day."); return; }
   var now = new Date();
   var year = parseInt(fromDate.slice(0,4), 10) || new Date().getFullYear();
 
@@ -13752,7 +13873,7 @@ function submitLeave() {
               // Count both approved and pending leaves — pending may be approved later
               if (r.status !== "approved" && r.status !== "pending") return;
               var y = parseInt((r.fromDate || "").slice(0, 4), 10);
-              if (y === year) used += (parseInt(r.numDays, 10) || 0);
+              if (y === year) used += (_leaveDays(r));
             });
             doSubmit(used);
           })
@@ -13979,10 +14100,12 @@ function renderLeaveTable() {
       actions = '<div style="display:flex;gap:6px;flex-wrap:wrap">'
         +'<button class="leave-act-btn leave-approve" onclick="approveLeave(\''+r.id+'\')">✓ Approve</button>'
         +'<button class="leave-act-btn leave-reject" onclick="promptReject(\''+r.id+'\')">✗ Reject</button>'
+        +'<button class="leave-act-btn" style="border:1px solid var(--blue);color:var(--blue);background:#fff" onclick="adminLeaveTypeOpen(\''+r.id+'\')">✏️ Edit Type</button>'
         +'</div>';
     } else if (r.status==="approved") {
       var decInfo = '<div style="font-size:.73rem;color:var(--ink3);line-height:1.7;margin-bottom:6px">Approved by <strong>'+(r.decidedBy||"—")+'</strong><br>'+(r.decidedDate||"—")+'</div>';
-      actions = decInfo + '<button class="leave-act-btn leave-cancel" onclick="adminCancelLeave(\''+r.id+'\')">🚫 Cancel Leave</button>';
+      actions = decInfo + '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="leave-act-btn" style="border:1px solid var(--blue);color:var(--blue);background:#fff" onclick="adminLeaveTypeOpen(\''+r.id+'\')">✏️ Edit Type</button>'
+        + '<button class="leave-act-btn leave-cancel" onclick="adminCancelLeave(\''+r.id+'\')">🚫 Cancel Leave</button></div>';
     } else if (r.status==="cancel_requested") {
       var reqInfo = '<div style="font-size:.73rem;color:#c2410c;line-height:1.7;margin-bottom:6px">⚠️ Engineer requested cancellation</div>';
       actions = reqInfo
@@ -14017,7 +14140,7 @@ function renderLeaveTable() {
       +'<td>'+leaveBdg+'</td>'
       +'<td style="font-size:.8rem"><span style="font-family:var(--mono);background:#f3f4f6;padding:2px 6px;border-radius:4px">'+(r.fromDate||"—")+'</span><br>'
       +'<span style="color:var(--ink3);font-size:.72rem;padding:2px 0 2px 4px">→ '+(r.toDate||"—")+'</span></td>'
-      +'<td><span class="days-badge">'+(r.numDays||"—")+'</span></td>'
+      +'<td><span class="days-badge">'+(_leaveDays(r)||"—")+'</span></td>'
       +'<td style="font-size:.78rem;color:var(--ink3)">'+(r.appliedDate||"—")+'<br><span style="font-size:.7rem">'+(r.site||"—")+'</span></td>'
       +'<td>'+statusBdg+'</td>'
       +'<td>'+attBtn+'</td>'
@@ -14068,6 +14191,45 @@ function updateLeaveStats() {
   if (badge) { badge.textContent=actionNeeded; badge.style.display=actionNeeded>0?"inline":"none"; }
 }
 
+// ── v6.113: Admin changes the leave type of an existing application ──
+// Pending / approved / cancel-requested only. Dates and status are untouched; balances and the
+// Timesheet read the leave type live, so they follow the change. The change is logged on the record.
+function adminLeaveTypeOpen(id) {
+  var rec = leaveRecs.find(function(r){ return r.id === id; });
+  if (!rec) { toast("Leave not found (refresh)", "t-err"); return; }
+  document.getElementById("altId").value = id;
+  document.getElementById("altSub").innerHTML = '<strong>' + sanitizeHtml(rec.empName || rec.empId || "") + '</strong> — ' + (rec.fromDate || "") + ' → ' + (rec.toDate || "") + ' (' + (_leaveDays(rec) || "?") + ' day(s)). Current type: <strong>' + sanitizeHtml(rec.leaveType || "—") + '</strong>';
+  var sel = document.getElementById("altType");
+  var types = LEAVE_TYPES.slice(); if (rec.leaveType && types.indexOf(rec.leaveType) === -1) types.unshift(rec.leaveType);
+  sel.innerHTML = types.map(function(t){ return '<option value="' + t.replace(/"/g,"&quot;") + '"' + (t === rec.leaveType ? " selected" : "") + '>' + t + '</option>'; }).join("");
+  document.getElementById("altReason").value = "";
+  document.getElementById("altStatus").textContent = "";
+  document.getElementById("altSaveBtn").disabled = false;
+  document.getElementById("adminLeaveTypeModal").classList.add("open");
+}
+function adminLeaveTypeClose() { var m = document.getElementById("adminLeaveTypeModal"); if (m) m.classList.remove("open"); }
+function adminLeaveTypeSave() {
+  var id = document.getElementById("altId").value, nt = document.getElementById("altType").value;
+  var reason = (document.getElementById("altReason").value || "").trim();
+  var st = document.getElementById("altStatus"), btn = document.getElementById("altSaveBtn");
+  var rec = leaveRecs.find(function(r){ return r.id === id; });
+  function bad(m){ st.innerHTML = '<span style="color:var(--red)">' + m + '</span>'; }
+  if (!rec) return bad("Leave not found (refresh).");
+  if (nt === rec.leaveType) return bad("That is already the leave type.");
+  if (!reason) return bad("Please enter a reason.");
+  if (!fbOk || !db) return bad("Firestore not available.");
+  btn.disabled = true; st.textContent = "⏳ Saving…";
+  db.collection("leaveApplications").doc(id).update({
+    leaveType: nt, leaveTypeBefore: rec.leaveType || null,
+    leaveTypeChangedBy: _adminTag(), leaveTypeChangedAt: Date.now(), leaveTypeChangeReason: reason.slice(0, 200)
+  }).then(function(){
+    toast("✅ Leave type changed to " + nt, "t-ok"); adminLeaveTypeClose();
+  }).catch(function(err){
+    console.error("[LeaveType] update failed:", err);
+    btn.disabled = false; bad("❌ Save failed: " + ((err && err.message) || err));
+  });
+}
+
 // ── Admin: Approve Leave ────────────────────────────
 function approveLeave(id) {
   var rec = leaveRecs.find(function(r){return r.id===id;});
@@ -14079,7 +14241,7 @@ function approveLeave(id) {
   var _year = parseInt((rec.fromDate||"").slice(0,4),10) || new Date().getFullYear();
   _anFetchEntitlement(rec.empId, _year, function(entDoc){
     var bal     = _anGetBalance(entDoc, rec.leaveType, rec.empId, _year);
-    var reqDays = parseInt(rec.numDays,10) || 0;
+    var reqDays = _leaveDays(rec);
     var overMsg = "";
     if (bal.balance !== null && reqDays > bal.balance) {
       overMsg = "⚠️ OVER QUOTA — "+rec.empName+" has only "+bal.balance+" day(s) of "+rec.leaveType
@@ -14192,7 +14354,7 @@ function sendLeaveSubmittedEmail(rec) {
     + "Leave Type  : " + rec.leaveType + "\n"
     + "From        : " + rec.fromDate + "\n"
     + "To          : " + rec.toDate + "\n"
-    + "Total Days  : " + rec.numDays + " day" + (rec.numDays!==1?"s":"") + "\n"
+    + "Total Days  : " + _leaveDays(rec) + " day" + (_leaveDays(rec)!==1?"s":"") + "\n"
     + "Reason      : " + (rec.reason||"-") + "\n\n"
     + "Please log in to the Attendance System to Approve or Reject this request.\n\n"
     + "If you do not recognize this engineer, you can reject the request (the engineer may have selected the wrong team manager).\n\n"
@@ -14225,7 +14387,7 @@ function sendLeaveEmail(rec, status, rejectReason) {
     body += "Leave Type    : " + rec.leaveType + "\n";
     body += "From Date     : " + rec.fromDate + "\n";
     body += "To Date       : " + rec.toDate + "\n";
-    body += "Total Days    : " + rec.numDays + " day" + (rec.numDays!==1?"s":"") + "\n";
+    body += "Total Days    : " + _leaveDays(rec) + " day" + (_leaveDays(rec)!==1?"s":"") + "\n";
     body += "Approved By   : " + rec.decidedBy + "\n";
     body += "Approval Date : " + rec.decidedDate + "\n";
     body += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
@@ -14240,7 +14402,7 @@ function sendLeaveEmail(rec, status, rejectReason) {
     body += "Leave Type     : " + rec.leaveType + "\n";
     body += "From Date      : " + rec.fromDate + "\n";
     body += "To Date        : " + rec.toDate + "\n";
-    body += "Total Days     : " + rec.numDays + " day" + (rec.numDays!==1?"s":"") + "\n";
+    body += "Total Days     : " + _leaveDays(rec) + " day" + (_leaveDays(rec)!==1?"s":"") + "\n";
     body += "Cancelled By   : " + (rec.cancelledBy||rec.decidedBy||"Admin") + "\n";
     body += "Cancelled Date : " + (rec.cancelledDate||rec.decidedDate||"—") + "\n";
     body += "Reason         : " + (rejectReason||rec.cancelReason||"—") + "\n";
@@ -14256,7 +14418,7 @@ function sendLeaveEmail(rec, status, rejectReason) {
     body += "Leave Type    : " + rec.leaveType + "\n";
     body += "From Date     : " + rec.fromDate + "\n";
     body += "To Date       : " + rec.toDate + "\n";
-    body += "Total Days    : " + rec.numDays + " day" + (rec.numDays!==1?"s":"") + "\n";
+    body += "Total Days    : " + _leaveDays(rec) + " day" + (_leaveDays(rec)!==1?"s":"") + "\n";
     body += "Rejected By   : " + rec.decidedBy + "\n";
     body += "Decision Date : " + rec.decidedDate + "\n";
     body += "Reason        : " + (rejectReason||"—") + "\n";
@@ -15303,8 +15465,8 @@ function showLeaveBanner(r) {
   if (title) title.textContent = "🌴 You are on " + r.leaveType + " today";
   if (detail) detail.innerHTML =
     "Your <strong>" + r.leaveType + "</strong> from <strong>" + r.fromDate
-    + "</strong> to <strong>" + r.toDate + "</strong> (" + r.numDays
-    + " day" + (r.numDays!==1?"s":"") + ") has been <strong>approved</strong>.<br>"
+    + "</strong> to <strong>" + r.toDate + "</strong> (" + _leaveDays(r)
+    + " day" + (_leaveDays(r)!==1?"s":"") + ") has been <strong>approved</strong>.<br>"
     + "You do <strong>not</strong> need to check in. Your attendance is automatically recorded as <strong>"
     + r.leaveType + "</strong>.";
   banner.style.display = "block";
@@ -15346,7 +15508,7 @@ function showLsnSingle(r, today) {
 
   var bodyRows = lsnRow("Leave Type", r.leaveType)
     + lsnRow("Period", r.fromDate + " → " + r.toDate)
-    + lsnRow("Days", r.numDays + " day" + (r.numDays!==1?"s":""))
+    + lsnRow("Days", _leaveDays(r) + " day" + (_leaveDays(r)!==1?"s":""))
     + lsnRow("Applied", r.appliedDate||"—");
   if (r.decidedBy) bodyRows += lsnRow("Decided By", r.decidedBy);
   if (r.decidedDate) bodyRows += lsnRow("Decision Date", r.decidedDate);
@@ -15390,7 +15552,7 @@ function showLsnMultiple(recs, today) {
       + '<div style="font-weight:700;font-size:.9rem">' + icon + ' ' + r.leaveType + '</div>'
       + '<span class="bdg bdg-' + (r.status==="approved"?"approved":r.status==="rejected"?"rejected":"pending") + '">' + label + '</span>'
       + '</div>'
-      + '<div style="font-size:.8rem;color:#6b7280;margin-top:4px">' + r.fromDate + ' → ' + r.toDate + ' · ' + r.numDays + ' day' + (r.numDays!==1?"s":"") + '</div>'
+      + '<div style="font-size:.8rem;color:#6b7280;margin-top:4px">' + r.fromDate + ' → ' + r.toDate + ' · ' + _leaveDays(r) + ' day' + (_leaveDays(r)!==1?"s":"") + '</div>'
       + (isCurrent ? '<div style="font-size:.78rem;font-weight:700;color:#15803d;margin-top:4px">📌 You are on leave today — no check-in needed</div>' : '')
       + (r.status==="rejected"&&r.rejectReason ? '<div style="font-size:.78rem;color:#b91c1c;margin-top:4px">Reason: ' + r.rejectReason + '</div>' : '')
       + '</div>';
@@ -15631,7 +15793,11 @@ function tsBuildData(year, month, phDays, siteFilter) {
     var days={};
     dateCols.forEach(function(dc) {
       if (dc.isWeekend) return;
-      if (phDays.indexOf(dc.day)!==-1) return; // PH handled by sheet builder
+      if (phDays.indexOf(dc.day)!==-1) {   // v6.115: PH shows "PH" unless the engineer actually checked in that day
+        var _pa = attendByEng[eng.empId] && attendByEng[eng.empId][dc.day];
+        if (_pa === "O") days[dc.day] = "OCL"; else if (_pa) days[dc.day] = "1";
+        return;
+      }
       var dayStr=year+"-"+tsPad2(month)+"-"+tsPad2(dc.day);
       var leaveCode=null;
       (leaveByEng[eng.empId]||[]).forEach(function(lv){
@@ -15732,7 +15898,7 @@ function tsGenerateSheet(wb, year, month, engineers, phDays) {
     dateCols.forEach(function(dc,i){
       var col=6+i, isPH=phDays.indexOf(dc.day)!==-1, cell;
       if (dc.isWeekend)    cell=tsXc("",TS_C.WEEKEND);
-      else if (isPH)       cell=tsXc("PH",TS_C.PH,true);
+      else if (isPH && !eng.days[dc.day]) cell=tsXc("PH",TS_C.PH,true);
       else {
         var val=eng.days[dc.day]||"";
         var bg=bgMap[val]||TS_C.WHITE;
@@ -15861,7 +16027,7 @@ function generateTimesheetXLSX() {
   var phDays=[];
   var mPad=tsPad2(month);
   for (var d=1; d<=new Date(year,month,0).getDate(); d++) {
-    if (SG_PH[year+"-"+mPad+"-"+tsPad2(d)]) phDays.push(d);
+    if (phName(year+"-"+mPad+"-"+tsPad2(d))) phDays.push(d);
   }
 
   var data = tsBuildData(year, month, phDays, site);
@@ -15894,7 +16060,7 @@ function exportLeaveCSV() {
       '"'+(r.leaveType||"")+'"',
       '"'+(r.fromDate||"")+'"',
       '"'+(r.toDate||"")+'"',
-      r.numDays||"",
+      _leaveDays(r)||"",
       '"'+(r.reason||"")+'"',
       '"'+(r.status||"")+'"',
       '"'+(r.appliedDate||"")+'"',
@@ -16130,7 +16296,7 @@ function loadMyLeaves() {
         +'<div style="font-weight:800;font-size:.95rem">'+r.leaveType+'</div>'
         +'<span style="font-size:.75rem;font-weight:700;color:'+statusColor+'">'+statusLabel+'</span>'
         +'</div>'
-        +'<div style="font-size:.82rem;color:var(--ink2)">📅 '+r.fromDate+' → '+r.toDate+' <span style="background:#f3f4f6;padding:1px 6px;border-radius:4px;font-family:var(--mono);font-size:.74rem">'+r.numDays+' day'+(r.numDays!==1?'s':'')+'</span></div>'
+        +'<div style="font-size:.82rem;color:var(--ink2)">📅 '+r.fromDate+' → '+r.toDate+' <span style="background:#f3f4f6;padding:1px 6px;border-radius:4px;font-family:var(--mono);font-size:.74rem">'+_leaveDays(r)+' day'+(_leaveDays(r)!==1?'s':'')+'</span></div>'
         +'<div style="font-size:.75rem;color:var(--ink3);margin-top:4px">Applied: '+r.appliedDate+'</div>'
         + decisionHtml
         + btns
@@ -16175,7 +16341,7 @@ function _renderMyLeavesBalance(empId, recs) {
         if (r.leaveType !== lt) return;
         if (r.status !== "approved") return;
         var y = parseInt((r.fromDate || "").slice(0, 4), 10);
-        if (y === year) used += (parseInt(r.numDays, 10) || 0);
+        if (y === year) used += (_leaveDays(r));
       });
       var total   = quota + adj;
       var balance = total - used;
@@ -16216,7 +16382,7 @@ function empCancelLeave(id, isApproved) {
     var r = recs.find(function(x){ return x.id===id; });
     if (!r) return;
     var info = document.getElementById("cancelLeaveInfo");
-    if (info) info.textContent = r.leaveType + " · " + r.fromDate + " → " + r.toDate + " (" + r.numDays + " day" + (r.numDays!==1?"s":"") + ")";
+    if (info) info.textContent = r.leaveType + " · " + r.fromDate + " → " + r.toDate + " (" + _leaveDays(r) + " day" + (_leaveDays(r)!==1?"s":"") + ")";
 
     var title = document.getElementById("cancelLeaveTitle");
     var sub   = document.getElementById("cancelLeaveSub");
@@ -16422,8 +16588,8 @@ function calcEditLeaveDays() {
   var t = (document.getElementById("editLeaveTo")||{}).value;
   var nd = document.getElementById("editLeaveNumDays");
   if (!nd || !f || !t) return;
-  var diff = Math.round((new Date(t)-new Date(f))/(1000*60*60*24))+1;
-  nd.value = diff>0 ? diff+" day"+(diff!==1?"s":"") : "❌";
+  var diff = _workDays(f, t);
+  nd.value = diff>0 ? diff+" working day"+(diff!==1?"s":"") : "❌";
   nd.style.color = diff>0 ? "var(--blue)" : "var(--red)";
 }
 
@@ -16440,7 +16606,8 @@ function saveEditLeave() {
 
   if (!leaveType||!fromDate||!toDate) { toast("Please fill all fields", "t-err"); return; }
   if (toDate < fromDate) { toast("To date must be after from date", "t-err"); return; }
-  var numDays = Math.round((new Date(toDate)-new Date(fromDate))/(1000*60*60*24))+1;
+  var numDays = _workDays(fromDate, toDate);
+  if (numDays < 1) { toast("Selected dates are only weekends / public holidays — choose at least one working day", "t-err"); return; }
 
   var updates = { leaveType:leaveType, fromDate:fromDate, toDate:toDate, numDays:numDays, reason:reason, editedAt:Date.now() };
 
