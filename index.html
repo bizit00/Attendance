@@ -1632,6 +1632,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="dash-tab" data-tab="calendar" onclick="dTab('calendar',this)">Calendar</div>
       <div class="dash-tab" data-tab="leave" onclick="dTab('leave',this)" id="leaveTabBtn">Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" data-tab="waitlist" onclick="dTab('waitlist',this)" id="waitlistTabBtn">Waiting List <span id="waitlistPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
+      <div class="dash-tab" data-tab="admincal" onclick="dTab('admincal',this)">Calendar</div>
       <div class="dash-tab" data-tab="team" onclick="dTab('team',this)">Team</div>
       <!-- v6.76 (Issue 3): Activity Feed and Device Audit moved here, between Team and Backup Import -->
       <div class="dash-tab" data-tab="feed" onclick="dTab('feed',this)">Activity Feed</div>
@@ -2007,6 +2008,25 @@ tr.on-leave-row td{background:#f0f9ff!important}
         </div>
       </div>
       <div class="cal-grid" id="calGrid"></div>
+    </div>
+
+    <!-- ADMIN CALENDAR TAB (v6.116) — same calendar as Tracking, plus editing (click a day → add missing attendance) -->
+    <div id="dTab-admincal" style="display:none">
+      <div class="cal-toolbar">
+        <div class="cal-nav">
+          <button class="cal-nav-btn" onclick="calPrev()" title="Previous month">◀</button>
+          <span class="cal-month-lbl" id="acalMonthLbl">—</span>
+          <button class="cal-nav-btn" onclick="calNext()" title="Next month">▶</button>
+        </div>
+        <span style="flex:1"></span>
+        <select id="acalSite" onchange="renderCalendar()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;background:#fafaf8;color:var(--ink);font-family:var(--body)">
+          <option value="">All Sites</option>
+        </select>
+        <button class="tb-btn tb-out" onclick="calGoToday()">Today</button>
+        <span class="help-dot" data-help="calendar" title="Help">?</span>
+      </div>
+      <div style="font-size:.78rem;color:var(--ink3);margin:8px 2px">💡 Click any day to add missing attendance for an engineer who forgot to check in/out.</div>
+      <div class="cal-grid" id="acalGrid"></div>
     </div>
 
 <!-- ONBOARDING TAB -->
@@ -7590,7 +7610,7 @@ var MODES = {
   // in the HTML tab bar — so moving the tab's DOM position alone (done in v6.76) never actually
   // changes which mode row it appears in; this is the piece that does.
   tracking: ["analytics","live","calendar"],
-  admin:    ["leave","waitlist","backup","team","setup","feed","device"]
+  admin:    ["leave","waitlist","admincal","backup","team","setup","feed","device"]
 };
 var MODE_DEFAULT = { tracking:"analytics", admin:"leave" };
 var _lastTab = { tracking:"analytics", admin:"leave" };
@@ -8008,7 +8028,7 @@ function _backupCommit(){
 }
 
 function dTab(id, el) {
-  ["live","feed","analytics","calendar","leave","waitlist","backup","device","team","setup"].forEach(function(t){
+  ["live","feed","analytics","calendar","admincal","leave","waitlist","backup","device","team","setup"].forEach(function(t){
     var p = document.getElementById("dTab-"+t); if(p) p.style.display = t===id?"block":"none";
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
@@ -8026,6 +8046,14 @@ function dTab(id, el) {
     }
     var asOfEl = document.getElementById("anAsOfDate");
     if (asOfEl && !asOfEl.value) asOfEl.value = _sgDay(new Date());
+    if (!leaveRecs.length && db) { loadLeaves(); }
+    renderCalendar();
+  }
+  if (id === 'admincal') {   // v6.116: editable calendar lives in Admin Tasks
+    var aSite = document.getElementById("acalSite");
+    if (aSite && aSite.options.length <= 1) {
+      WORK_SITES.forEach(function(s){ var o = document.createElement("option"); o.value = s.name; o.textContent = s.name; aSite.appendChild(o); });
+    }
     if (!leaveRecs.length && db) { loadLeaves(); }
     renderCalendar();
   }
@@ -10959,15 +10987,21 @@ function adminAddAttSave() {
   });
 }
 
+// v6.116: one renderer, two calendars. "cal*" (Tracking) is VIEW ONLY; "acal*" (Admin Tasks) is editable
+// — clicking a day opens Add Missing Attendance.
 function renderCalendar() {
-  var lbl = document.getElementById("calMonthLbl");
-  var grid = document.getElementById("calGrid");
+  _renderCalendarInto("cal", false);
+  _renderCalendarInto("acal", true);
+}
+function _renderCalendarInto(prefix, editable) {
+  var lbl = document.getElementById(prefix + "MonthLbl");
+  var grid = document.getElementById(prefix + "Grid");
   if (!lbl || !grid) return;
 
   var months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   lbl.textContent = months[calMonth] + " " + calYear;
 
-  var siteFilter = (document.getElementById("calSite") || {}).value || "";
+  var siteFilter = (document.getElementById(prefix + "Site") || {}).value || "";
   var todayISO   = _sgDay(new Date());
 
   var dows = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -10995,12 +11029,16 @@ function renderCalendar() {
     var extra = leaves.length - shown.length;
     shown.forEach(function(r){ chips += _calChip(r); });
     if (extra > 0) chips += '<span class="cal-more">+' + extra + '</span>';
+    var ph = (typeof phName === "function") ? phName(isoDate) : "";
+    if (ph) chips = '<span class="cal-chip" style="background:#f59e6b" title="Public holiday: ' + sanitizeHtml(ph) + '">🎌 ' + sanitizeHtml(ph) + '</span>' + chips;
 
-    html += '<div class="cal-cell cal-clickable' + (isToday ? " today" : "") + '" onclick="adminAddAttOpen(\'' + isoDate + '\')" title="Click to add missing attendance for ' + isoDate + '">'
-      + '<div class="cal-day-num">' + d + '</div>'
-      + chips
-      + '<span class="cal-add">＋</span>'
-      + '</div>';
+    if (editable) {
+      html += '<div class="cal-cell cal-clickable' + (isToday ? " today" : "") + '" onclick="adminAddAttOpen(\'' + isoDate + '\')" title="Click to add missing attendance for ' + isoDate + '">'
+        + '<div class="cal-day-num">' + d + '</div>' + chips + '<span class="cal-add">＋</span></div>';
+    } else {
+      html += '<div class="cal-cell' + (isToday ? " today" : "") + '">'
+        + '<div class="cal-day-num">' + d + '</div>' + chips + '</div>';
+    }
   }
 
   var totalCells = startOffset + daysInMonth;
@@ -11922,7 +11960,8 @@ function refreshAllSiteDropdowns() {
   [["fSite",'<option value="">All Sites</option>'],
    ["ffSite",'<option value="">All Sites</option>'],
    ["anSite",'<option value="">🏢 All Sites</option>'],
-   ["calSite",'<option value="">All Sites</option>']].forEach(function(p){
+   ["calSite",'<option value="">All Sites</option>'],
+   ["acalSite",'<option value="">All Sites</option>']].forEach(function(p){
     var el = document.getElementById(p[0]);
     if (!el) return;
     var cur = el.value;
