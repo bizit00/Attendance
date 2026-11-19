@@ -2049,7 +2049,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <button class="tb-btn tb-out" onclick="esExport()">⬇ Export Excel</button>
       </div>
       <div style="font-size:.76rem;color:var(--ink3);margin:6px 2px 10px;line-height:1.6">
-        <strong>Check-in days</strong> = number of different days the engineer checked in (several check-ins on one day count once). <strong>Leave</strong> = approved leave, in working days (weekends &amp; public holidays excluded), only the part inside the selected period.
+        <strong>Check-in days</strong> = number of different days the engineer checked in (several check-ins on one day count once). <strong>Total check-ins</strong> = every check-in record, so a day with two check-ins counts twice. <strong>Leave</strong> = approved leave, in working days (weekends &amp; public holidays excluded), only the part inside the selected period.
       </div>
       <div class="tbl-wrap"><div class="tbl-hdr"><span class="tbl-hdr-t">Per-engineer totals</span><span class="tbl-count" id="esCount">—</span></div>
         <div style="overflow-x:auto"><table id="esTable"><thead id="esHead"></thead><tbody id="esBody"></tbody></table></div>
@@ -11077,7 +11077,7 @@ function esBuild() {
     if (day < per.from || day > per.to) return;
     if (site && r.site !== site) return;
     var e = row(r.empId, r.empName, r.site); if (!e) return;
-    e.days[day] = true; if (r.isLate) e.late++; e.lastSite = r.site;
+    e.days[day] = true; e.records = (e.records || 0) + 1; if (r.isLate) e.late++; e.lastSite = r.site;
     if (!e.site) e.site = r.site || "";
   });
   var types = LEAVE_TYPES.slice();
@@ -11100,7 +11100,7 @@ function esBuild() {
 }
 function esRender() {
   var d = esBuild(); _esRows = d.rows; _esCols = d.types;
-  var th = '<tr><th>Engineer</th><th>Site</th><th style="text-align:center">Check-in days</th><th style="text-align:center">Late</th>'
+  var th = '<tr><th>Engineer</th><th>Site</th><th style="text-align:center">Check-in days</th><th style="text-align:center" title="Every check-in counted, including several on the same day">Total check-ins</th><th style="text-align:center">Late</th>'
     + d.types.map(function(t){ return '<th style="text-align:center">' + sanitizeHtml(t) + '</th>'; }).join("")
     + '<th style="text-align:center">Total leave</th></tr>';
   document.getElementById("esHead").innerHTML = th;
@@ -11108,6 +11108,7 @@ function esRender() {
     return '<tr><td><div class="en">' + sanitizeHtml(e.name) + '</div><div class="eid">' + sanitizeHtml(e.id) + '</div></td>'
       + '<td style="font-size:.8rem">' + sanitizeHtml(e.site || "—") + '</td>'
       + '<td style="text-align:center;font-weight:700">' + e.checkinDays + '</td>'
+      + '<td style="text-align:center">' + (e.records || 0) + '</td>'
       + '<td style="text-align:center">' + (e.late || "") + '</td>'
       + d.types.map(function(t){ return '<td style="text-align:center">' + (e.leave[t] || "") + '</td>'; }).join("")
       + '<td style="text-align:center;font-weight:700">' + (e.leaveTotal || "") + '</td></tr>';
@@ -11119,8 +11120,8 @@ function esExport() {
   if (!_esRows.length) { toast("Nothing to export", "t-err"); return; }
   if (typeof XLSX === "undefined") { toast("Excel library not loaded", "t-err"); return; }
   var per = _esPeriod();
-  var aoa = [["Engineer ID", "Name", "Site", "Check-in days", "Late check-ins"].concat(_esCols, ["Total leave (working days)"])];
-  _esRows.forEach(function(e){ aoa.push([e.id, e.name, e.site || "", e.checkinDays, e.late || 0].concat(_esCols.map(function(t){ return e.leave[t] || 0; }), [e.leaveTotal])); });
+  var aoa = [["Engineer ID", "Name", "Site", "Check-in days", "Total check-ins", "Late check-ins"].concat(_esCols, ["Total leave (working days)"])];
+  _esRows.forEach(function(e){ aoa.push([e.id, e.name, e.site || "", e.checkinDays, e.records || 0, e.late || 0].concat(_esCols.map(function(t){ return e.leave[t] || 0; }), [e.leaveTotal])); });
   var ws = XLSX.utils.aoa_to_sheet(aoa), wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Engineer Summary");
   XLSX.writeFile(wb, "Engineer_Summary_" + per.label.replace(/[^0-9A-Za-z-]+/g, "_") + ".xlsx");
