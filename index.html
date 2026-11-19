@@ -1633,6 +1633,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
       <div class="dash-tab" data-tab="leave" onclick="dTab('leave',this)" id="leaveTabBtn">Leave Mgmt <span id="leavePendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" data-tab="waitlist" onclick="dTab('waitlist',this)" id="waitlistTabBtn">Waiting List <span id="waitlistPendingBadge" style="display:none;background:var(--orange);color:#fff;border-radius:30px;padding:1px 7px;font-size:.7rem;margin-left:4px;font-family:var(--mono)">0</span></div>
       <div class="dash-tab" data-tab="admincal" onclick="dTab('admincal',this)">Calendar</div>
+      <div class="dash-tab" data-tab="engsummary" onclick="dTab('engsummary',this)">Engineer Summary</div>
       <div class="dash-tab" data-tab="team" onclick="dTab('team',this)">Team</div>
       <!-- v6.76 (Issue 3): Activity Feed and Device Audit moved here, between Team and Backup Import -->
       <div class="dash-tab" data-tab="feed" onclick="dTab('feed',this)">Activity Feed</div>
@@ -2027,6 +2028,33 @@ tr.on-leave-row td{background:#f0f9ff!important}
       </div>
       <div style="font-size:.78rem;color:var(--ink3);margin:8px 2px">💡 Click any day to add missing attendance for an engineer who forgot to check in/out.</div>
       <div class="cal-grid" id="acalGrid"></div>
+    </div>
+
+    <!-- ENGINEER SUMMARY TAB (v6.117) -->
+    <div id="dTab-engsummary" style="display:none">
+      <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:flex-end">
+        <div style="font-weight:700;font-size:1rem;color:var(--ink)">📊 Engineer Summary</div>
+        <label style="font-size:.74rem;font-weight:700">Period
+          <select id="esMode" onchange="esModeChange()" style="display:block;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px">
+            <option value="month">Month</option><option value="year">Year</option><option value="range">Custom range</option><option value="all">All time</option>
+          </select></label>
+        <label id="esMonthWrap" style="font-size:.74rem;font-weight:700">Month<input type="month" id="esMonth" onchange="esRender()" style="display:block;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
+        <label id="esYearWrap" style="font-size:.74rem;font-weight:700;display:none">Year<select id="esYear" onchange="esRender()" style="display:block;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"></select></label>
+        <label id="esFromWrap" style="font-size:.74rem;font-weight:700;display:none">From<input type="date" id="esFrom" onchange="esRender()" style="display:block;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
+        <label id="esToWrap" style="font-size:.74rem;font-weight:700;display:none">To<input type="date" id="esTo" onchange="esRender()" style="display:block;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
+        <label style="font-size:.74rem;font-weight:700">Site
+          <select id="esSite" onchange="esRender()" style="display:block;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"><option value="">All Sites</option></select></label>
+        <input id="esSearch" type="text" placeholder="🔍 Search name or ID…" oninput="esRender()" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;min-width:180px"/>
+        <span style="flex:1"></span>
+        <button class="tb-btn tb-out" onclick="esExport()">⬇ Export Excel</button>
+      </div>
+      <div style="font-size:.76rem;color:var(--ink3);margin:6px 2px 10px;line-height:1.6">
+        <strong>Check-in days</strong> = number of different days the engineer checked in (several check-ins on one day count once). <strong>Leave</strong> = approved leave, in working days (weekends &amp; public holidays excluded), only the part inside the selected period.
+      </div>
+      <div class="tbl-wrap"><div class="tbl-hdr"><span class="tbl-hdr-t">Per-engineer totals</span><span class="tbl-count" id="esCount">—</span></div>
+        <div style="overflow-x:auto"><table id="esTable"><thead id="esHead"></thead><tbody id="esBody"></tbody></table></div>
+        <div id="esEmpty" class="empty" style="display:none"><div class="empty-t">No engineers found for this period</div></div>
+      </div>
     </div>
 
 <!-- ONBOARDING TAB -->
@@ -7610,7 +7638,7 @@ var MODES = {
   // in the HTML tab bar — so moving the tab's DOM position alone (done in v6.76) never actually
   // changes which mode row it appears in; this is the piece that does.
   tracking: ["analytics","live","calendar"],
-  admin:    ["leave","waitlist","admincal","backup","team","setup","feed","device"]
+  admin:    ["leave","waitlist","admincal","engsummary","backup","team","setup","feed","device"]
 };
 var MODE_DEFAULT = { tracking:"analytics", admin:"leave" };
 var _lastTab = { tracking:"analytics", admin:"leave" };
@@ -8028,7 +8056,7 @@ function _backupCommit(){
 }
 
 function dTab(id, el) {
-  ["live","feed","analytics","calendar","admincal","leave","waitlist","backup","device","team","setup"].forEach(function(t){
+  ["live","feed","analytics","calendar","admincal","engsummary","leave","waitlist","backup","device","team","setup"].forEach(function(t){
     var p = document.getElementById("dTab-"+t); if(p) p.style.display = t===id?"block":"none";
   });
   document.querySelectorAll(".dash-tab").forEach(function(e){ e.classList.remove("on"); });
@@ -8049,6 +8077,7 @@ function dTab(id, el) {
     if (!leaveRecs.length && db) { loadLeaves(); }
     renderCalendar();
   }
+  if (id === 'engsummary') esInit();   // v6.117
   if (id === 'admincal') {   // v6.116: editable calendar lives in Admin Tasks
     var aSite = document.getElementById("acalSite");
     if (aSite && aSite.options.length <= 1) {
@@ -10899,6 +10928,99 @@ function _anRenderLeaveTrendChart(siteFilter) { return; // chart removed
     }
   });
 }
+
+// ── v6.117: Engineer Summary (Admin Tasks) ───────────────────────────
+var _esRows = [], _esCols = [];
+function esInit() {
+  var ys = document.getElementById("esYear");
+  if (ys && !ys.options.length) { var cy = new Date().getFullYear(); for (var y = cy; y >= cy - 4; y--) { var o = document.createElement("option"); o.value = y; o.textContent = y; ys.appendChild(o); } }
+  var m = document.getElementById("esMonth"); if (m && !m.value) m.value = _sgDay(new Date()).slice(0, 7);
+  var ss = document.getElementById("esSite");
+  if (ss && ss.options.length <= 1) WORK_SITES.forEach(function(s){ var o = document.createElement("option"); o.value = s.name; o.textContent = s.name; ss.appendChild(o); });
+  if (!leaveRecs.length && db) loadLeaves();
+  esRender();
+}
+function esModeChange() {
+  var md = document.getElementById("esMode").value;
+  document.getElementById("esMonthWrap").style.display = md === "month" ? "" : "none";
+  document.getElementById("esYearWrap").style.display  = md === "year" ? "" : "none";
+  document.getElementById("esFromWrap").style.display  = md === "range" ? "" : "none";
+  document.getElementById("esToWrap").style.display    = md === "range" ? "" : "none";
+  if (md === "range") { var f = document.getElementById("esFrom"), t = document.getElementById("esTo"); if (!f.value) f.value = _sgDay(new Date()).slice(0, 8) + "01"; if (!t.value) t.value = _sgDay(new Date()); }
+  esRender();
+}
+function _esPeriod() {
+  var md = document.getElementById("esMode").value;
+  if (md === "month") { var m = document.getElementById("esMonth").value || _sgDay(new Date()).slice(0, 7); var y = +m.slice(0, 4), mo = +m.slice(5, 7); return { from: m + "-01", to: m + "-" + String(new Date(y, mo, 0).getDate()).padStart(2, "0"), label: m }; }
+  if (md === "year")  { var yy = document.getElementById("esYear").value || String(new Date().getFullYear()); return { from: yy + "-01-01", to: yy + "-12-31", label: yy }; }
+  if (md === "range") { var f = document.getElementById("esFrom").value || "0000-01-01", t = document.getElementById("esTo").value || "9999-12-31"; return { from: f, to: t, label: f + " to " + t }; }
+  return { from: "0000-01-01", to: "9999-12-31", label: "All time" };
+}
+function esBuild() {
+  var per = _esPeriod(), site = document.getElementById("esSite").value, q = (document.getElementById("esSearch").value || "").trim().toLowerCase();
+  var engs = {};   // key → row
+  function row(id, name, st) {
+    var k = _normIdKey(id); if (!k) return null;
+    if (!engs[k]) engs[k] = { id: id, name: name || id, site: st || "", days: {}, late: 0, leave: {}, leaveTotal: 0 };
+    return engs[k];
+  }
+  (typeof _onbRecords !== "undefined" ? _onbRecords : []).forEach(function(r){ var e = row(r.engId || r._id, r.name, r.defaultSite); if (e) { e.name = r.name || e.name; if (r.defaultSite) e.site = r.defaultSite; } });
+  (allRecs || []).forEach(function(r) {
+    if (!r.empId || !r.checkinTimestamp) return;
+    var day = _sgDay(new Date(r.checkinTimestamp));
+    if (day < per.from || day > per.to) return;
+    if (site && r.site !== site) return;
+    var e = row(r.empId, r.empName, r.site); if (!e) return;
+    e.days[day] = true; if (r.isLate) e.late++; e.lastSite = r.site;
+    if (!e.site) e.site = r.site || "";
+  });
+  var types = LEAVE_TYPES.slice();
+  (leaveRecs || []).forEach(function(r) {
+    if (r.status !== "approved" || !r.fromDate || !r.toDate || !r.empId) return;
+    var f = r.fromDate > per.from ? r.fromDate : per.from, t = r.toDate < per.to ? r.toDate : per.to;
+    if (t < f) return;
+    if (site && r.site !== site) return;
+    var n = _workDays(f, t); if (!n) return;
+    var e = row(r.empId, r.empName, r.site); if (!e) return;
+    var lt = r.leaveType || "Others"; if (types.indexOf(lt) === -1) types.push(lt);
+    e.leave[lt] = (e.leave[lt] || 0) + n; e.leaveTotal += n;
+  });
+  var list = Object.keys(engs).map(function(k){ var e = engs[k]; e.checkinDays = Object.keys(e.days).length; return e; })
+    .filter(function(e){ return !site || e.checkinDays || e.leaveTotal || e.site === site; })
+    .filter(function(e){ return !q || (e.name + " " + e.id).toLowerCase().indexOf(q) !== -1; })
+    .sort(function(a, b){ return a.name.localeCompare(b.name); });
+  var usedTypes = types.filter(function(t){ return list.some(function(e){ return e.leave[t]; }); });
+  return { rows: list, types: usedTypes.length ? usedTypes : ["Annual Leave", "Sick Leave", "Medical Leave"], label: per.label };
+}
+function esRender() {
+  var d = esBuild(); _esRows = d.rows; _esCols = d.types;
+  var th = '<tr><th>Engineer</th><th>Site</th><th style="text-align:center">Check-in days</th><th style="text-align:center">Late</th>'
+    + d.types.map(function(t){ return '<th style="text-align:center">' + sanitizeHtml(t) + '</th>'; }).join("")
+    + '<th style="text-align:center">Total leave</th></tr>';
+  document.getElementById("esHead").innerHTML = th;
+  document.getElementById("esBody").innerHTML = d.rows.map(function(e){
+    return '<tr><td><div class="en">' + sanitizeHtml(e.name) + '</div><div class="eid">' + sanitizeHtml(e.id) + '</div></td>'
+      + '<td style="font-size:.8rem">' + sanitizeHtml(e.site || "—") + '</td>'
+      + '<td style="text-align:center;font-weight:700">' + e.checkinDays + '</td>'
+      + '<td style="text-align:center">' + (e.late || "") + '</td>'
+      + d.types.map(function(t){ return '<td style="text-align:center">' + (e.leave[t] || "") + '</td>'; }).join("")
+      + '<td style="text-align:center;font-weight:700">' + (e.leaveTotal || "") + '</td></tr>';
+  }).join("");
+  document.getElementById("esCount").textContent = d.rows.length + " engineer" + (d.rows.length !== 1 ? "s" : "") + " · " + d.label;
+  document.getElementById("esEmpty").style.display = d.rows.length ? "none" : "block";
+}
+function esExport() {
+  if (!_esRows.length) { toast("Nothing to export", "t-err"); return; }
+  if (typeof XLSX === "undefined") { toast("Excel library not loaded", "t-err"); return; }
+  var per = _esPeriod();
+  var aoa = [["Engineer ID", "Name", "Site", "Check-in days", "Late check-ins"].concat(_esCols, ["Total leave (working days)"])];
+  _esRows.forEach(function(e){ aoa.push([e.id, e.name, e.site || "", e.checkinDays, e.late || 0].concat(_esCols.map(function(t){ return e.leave[t] || 0; }), [e.leaveTotal])); });
+  var ws = XLSX.utils.aoa_to_sheet(aoa), wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Engineer Summary");
+  XLSX.writeFile(wb, "Engineer_Summary_" + per.label.replace(/[^0-9A-Za-z-]+/g, "_") + ".xlsx");
+}
+// refresh when live data changes while the tab is open
+setInterval(function(){ var t = document.getElementById("dTab-engsummary"); if (t && t.style.display !== "none" && document.hidden === false) { try { esRender(); } catch(_){} } }, 15000);
 
 // ── v6.112: Admin adds a missing attendance record ──────────────────
 // The engineer worked but never checked in/out. Admin picks a day (Calendar → click the day),
