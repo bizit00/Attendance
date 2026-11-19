@@ -2079,6 +2079,8 @@ tr.on-leave-row td{background:#f0f9ff!important}
               title="Add, edit or remove work sites (name + GPS)">📍 Work Sites</button>
       <button id="teamSubBtnHolidays" class="team-sub-act" onclick="phOpen()"
               title="Set public holiday dates (used by the Timesheet and leave day counts)">🎌 Public Holidays</button>
+      <button id="teamSubBtnLeaveTypes" class="team-sub-act" onclick="ltOpen()"
+              title="Add, rename, merge or remove leave types (synced to the leave application form)">🏷 Leave Types</button>
       <button id="teamSubBtnOtpPolicy" class="team-sub-act" onclick="openOtpPolicyModal()"
               title="Enable or disable email OTP verification on first check-in">🔐 Check-in Security</button>
     </div>
@@ -3151,6 +3153,26 @@ service cloud.firestore {
 <div id="toast"></div>
 
 <!-- ══ MANPOWER CONFIG MODAL ════════════════════════ -->
+<!-- ══ LEAVE TYPES EDITOR (v6.118) ═════════════════ -->
+<div id="ltModal" class="modal-overlay">
+  <div class="modal-box" style="max-width:640px">
+    <button class="modal-close" onclick="ltClose()">✕</button>
+    <div class="modal-title">🏷 Leave Types</div>
+    <div class="modal-sub">This list is exactly what engineers see in <strong>Application for Leave</strong>. <strong>Rename</strong> by editing the name; <strong>Merge</strong> folds one type into another (e.g. Sick Leave → Medical Leave). Past leave under an old name is shown under the new name — nothing in the database is rewritten.</div>
+    <div id="ltRows" style="max-height:44vh;overflow-y:auto;margin-top:8px"></div>
+    <div style="display:grid;grid-template-columns:1fr 150px auto;gap:8px;margin-top:10px;align-items:end">
+      <label style="font-size:.74rem;font-weight:700">New leave type<input type="text" id="ltNewName" maxlength="40" placeholder="e.g. Hospitalisation Leave" style="width:100%;padding:7px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
+      <label style="font-size:.74rem;font-weight:700">Timesheet code<select id="ltNewCode" style="width:100%;padding:7px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"></select></label>
+      <button class="modal-btn-confirm" onclick="ltAdd()" style="padding:8px 14px">＋ Add</button>
+    </div>
+    <div id="ltStatus" style="font-size:.78rem;color:var(--ink3);margin-top:8px;min-height:18px;white-space:pre-line"></div>
+    <div class="modal-actions">
+      <button class="modal-btn-cancel" onclick="ltClose()">Cancel</button>
+      <button class="modal-btn-confirm" id="ltSaveBtn" onclick="ltSave()">💾 Save Leave Types</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ PUBLIC HOLIDAYS (v6.115) ═══════════════════ -->
 <div id="phModal" class="modal-overlay">
   <div class="modal-box" style="max-width:520px">
@@ -10705,8 +10727,8 @@ function _anRenderEntitlementRows(empId, year, doc) {
     + '</div>';
 
   LEAVE_TYPES.forEach(function(lt) {
-    var q   = quotas[lt] != null ? quotas[lt] : "";
-    var adj = adjs[lt]   != null ? adjs[lt]   : 0;
+    var q   = _qv(quotas, lt) != null ? _qv(quotas, lt) : "";
+    var adj = _qv(adjs, lt)   != null ? _qv(adjs, lt)   : 0;
     var used = _anComputeUsed(empId, year, lt);
     var bal  = q !== "" ? (parseInt(q,10)||0) + (parseInt(adj,10)||0) - used : null;
     var balCls = bal === null ? "ent-balance-null" : bal > 0 ? "ent-balance-pos" : "ent-balance-neg";
@@ -10863,7 +10885,7 @@ function _anRenderLeaveTrendChart(siteFilter) { return; // chart removed
       var total = 0;
       leaveRecs.forEach(function(r) {
         if (r.status !== "approved") return;
-        if (r.leaveType !== lt) return;
+        if (_canonLT(r.leaveType) !== lt) return;
         if (siteFilter && r.site !== siteFilter) return;
         if (!r.fromDate || !r.toDate) return;
         var mStart = mk + "-01";
@@ -10927,6 +10949,90 @@ function _anRenderLeaveTrendChart(siteFilter) { return; // chart removed
       }
     }
   });
+}
+
+// ── v6.118: Leave Types editor ───────────────────────────────────────
+var _ltDraft = [], _ltEditing = false, _ltSeq = 0;
+function _ltCurrentConfig() { return LEAVE_TYPES.map(function(n){ return { name: n, code: LEAVE_CODES[n] || TS_LEAVE_MAP[n] || "AL" }; }); }
+function ltOpen() {
+  _ltEditing = false; _ltSeq = 0;
+  _ltDraft = _ltCurrentConfig().map(function(t){ return { id: ++_ltSeq, orig: t.name, name: t.name, code: t.code, mergeInto: null }; });
+  var nc = document.getElementById("ltNewCode"); nc.innerHTML = LT_CODES.map(function(c){ return '<option value="' + c + '">' + LT_CODE_LABEL[c] + '</option>'; }).join("");
+  document.getElementById("ltStatus").textContent = "";
+  document.getElementById("ltSaveBtn").disabled = false;
+  document.getElementById("ltModal").classList.add("open"); ltRenderRows();
+}
+function ltClose() { _ltEditing = false; document.getElementById("ltModal").classList.remove("open"); }
+function _ltUsage(origName) {   // how many leave applications currently resolve to this type
+  return (leaveRecs || []).filter(function(r){ return r.leaveType === origName; }).length;
+}
+function ltRenderRows() {
+  var active = _ltDraft.filter(function(r){ return !r.mergeInto && !r.removed; });
+  document.getElementById("ltRows").innerHTML = _ltDraft.map(function(r){
+    if (r.removed) return "";
+    if (r.mergeInto) {
+      var tgt = _ltDraft.find(function(x){ return x.id === r.mergeInto; });
+      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px dashed var(--border);border-radius:8px;margin-bottom:6px;font-size:.82rem;opacity:.75"><span style="text-decoration:line-through;flex:1">' + sanitizeHtml(r.orig) + '</span><span>→ merged into <strong>' + sanitizeHtml(tgt ? tgt.name : "?") + '</strong></span><button class="leave-act-btn" onclick="ltUnmerge(' + r.id + ')">↩ Undo</button></div>';
+    }
+    var n = r.orig ? _ltUsage(r.orig) : 0;
+    var opts = active.filter(function(x){ return x.id !== r.id; }).map(function(x){ return '<option value="' + x.id + '">' + sanitizeHtml(x.name) + '</option>'; }).join("");
+    return '<div style="display:grid;grid-template-columns:1fr 150px auto;gap:6px;align-items:center;padding:7px 8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">'
+      + '<div><input type="text" value="' + String(r.name).replace(/"/g, "&quot;") + '" maxlength="40" oninput="ltEditName(' + r.id + ',this.value)" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px"/>'
+      + '<div style="font-size:.68rem;color:var(--ink3);margin-top:2px">' + (r.orig ? n + ' application(s) use this' : 'new') + (r.orig && r.orig !== r.name ? ' · renamed from “' + sanitizeHtml(r.orig) + '”' : '') + '</div></div>'
+      + '<select onchange="ltEditCode(' + r.id + ',this.value)" style="padding:6px;border:1.5px solid var(--border);border-radius:8px">' + LT_CODES.map(function(c){ return '<option value="' + c + '"' + (c === r.code ? " selected" : "") + '>' + LT_CODE_LABEL[c] + '</option>'; }).join("") + '</select>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">'
+      + (opts ? '<select onchange="if(this.value){ltMerge(' + r.id + ',+this.value)}" style="padding:6px;border:1.5px solid var(--border);border-radius:8px;max-width:130px"><option value="">Merge into…</option>' + opts + '</select>' : '')
+      + '<button class="leave-act-btn leave-reject" onclick="ltRemove(' + r.id + ')">Remove</button></div></div>';
+  }).join("");
+}
+function ltEditName(id, v) { _ltEditing = true; var r = _ltDraft.find(function(x){ return x.id === id; }); if (r) r.name = v; }
+function ltEditCode(id, v) { var r = _ltDraft.find(function(x){ return x.id === id; }); if (r) r.code = v; }
+function ltMerge(id, target) {
+  var r = _ltDraft.find(function(x){ return x.id === id; }); if (!r) return;
+  r.mergeInto = target;
+  // anything already merged into r follows it
+  _ltDraft.forEach(function(x){ if (x.mergeInto === id) x.mergeInto = target; });
+  ltRenderRows();
+}
+function ltUnmerge(id) { var r = _ltDraft.find(function(x){ return x.id === id; }); if (r) r.mergeInto = null; ltRenderRows(); }
+function ltRemove(id) {
+  var r = _ltDraft.find(function(x){ return x.id === id; }); if (!r) return;
+  if (r.orig && _ltUsage(r.orig) > 0) { document.getElementById("ltStatus").innerHTML = '<span style="color:var(--red)">“' + sanitizeHtml(r.orig) + '” is used by ' + _ltUsage(r.orig) + ' leave application(s). Use <strong>Merge into…</strong> instead so those records keep a valid type.</span>'; return; }
+  r.removed = true; ltRenderRows();
+}
+function ltAdd() {
+  var n = (document.getElementById("ltNewName").value || "").trim(), c = document.getElementById("ltNewCode").value;
+  if (!n) { document.getElementById("ltStatus").innerHTML = '<span style="color:var(--red)">Enter a name.</span>'; return; }
+  _ltEditing = true; _ltDraft.push({ id: ++_ltSeq, orig: null, name: n, code: c, mergeInto: null });
+  document.getElementById("ltNewName").value = ""; document.getElementById("ltStatus").textContent = ""; ltRenderRows();
+}
+function ltSave() {
+  var st = document.getElementById("ltStatus");
+  function bad(m){ st.innerHTML = '<span style="color:var(--red)">' + m + '</span>'; }
+  var keep = _ltDraft.filter(function(r){ return !r.mergeInto && !r.removed; });
+  if (!keep.length) return bad("At least one leave type is required.");
+  var seen = {};
+  for (var i = 0; i < keep.length; i++) {
+    keep[i].name = (keep[i].name || "").trim();
+    if (!keep[i].name) return bad("A leave type name is empty.");
+    var k = keep[i].name.toLowerCase(); if (seen[k]) return bad("Duplicate name: " + keep[i].name); seen[k] = true;
+  }
+  var byId = {}; _ltDraft.forEach(function(r){ byId[r.id] = r; });
+  var finalName = function(r){ var g = 0; while (r.mergeInto && g++ < 6) r = byId[r.mergeInto]; return r.name; };
+  var aliases = {};
+  // existing aliases follow their targets through renames/merges
+  Object.keys(LEAVE_ALIAS).forEach(function(a){
+    var tgt = _canonLT(a), row = _ltDraft.find(function(x){ return x.orig === tgt; });
+    aliases[a] = row ? finalName(row) : tgt;
+  });
+  _ltDraft.forEach(function(r){ if (r.orig && !r.removed) { var fn = finalName(r); if (fn !== r.orig) aliases[r.orig] = fn; } });
+  Object.keys(aliases).forEach(function(a){ if (aliases[a] === a || seen[a.toLowerCase()] && keep.some(function(k){ return k.name === a; })) delete aliases[a]; });
+  var types = keep.map(function(r){ return { name: r.name, code: r.code }; });
+  if (!fbOk || !db) return bad("Firestore not available.");
+  var btn = document.getElementById("ltSaveBtn"); btn.disabled = true; st.textContent = "⏳ Saving…";
+  db.collection("appConfig").doc("leaveTypes").set({ types: types, aliases: aliases, updatedBy: _adminTag(), updatedAt: Date.now() })
+    .then(function(){ toast("✅ Leave types saved — the leave form is updated", "t-ok"); ltClose(); })
+    .catch(function(e){ btn.disabled = false; bad("❌ Save failed: " + sanitizeHtml((e && e.message) || String(e))); });
 }
 
 // ── v6.117: Engineer Summary (Admin Tasks) ───────────────────────────
@@ -11732,6 +11838,55 @@ var LEAVE_TYPES = [
   "Maternity/Paternity Leave","Emergency Leave","Others"
 ];
 
+// ── v6.118: editable leave types ──────────────────────────────────────────
+// Stored in Firestore appConfig/leaveTypes { types:[{name,code}], aliases:{ oldName:newName } }.
+// LEAVE_TYPES (the list shown in "Application for Leave") is rebuilt from it live.
+// code = Timesheet code: AL (orange) · MC (blue) · UL (purple) · NPL (yellow).
+var LT_CODES = ["AL", "MC", "UL", "NPL"];
+var LT_CODE_COLOR = { AL: "#0077ff", MC: "#f59e0b", UL: "#7e22ce", NPL: "#6b7280" };
+var LT_CODE_LABEL = { AL: "AL – Annual (orange)", MC: "MC – Medical (blue)", UL: "UL – Urgent (purple)", NPL: "NPL – No pay (yellow)" };
+var LEAVE_ALIAS = {}, LEAVE_CODES = {}, _ltUnsub = null, _ltDefaultsCaptured = false;
+function _canonLT(name) {
+  var n = name, guard = 0;
+  while (n && LEAVE_ALIAS[n] && guard++ < 6) n = LEAVE_ALIAS[n];
+  return n;
+}
+// quota/adjustment lookup that also finds values saved under an old (merged / renamed) name
+function _qv(map, lt) {
+  if (!map) return null;
+  if (map[lt] != null) return map[lt];
+  var keys = Object.keys(LEAVE_ALIAS);
+  for (var i = 0; i < keys.length; i++) if (_canonLT(keys[i]) === lt && map[keys[i]] != null) return map[keys[i]];
+  return null;
+}
+function _aliasRecs(recs) {   // in-memory only; keeps the original name in _lt0
+  (recs || []).forEach(function(r){ if (r._lt0 === undefined) r._lt0 = r.leaveType; r.leaveType = _canonLT(r._lt0); });
+}
+function _ltApplyConfig(cfg) {
+  if (!_ltDefaultsCaptured) { _ltDefaultsCaptured = true; }
+  var types = (cfg && cfg.types && cfg.types.length) ? cfg.types : LEAVE_TYPES.map(function(n){ return { name: n, code: (TS_LEAVE_MAP[n] || "AL") }; });
+  LEAVE_ALIAS = (cfg && cfg.aliases) || {};
+  LEAVE_TYPES.length = 0; LEAVE_CODES = {};
+  types.forEach(function(t){ LEAVE_TYPES.push(t.name); LEAVE_CODES[t.name] = t.code; if (!LEAVE_TYPE_COLORS[t.name]) LEAVE_TYPE_COLORS[t.name] = LT_CODE_COLOR[t.code] || "#64748b"; TS_LEAVE_MAP[t.name] = t.code; });
+  Object.keys(LEAVE_ALIAS).forEach(function(a){ var c = LEAVE_CODES[_canonLT(a)]; if (c) TS_LEAVE_MAP[a] = c; });
+  _aliasRecs(leaveRecs);
+  // engineer form dropdown + admin filter
+  var lt = document.getElementById("leaveType");
+  if (lt) { var cur = lt.value; lt.innerHTML = '<option value="">— Select leave type —</option>'; LEAVE_TYPES.forEach(function(t){ var o = document.createElement("option"); o.value = t; o.textContent = t; lt.appendChild(o); }); if (LEAVE_TYPES.indexOf(cur) !== -1) lt.value = cur; }
+  var llt = document.getElementById("lLeaveType");
+  if (llt) { var cf = llt.value; llt.innerHTML = '<option value="">All Leave Types</option>'; LEAVE_TYPES.forEach(function(t){ var o = document.createElement("option"); o.value = t; o.textContent = t; llt.appendChild(o); }); if (LEAVE_TYPES.indexOf(cf) !== -1) llt.value = cf; }
+  try { renderLeaveTable(); renderCalendar(); } catch(_){}
+  try { if (document.getElementById("dTab-engsummary").style.display !== "none") esRender(); } catch(_){}
+  try { if (typeof renderAnalytics === "function") renderAnalytics(); } catch(_){}
+}
+function ltStartListener() {
+  if (!fbOk || !db || _ltUnsub) return;
+  _ltUnsub = db.collection("appConfig").doc("leaveTypes").onSnapshot(function(d) {
+    _ltApplyConfig(d.exists ? d.data() : null);
+    var m = document.getElementById("ltModal"); if (m && m.classList.contains("open") && !_ltEditing) ltRenderRows();
+  }, function(err){ console.warn("[AT] leaveTypes listener:", err); });
+}
+
 // ── Leave type colour map (calendar + trends chart) ──────
 var LEAVE_TYPE_COLORS = {
   "Annual Leave":             "#0077ff",
@@ -11789,7 +11944,7 @@ function _anComputeUsed(empId, year, leaveType, recs) {
   var used = 0;
   src.forEach(function(r) {
     if (r.empId !== empId) return;
-    if (r.leaveType !== leaveType) return;
+    if (_canonLT(r.leaveType) !== leaveType) return;
     if (r.status !== "approved") return;
     if (!r.fromDate) return;
     var y = parseInt((r.fromDate || "").slice(0, 4), 10);
@@ -11802,8 +11957,9 @@ function _anComputeUsed(empId, year, leaveType, recs) {
 // Returns { quota, adjustment, used, balance } for one leave type.
 // doc = entitlement document (may be null).
 function _anGetBalance(doc, leaveType, empId, year, recs) {
-  var quota      = doc && doc.quotas      && doc.quotas[leaveType]      != null ? doc.quotas[leaveType]      : null;
-  var adjustment = doc && doc.adjustments && doc.adjustments[leaveType] != null ? doc.adjustments[leaveType] : 0;
+  var quota      = doc ? _qv(doc.quotas, leaveType) : null;                       // v6.118: also finds quota saved under an old/merged name
+  var _adj       = doc ? _qv(doc.adjustments, leaveType) : null;
+  var adjustment = _adj != null ? _adj : 0;
   var used = _anComputeUsed(empId, year, leaveType, recs);
   var balance = quota !== null ? (quota + adjustment - used) : null;
   return { quota: quota, adjustment: adjustment, used: used, balance: balance };
@@ -12075,6 +12231,7 @@ function loadCustomSites() {
     _rebuildWorkSites();
   }, function(err){ console.warn("[AT] workSites listener:", err); });
   try { phStartListener(); } catch(_){}   // v6.115
+  try { ltStartListener(); } catch(_){}   // v6.118
 }
 
 // Repopulate every site dropdown in the app, preserving the current selection.
@@ -14167,6 +14324,7 @@ function loadLeaves() {
         leaveRecs = snap.docs
           .map(function(d){ return Object.assign({id:d.id},d.data()); })
           .sort(function(a,b){ return (b.appliedAt||0)-(a.appliedAt||0); });
+        _aliasRecs(leaveRecs);   // v6.118
         renderLeaveTable(); updateLeaveStats();
         // Keep the Attendance Analytics tab (KPIs, gap chart, leave list) in sync live
         if (typeof renderAnalytics === "function") renderAnalytics();
@@ -16413,6 +16571,7 @@ function loadMyLeaves() {
   list.innerHTML = '<div style="text-align:center;padding:24px;color:var(--ink3)"><span class="spin" style="border-color:rgba(0,0,0,.15);border-top-color:var(--blue)"></span> Loading…</div>';
 
   function renderMyList(recs) {
+    _aliasRecs(recs);   // v6.118
     recs.sort(function(a,b){ return (b.appliedAt||0)-(a.appliedAt||0); });
     if (info) info.textContent = "Showing " + recs.length + " application" + (recs.length!==1?"s":"") + " for " + empId;
     if (!recs.length) {
@@ -16494,12 +16653,12 @@ function _renderMyLeavesBalance(empId, recs) {
 
     var rows = "";
     LEAVE_TYPES.forEach(function(lt) {
-      if (doc.quotas[lt] == null) return; // skip types with no quota set
-      var quota = doc.quotas[lt] || 0;
-      var adj   = (doc.adjustments && doc.adjustments[lt] != null) ? doc.adjustments[lt] : 0;
+      if (_qv(doc.quotas, lt) == null) return; // skip types with no quota set
+      var quota = _qv(doc.quotas, lt) || 0;
+      var adj   = (_qv(doc.adjustments, lt) != null) ? _qv(doc.adjustments, lt) : 0;
       var used  = 0;
       (recs || []).forEach(function(r) {
-        if (r.leaveType !== lt) return;
+        if (_canonLT(r.leaveType) !== lt) return;
         if (r.status !== "approved") return;
         var y = parseInt((r.fromDate || "").slice(0, 4), 10);
         if (y === year) used += (_leaveDays(r));
