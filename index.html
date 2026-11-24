@@ -2049,7 +2049,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <button class="tb-btn tb-out" onclick="esExport()">⬇ Export Excel</button>
       </div>
       <div style="font-size:.76rem;color:var(--ink3);margin:6px 2px 10px;line-height:1.6">
-        <strong>Check-in days</strong> = number of different days the engineer checked in (several check-ins on one day count once). <strong>Total check-ins</strong> = every check-in record, so a day with two check-ins counts twice. <strong>Leave</strong> = approved leave, in working days (weekends &amp; public holidays excluded), only the part inside the selected period.
+        <strong>Check-in days</strong> = number of different days the engineer checked in (several check-ins on one day count once). <strong>Total check-ins (all time)</strong> = every check-in ever recorded for the engineer, not limited to the selected period or site. <strong>Leave</strong> = approved leave, in working days (weekends &amp; public holidays excluded), only the part inside the selected period.
       </div>
       <div class="tbl-wrap"><div class="tbl-hdr"><span class="tbl-hdr-t">Per-engineer totals</span><span class="tbl-count" id="esCount">—</span></div>
         <div style="overflow-x:auto"><table id="esTable"><thead id="esHead"></thead><tbody id="esBody"></tbody></table></div>
@@ -2995,7 +2995,7 @@ service cloud.firestore {
   <div class="modal-box" style="max-width:480px">
     <button class="modal-close" onclick="closeTimesheetModal()">✕</button>
     <div class="modal-title">📊 Export Timesheet <span class="help-dot" data-help="timesheet-export" title="Help">?</span></div>
-    <div class="modal-sub">Generates a coloured Excel timesheet using live attendance &amp; approved leave data. Public holidays come from the built-in Singapore calendar plus any dates the admin sets in Admin Tasks › Team › Public Holidays.</div>
+    <div class="modal-sub">Generates a coloured Excel timesheet: a <strong>Summary</strong> tab (all engineers) plus one tab per site the engineers reported to, using live attendance &amp; approved leave data. Public holidays come from the built-in Singapore calendar plus any dates the admin sets in Admin Tasks › Team › Public Holidays.</div>
     <div style="display:flex;gap:12px;margin-bottom:14px">
       <div style="flex:1">
         <label style="font-size:.82rem;font-weight:600;color:var(--ink2);display:block;margin-bottom:5px">Month</label>
@@ -11077,9 +11077,13 @@ function esBuild() {
     if (day < per.from || day > per.to) return;
     if (site && r.site !== site) return;
     var e = row(r.empId, r.empName, r.site); if (!e) return;
-    e.days[day] = true; e.records = (e.records || 0) + 1; if (r.isLate) e.late++; e.lastSite = r.site;
+    e.days[day] = true; if (r.isLate) e.late++; e.lastSite = r.site;
     if (!e.site) e.site = r.site || "";
   });
+  // v6.120: Total check-ins = EVERY check-in ever recorded, regardless of the selected period / site
+  var _allCnt = {};
+  (allRecs || []).forEach(function(r){ var k = _normIdKey(r.empId); if (k) _allCnt[k] = (_allCnt[k] || 0) + 1; });
+  Object.keys(engs).forEach(function(k){ engs[k].records = _allCnt[k] || 0; });
   var types = LEAVE_TYPES.slice();
   (leaveRecs || []).forEach(function(r) {
     if (r.status !== "approved" || !r.fromDate || !r.toDate || !r.empId) return;
@@ -11100,7 +11104,7 @@ function esBuild() {
 }
 function esRender() {
   var d = esBuild(); _esRows = d.rows; _esCols = d.types;
-  var th = '<tr><th>Engineer</th><th>Site</th><th style="text-align:center">Check-in days</th><th style="text-align:center" title="Every check-in counted, including several on the same day">Total check-ins</th><th style="text-align:center">Late</th>'
+  var th = '<tr><th>Engineer</th><th>Site</th><th style="text-align:center">Check-in days</th><th style="text-align:center" title="All check-ins ever recorded (not limited to the selected period)">Total check-ins (all time)</th><th style="text-align:center">Late</th>'
     + d.types.map(function(t){ return '<th style="text-align:center">' + sanitizeHtml(t) + '</th>'; }).join("")
     + '<th style="text-align:center">Total leave</th></tr>';
   document.getElementById("esHead").innerHTML = th;
@@ -11120,7 +11124,7 @@ function esExport() {
   if (!_esRows.length) { toast("Nothing to export", "t-err"); return; }
   if (typeof XLSX === "undefined") { toast("Excel library not loaded", "t-err"); return; }
   var per = _esPeriod();
-  var aoa = [["Engineer ID", "Name", "Site", "Check-in days", "Total check-ins", "Late check-ins"].concat(_esCols, ["Total leave (working days)"])];
+  var aoa = [["Engineer ID", "Name", "Site", "Check-in days (period)", "Total check-ins (all time)", "Late check-ins (period)"].concat(_esCols, ["Total leave (working days)"])];
   _esRows.forEach(function(e){ aoa.push([e.id, e.name, e.site || "", e.checkinDays, e.records || 0, e.late || 0].concat(_esCols.map(function(t){ return e.leave[t] || 0; }), [e.leaveTotal])); });
   var ws = XLSX.utils.aoa_to_sheet(aoa), wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Engineer Summary");
@@ -16050,7 +16054,7 @@ function tsFillMerge(ws, r1, c1, r2, c2, argb, topBorder) {
 }
 
 // ── Build engineer + attendance data from live records ───────────────────
-function tsBuildData(year, month, phDays, siteFilter) {
+function tsBuildData(year, month, phDays, siteFilter, onlySite) {   // v6.121: onlySite = build a per-site tab (attendance at that site only, no leave)
   var dateCols   = tsBuildDateColumns(year, month);
   var monthStart = year+"-"+tsPad2(month)+"-01";
   var monthEnd   = year+"-"+tsPad2(month)+"-"+tsPad2(new Date(year,month,0).getDate());
@@ -16062,6 +16066,7 @@ function tsBuildData(year, month, phDays, siteFilter) {
   (allRecs||[]).forEach(function(r) {
     if (!r.empId || !r.checkinDate) return;
     if (siteFilter && r.site !== siteFilter) return;
+    if (onlySite && r.site !== onlySite) return;
     var parts = r.checkinDate.split("/");
     if (parts.length !== 3) return;
     var d=parseInt(parts[0]), m=parseInt(parts[1]), y=parseInt(parts[2]);
@@ -16069,7 +16074,7 @@ function tsBuildData(year, month, phDays, siteFilter) {
     if (!engMap[r.empId]) engMap[r.empId]={name:r.empName||r.empId, site:r.site||""};
   });
 
-  (leaveRecs||[]).forEach(function(r) {
+  (onlySite ? [] : (leaveRecs||[])).forEach(function(r) {
     if (!r.empId || r.status!=="approved") return;
     if (siteFilter && r.site && r.site!==siteFilter) return;
     if ((r.toDate||"") < monthStart || (r.fromDate||"") > monthEnd) return;
@@ -16078,12 +16083,12 @@ function tsBuildData(year, month, phDays, siteFilter) {
 
   // Sort by name
   var engList = Object.keys(engMap).map(function(id){
-    return {empId:id, name:engMap[id].name, site:engMap[id].site};
+    return {empId:id, name:engMap[id].name, site:(onlySite || engMap[id].site)};
   }).sort(function(a,b){ return a.name.localeCompare(b.name); });
 
   // Approved leave lookup: empId → [{from, to, code}]
   var leaveByEng = {};
-  (leaveRecs||[]).forEach(function(r) {
+  (onlySite ? [] : (leaveRecs||[])).forEach(function(r) {
     if (!r.empId || r.status!=="approved") return;
     if (!leaveByEng[r.empId]) leaveByEng[r.empId]=[];
     leaveByEng[r.empId].push({
@@ -16096,6 +16101,7 @@ function tsBuildData(year, month, phDays, siteFilter) {
   var attendByEng = {};
   (allRecs||[]).forEach(function(r) {
     if (!r.empId || !r.checkinDate) return;
+    if (onlySite && r.site !== onlySite) return;
     var parts=r.checkinDate.split("/");
     if (parts.length!==3) return;
     var d=parseInt(parts[0]), m=parseInt(parts[1]), y=parseInt(parts[2]);
@@ -16135,12 +16141,12 @@ function tsBuildData(year, month, phDays, siteFilter) {
 }
 
 // ── Generate one coloured sheet into a workbook ──────────────────────────
-function tsGenerateSheet(wb, year, month, engineers, phDays) {
+function tsGenerateSheet(wb, year, month, engineers, phDays, tabName, siteLabel) {   // v6.121: tabName / siteLabel for per-site tabs
   if (!engineers.length) return;
   var dateCols  = tsBuildDateColumns(year, month);
   var totalWD   = tsTotalWD(dateCols, phDays);
   var monthName = TS_MONTH_NAMES[month-1];
-  var sheetName = monthName.substring(0,3)+" "+year;
+  var sheetName = tabName || (monthName.substring(0,3)+" "+year);
 
   var ws = {};
   var WD_COL = 6 + dateCols.length + 4; // 4 gap cols after last date
@@ -16178,6 +16184,9 @@ function tsGenerateSheet(wb, year, month, engineers, phDays) {
     {s:{r:FRD,c:32},e:{r:FRD,c:35}},   // v6.104: OCL/Back to School label spans AG:AJ
   ];
 
+  if (siteLabel) {   // v6.121: per-site tab → say which site the engineers reported to
+    ws[tsRef(2,0)]={v:"Reported to site: "+siteLabel,t:"s",s:{font:{bold:true,name:"Calibri",sz:14,color:{rgb:"FF1E3A5F"}},alignment:{horizontal:"left",vertical:"center"}}};
+  }
   // ── Row 5: title / Balance / day names / WD ─────────────────────────
   var R5=4;
   ws[tsRef(R5,0)]={v:"NGEMR RFS Timesheet ("+monthName+" "+year+")",t:"s",
@@ -16311,13 +16320,16 @@ function tsSaveWorkbook(wb, fname, done) {
     try {
       var buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
       JSZip.loadAsync(buf).then(function(zip) {
-        var path = "xl/worksheets/sheet1.xml";
-        return zip.file(path).async("string").then(function(xml) {
-          var views = '<sheetViews><sheetView workbookViewId="0"><pane xSplit="2" topLeftCell="C1" activePane="topRight" state="frozen"/>'
-                    + '<selection pane="topRight" activeCell="C1" sqref="C1"/></sheetView></sheetViews>';
-          var out = xml.replace(/<sheetViews>[\s\S]*?<\/sheetViews>/, views);
-          if (out === xml) throw new Error("sheetViews not found");
-          zip.file(path, out);
+        var views = '<sheetViews><sheetView workbookViewId="0"><pane xSplit="2" topLeftCell="C1" activePane="topRight" state="frozen"/>'
+                  + '<selection pane="topRight" activeCell="C1" sqref="C1"/></sheetView></sheetViews>';
+        var paths = Object.keys(zip.files).filter(function(n){ return /^xl\/worksheets\/sheet\d+\.xml$/.test(n); });   // v6.121: every tab
+        return Promise.all(paths.map(function(path){
+          return zip.file(path).async("string").then(function(xml) {
+            var out = xml.replace(/<sheetViews>[\s\S]*?<\/sheetViews>/, views);
+            if (out === xml) throw new Error("sheetViews not found in " + path);
+            zip.file(path, out);
+          });
+        })).then(function(){
           return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
         });
       }).then(function(blob) {
@@ -16357,12 +16369,30 @@ function generateTimesheetXLSX() {
   }
 
   var wb = XLSX.utils.book_new();
-  tsGenerateSheet(wb, year, month, data.engineers, phDays);
+  // v6.121: Summary tab = consolidated view (as before); then one tab per site the engineers reported to this month
+  tsGenerateSheet(wb, year, month, data.engineers, phDays, "Summary");
+  var siteSet = {};
+  (allRecs||[]).forEach(function(r){
+    if (!r.empId || !r.checkinDate || !r.site) return;
+    if (site && r.site !== site) return;
+    var pp = r.checkinDate.split("/"); if (pp.length !== 3) return;
+    if (parseInt(pp[2]) !== year || parseInt(pp[1]) !== month) return;
+    siteSet[r.site] = true;
+  });
+  var usedNames = { "summary": true }, siteTabs = 0;
+  Object.keys(siteSet).sort().forEach(function(sn){
+    var sd = tsBuildData(year, month, phDays, "", sn);
+    if (!sd.engineers.length) return;
+    var base = sn.replace(/[\[\]:*?\/\\]/g, "-").slice(0, 31) || "Site", nm = base, k = 2;
+    while (usedNames[nm.toLowerCase()]) { var suf = " (" + (k++) + ")"; nm = base.slice(0, 31 - suf.length) + suf; }
+    usedNames[nm.toLowerCase()] = true;
+    tsGenerateSheet(wb, year, month, sd.engineers, phDays, nm, sn); siteTabs++;
+  });
 
   var fname="Timesheet_"+TS_MONTH_NAMES[month-1]+"_"+year+(site?"_"+site.replace(/\s+/g,"_"):"")+".xlsx";
   tsSaveWorkbook(wb, fname, function(frozen) {
     closeTimesheetModal();
-    toast("✅ Timesheet downloaded · "+data.engineers.length+" engineers · "+TS_MONTH_NAMES[month-1]+" "+year+(site?" · "+site:"") + (frozen ? "" : " (freeze panes unavailable)"), "t-ok");
+    toast("✅ Timesheet downloaded · Summary + "+siteTabs+" site tab"+(siteTabs!==1?"s":"")+" · "+data.engineers.length+" engineers · "+TS_MONTH_NAMES[month-1]+" "+year+(site?" · "+site:"") + (frozen ? "" : " (freeze panes unavailable)"), "t-ok");
   });
 }
 
