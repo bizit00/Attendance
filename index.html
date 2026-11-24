@@ -2026,7 +2026,7 @@ tr.on-leave-row td{background:#f0f9ff!important}
         <button class="tb-btn tb-out" onclick="calGoToday()">Today</button>
         <span class="help-dot" data-help="calendar" title="Help">?</span>
       </div>
-      <div style="font-size:.78rem;color:var(--ink3);margin:8px 2px">💡 Click any day to add missing attendance for an engineer who forgot to check in/out.</div>
+      <div style="font-size:.78rem;color:var(--ink3);margin:8px 2px">💡 Click any day to add missing attendance (one or many engineers). Teal <strong>➕</strong> chips are records added by admin — hover for the comment, or open the day to read it in full.</div>
       <div class="cal-grid" id="acalGrid"></div>
     </div>
 
@@ -3213,17 +3213,24 @@ service cloud.firestore {
   </div>
 </div>
 
-<!-- ══ ADMIN: ADD MISSING ATTENDANCE (v6.112) ═══════ -->
+<!-- ══ ADMIN: ADD MISSING ATTENDANCE (v6.112, bulk v6.122) ═══════ -->
 <div id="adminAddAttModal" class="modal-overlay">
-  <div class="modal-box" style="max-width:480px">
+  <div class="modal-box" style="max-width:520px">
     <button class="modal-close" onclick="adminAddAttClose()">✕</button>
     <div class="modal-title">➕ Add Missing Attendance</div>
-    <div class="modal-sub">For a day the engineer worked but forgot to check in/out. The record is marked <strong>Added by admin</strong> with your name and the reason.</div>
+    <div class="modal-sub">For a day the engineer(s) worked but forgot to check in/out. Select one or several engineers — the same site, times and reason are applied to all. Records are marked <strong>Added by admin</strong>.</div>
     <div style="display:grid;gap:10px;margin-top:10px">
       <label style="font-size:.78rem;font-weight:700">Date
         <input type="date" id="aaDate" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px" onchange="adminAddAttCheck()"/></label>
-      <label style="font-size:.78rem;font-weight:700">Engineer
-        <select id="aaEng" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px" onchange="adminAddAttEngChange()"></select></label>
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:.78rem;font-weight:700">Engineers</span>
+          <input type="text" id="aaSearch" placeholder="🔍 Search…" oninput="aaRenderEngs()" style="flex:1;min-width:120px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px"/>
+          <label style="font-size:.76rem;font-weight:700;white-space:nowrap;cursor:pointer"><input type="checkbox" id="aaSelAll" onchange="aaSelectAll(this.checked)"/> Select all</label>
+          <span id="aaSelCount" style="font-size:.74rem;color:var(--ink3)">0 selected</span>
+        </div>
+        <div id="aaEngList" style="max-height:170px;overflow-y:auto;border:1.5px solid var(--border);border-radius:8px;margin-top:4px;padding:4px 8px"></div>
+      </div>
       <label style="font-size:.78rem;font-weight:700">Work site
         <select id="aaSite" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"></select></label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -3232,13 +3239,14 @@ service cloud.firestore {
         <label style="font-size:.78rem;font-weight:700">Check-out time
           <input type="time" id="aaOut" value="17:00" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
       </div>
-      <label style="font-size:.78rem;font-weight:700">Reason <span style="color:var(--red)">*</span>
+      <label style="font-size:.78rem;font-weight:700">Reason / comment <span style="color:var(--red)">*</span>
         <input type="text" id="aaReason" maxlength="200" placeholder="e.g. Phone battery died, confirmed by site supervisor" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;margin-top:3px"/></label>
     </div>
-    <div id="aaStatus" style="font-size:.78rem;color:var(--ink3);margin-top:10px;min-height:18px"></div>
+    <div id="aaDayList" style="margin-top:10px"></div>
+    <div id="aaStatus" style="font-size:.78rem;color:var(--ink3);margin-top:10px;min-height:18px;white-space:pre-line"></div>
     <div class="modal-actions">
       <button class="modal-btn-cancel" onclick="adminAddAttClose()">Cancel</button>
-      <button class="modal-btn-confirm" id="aaSaveBtn" onclick="adminAddAttSave()">💾 Add Record</button>
+      <button class="modal-btn-confirm" id="aaSaveBtn" onclick="adminAddAttSave()">💾 Add Record(s)</button>
     </div>
   </div>
 </div>
@@ -11133,35 +11141,32 @@ function esExport() {
 // refresh when live data changes while the tab is open
 setInterval(function(){ var t = document.getElementById("dTab-engsummary"); if (t && t.style.display !== "none" && document.hidden === false) { try { esRender(); } catch(_){} } }, 15000);
 
-// ── v6.112: Admin adds a missing attendance record ──────────────────
-// The engineer worked but never checked in/out. Admin picks a day (Calendar → click the day),
-// the engineer, site and times; a normal attendance record is written, flagged addedByAdmin.
+// ── v6.112 / v6.122: Admin adds missing attendance (one or many engineers) ──────────────────
+// Admin picks a day (Admin Tasks › Calendar → click the day), ticks the engineers, site, times and a reason.
+// A normal attendance record is written per engineer, flagged addedByAdmin with the reason.
+var _aaSel = {};   // normalised empId → true
+function _aaEngineers() {
+  return (typeof _onbRecords !== "undefined" ? _onbRecords : []).filter(function(r){ return (r.engId || r._id) && r.name; })
+    .map(function(r){ return { id: r.engId || r._id, name: r.name, site: r.defaultSite || "" }; })
+    .sort(function(a,b){ return a.name.localeCompare(b.name); });
+}
 function adminAddAttOpen(isoDate) {
   var m = document.getElementById("adminAddAttModal"); if (!m) return;
-  var engSel = document.getElementById("aaEng");
-  var list = (typeof _onbRecords !== "undefined" ? _onbRecords : []).filter(function(r){ return (r.engId || r._id) && r.name; })
-    .sort(function(a,b){ return a.name.localeCompare(b.name); });
-  engSel.innerHTML = '<option value="">— Select engineer —</option>' + list.map(function(r){
-    var id = r.engId || r._id;
-    return '<option value="' + String(id).replace(/"/g,"&quot;") + '">' + String(r.name).replace(/</g,"&lt;") + ' (' + String(id).replace(/</g,"&lt;") + ')</option>';
-  }).join("");
+  _aaSel = {};
   var siteSel = document.getElementById("aaSite");
-  siteSel.innerHTML = WORK_SITES.map(function(s){ return '<option value="' + String(s.name).replace(/"/g,"&quot;") + '">' + String(s.name).replace(/</g,"&lt;") + '</option>'; }).join("");
+  siteSel.innerHTML = '<option value="__default__">Each engineer\'s default site</option>' + WORK_SITES.map(function(s){ return '<option value="' + String(s.name).replace(/"/g,"&quot;") + '">' + String(s.name).replace(/</g,"&lt;") + '</option>'; }).join("");
   document.getElementById("aaDate").value = isoDate || _sgDay(new Date());
   document.getElementById("aaIn").value = "08:00";
   document.getElementById("aaOut").value = "17:00";
   document.getElementById("aaReason").value = "";
-  document.getElementById("aaStatus").textContent = list.length ? "" : "⚠️ No engineers in Onboarding yet.";
+  document.getElementById("aaSearch").value = "";
+  document.getElementById("aaSelAll").checked = false;
   document.getElementById("aaSaveBtn").disabled = false;
+  document.getElementById("aaStatus").textContent = _aaEngineers().length ? "" : "⚠️ No engineers in Onboarding yet.";
   m.classList.add("open");
+  aaRenderEngs(); aaRenderDayList();
 }
 function adminAddAttClose() { var m = document.getElementById("adminAddAttModal"); if (m) m.classList.remove("open"); }
-function adminAddAttEngChange() {
-  var id = document.getElementById("aaEng").value;
-  var ds = (typeof _onbDefaultSiteMap === "function" ? _onbDefaultSiteMap() : {})[id];
-  if (ds) { var sel = document.getElementById("aaSite"); if (Array.prototype.some.call(sel.options, function(o){ return o.value === ds; })) sel.value = ds; }
-  adminAddAttCheck();
-}
 // Returns the engineer's existing records on the chosen Singapore day.
 function _aaExisting(empId, iso) {
   var k = _normIdKey(empId);
@@ -11169,54 +11174,108 @@ function _aaExisting(empId, iso) {
     return _normIdKey(r.empId) === k && r.checkinTimestamp && _sgDay(new Date(r.checkinTimestamp)) === iso;
   });
 }
-function adminAddAttCheck() {
-  var id = document.getElementById("aaEng").value, iso = document.getElementById("aaDate").value;
-  var st = document.getElementById("aaStatus"); if (!st) return;
-  if (!id || !iso) { st.textContent = ""; return; }
-  var ex = _aaExisting(id, iso);
-  st.innerHTML = ex.length ? '<span style="color:var(--red)">⚠️ This engineer already has ' + ex.length + ' record(s) on ' + iso + ' (' + ex.map(function(r){ return (r.checkinTime||"?") + (r.checkoutTime ? "–" + r.checkoutTime : " (no check-out)"); }).join(", ") + '). A duplicate will not be added.</span>' : "";
+function aaRenderEngs() {
+  var iso = document.getElementById("aaDate").value, q = (document.getElementById("aaSearch").value || "").trim().toLowerCase();
+  var list = _aaEngineers().filter(function(e){ return !q || (e.name + " " + e.id).toLowerCase().indexOf(q) !== -1; });
+  document.getElementById("aaEngList").innerHTML = list.length ? list.map(function(e){
+    var k = _normIdKey(e.id), has = iso && _aaExisting(e.id, iso).length > 0;
+    if (has) delete _aaSel[k];
+    return '<label style="display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:.82rem;cursor:' + (has ? "not-allowed" : "pointer") + ';' + (has ? "opacity:.55" : "") + '">'
+      + '<input type="checkbox" ' + (has ? "disabled " : "") + (_aaSel[k] ? "checked " : "") + 'onchange="aaToggle(\'' + String(e.id).replace(/'/g,"") + '\',this.checked)"/>'
+      + '<span style="flex:1">' + sanitizeHtml(e.name) + ' <span style="color:var(--ink3)">(' + sanitizeHtml(e.id) + ')</span></span>'
+      + (has ? '<span style="font-size:.68rem;color:var(--red)">already has a record</span>' : '') + '</label>';
+  }).join("") : '<div style="padding:8px;color:var(--ink3);font-size:.8rem">No engineers match.</div>';
+  aaUpdateCount();
+}
+function aaToggle(id, on) { var k = _normIdKey(id); if (on) _aaSel[k] = true; else delete _aaSel[k]; aaUpdateCount(); }
+function aaSelectAll(on) {
+  var iso = document.getElementById("aaDate").value, q = (document.getElementById("aaSearch").value || "").trim().toLowerCase();
+  _aaEngineers().forEach(function(e){
+    if (q && (e.name + " " + e.id).toLowerCase().indexOf(q) === -1) return;
+    if (iso && _aaExisting(e.id, iso).length) return;
+    var k = _normIdKey(e.id); if (on) _aaSel[k] = true; else delete _aaSel[k];
+  });
+  aaRenderEngs();
+}
+function aaUpdateCount() {
+  var n = Object.keys(_aaSel).length, el = document.getElementById("aaSelCount"); if (el) el.textContent = n + " selected";
+}
+function adminAddAttCheck() { aaRenderEngs(); aaRenderDayList(); }
+// Admin-added records already on this day (so the admin can read the comments that were entered)
+function _aaAddedOnDay(iso) {
+  return (allRecs || []).filter(function(r){ return r.addedByAdmin && r.checkinTimestamp && _sgDay(new Date(r.checkinTimestamp)) === iso; })
+    .sort(function(a,b){ return (a.empName || "").localeCompare(b.empName || ""); });
+}
+function aaRenderDayList() {
+  var iso = document.getElementById("aaDate").value, box = document.getElementById("aaDayList"); if (!box) return;
+  var rows = iso ? _aaAddedOnDay(iso) : [];
+  box.innerHTML = rows.length ? '<div style="font-size:.76rem;font-weight:700;margin-bottom:4px">📝 Already added by admin on ' + iso + '</div>'
+    + rows.map(function(r){
+      return '<div style="font-size:.76rem;border:1px solid var(--border);border-radius:8px;padding:6px 8px;margin-bottom:4px;background:#f8fafc">'
+        + '<strong>' + sanitizeHtml(r.empName || r.empId) + '</strong> · ' + sanitizeHtml(r.site || "") + ' · ' + sanitizeHtml(r.checkinTime || "") + '–' + sanitizeHtml(r.checkoutTime || "")
+        + '<div style="color:var(--ink2)">💬 ' + sanitizeHtml(r.addedReason || "(no comment)") + '</div>'
+        + '<div style="color:var(--ink3);font-size:.7rem">by ' + sanitizeHtml(r.addedBy || "admin") + (r.addedAt ? " · " + new Date(r.addedAt).toLocaleString("en-SG") : "") + '</div></div>';
+    }).join("") : "";
 }
 function adminAddAttSave() {
-  var id = document.getElementById("aaEng").value, iso = document.getElementById("aaDate").value;
-  var site = document.getElementById("aaSite").value, tIn = document.getElementById("aaIn").value, tOut = document.getElementById("aaOut").value;
+  var iso = document.getElementById("aaDate").value, siteSel = document.getElementById("aaSite").value;
+  var tIn = document.getElementById("aaIn").value, tOut = document.getElementById("aaOut").value;
   var reason = (document.getElementById("aaReason").value || "").trim();
   var st = document.getElementById("aaStatus"), btn = document.getElementById("aaSaveBtn");
   function bad(m){ st.innerHTML = '<span style="color:var(--red)">' + m + '</span>'; }
-  if (!id) return bad("Select an engineer.");
+  var ids = Object.keys(_aaSel);
+  if (!ids.length) return bad("Select at least one engineer.");
   if (!iso) return bad("Select a date.");
   if (iso > _sgDay(new Date())) return bad("Cannot add attendance for a future date.");
-  if (!site) return bad("Select a work site.");
+  if (!siteSel) return bad("Select a work site.");
   if (!tIn || !tOut) return bad("Enter both check-in and check-out times.");
-  if (!reason) return bad("Please enter a reason.");
+  if (!reason) return bad("Please enter a reason / comment.");
   var inD = new Date(iso + "T" + tIn + ":00+08:00"), outD = new Date(iso + "T" + tOut + ":00+08:00");
   if (isNaN(inD) || isNaN(outD)) return bad("Invalid time.");
   if (outD <= inD) return bad("Check-out must be after check-in.");
-  if (_aaExisting(id, iso).length) return bad("This engineer already has a record on that day. Edit or delete that record instead.");
   if (!fbOk || !db) return bad("Firestore not available.");
-  var onb = (_onbRecords || []).find(function(r){ return (r.engId || r._id) === id; }) || {};
+  var engs = _aaEngineers().filter(function(e){ return _aaSel[_normIdKey(e.id)]; });
+  var problems = [];
+  engs = engs.filter(function(e){
+    if (_aaExisting(e.id, iso).length) { problems.push(e.name + ": already has a record that day"); return false; }
+    if (siteSel === "__default__" && !e.site) { problems.push(e.name + ": no default site set — choose a site above"); return false; }
+    return true;
+  });
+  if (!engs.length) return bad(problems.join("\n") || "Nothing to add.");
   var ms = outD - inD, h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000);
   var who = _adminTag(), now = Date.now();
-  var rec = {
-    empId: id, empName: onb.name || id, empEmail: onb.email || "", site: site,
-    defaultSite: null, siteMismatch: false,
-    checkinTime: inD.toLocaleTimeString("en-SG"), checkinDate: inD.toLocaleDateString("en-SG"), checkinISO: inD.toISOString(), checkinTimestamp: inD.getTime(),
-    checkinLat: null, checkinLng: null, checkinDist: null, checkinAcc: null,
-    checkoutTime: outD.toLocaleTimeString("en-SG"), checkoutISO: outD.toISOString(), checkoutTimestamp: outD.getTime(),
-    checkoutLat: null, checkoutLng: null, checkoutDist: null,
-    status: "out", isLate: _isLateForSite(new Date(iso + "T" + tIn + ":00"), site), isOvertime: h >= _siteOtHours(site), duration: h + "h " + m + "m",
-    deviceId: null, hwId: null, deviceToken: null, emailConflict: false,
-    _source: "admin-added", _userAgent: "admin",
-    addedByAdmin: true, addedBy: who, addedAt: now, addedReason: reason.slice(0, 200)
-  };
-  btn.disabled = true; st.textContent = "⏳ Saving…";
-  // fixed id → pressing Save twice rewrites the same record, never duplicates
-  var docId = "admin_" + _normIdKey(id) + "_" + iso;
-  db.collection("attendance").doc(docId).set(rec).then(function(){
-    toast("✅ Added attendance for " + rec.empName + " on " + iso, "t-ok");
-    adminAddAttClose();
-  }).catch(function(err){
-    console.error("[AdminAdd] write failed:", err);
-    btn.disabled = false; bad("❌ Save failed: " + ((err && err.message) || err));
+  btn.disabled = true; st.textContent = "⏳ Saving " + engs.length + " record" + (engs.length !== 1 ? "s" : "") + "…";
+  var okNames = [], failNames = [];
+  Promise.all(engs.map(function(e){
+    var site = siteSel === "__default__" ? e.site : siteSel;
+    var onb = (_onbRecords || []).find(function(r){ return (r.engId || r._id) === e.id; }) || {};
+    var rec = {
+      empId: e.id, empName: onb.name || e.name, empEmail: onb.email || "", site: site,
+      defaultSite: null, siteMismatch: false,
+      checkinTime: inD.toLocaleTimeString("en-SG"), checkinDate: inD.toLocaleDateString("en-SG"), checkinISO: inD.toISOString(), checkinTimestamp: inD.getTime(),
+      checkinLat: null, checkinLng: null, checkinDist: null, checkinAcc: null,
+      checkoutTime: outD.toLocaleTimeString("en-SG"), checkoutISO: outD.toISOString(), checkoutTimestamp: outD.getTime(),
+      checkoutLat: null, checkoutLng: null, checkoutDist: null,
+      status: "out", isLate: _isLateForSite(new Date(iso + "T" + tIn + ":00"), site), isOvertime: h >= _siteOtHours(site), duration: h + "h " + m + "m",
+      deviceId: null, hwId: null, deviceToken: null, emailConflict: false,
+      _source: "admin-added", _userAgent: "admin",
+      addedByAdmin: true, addedBy: who, addedAt: now, addedReason: reason.slice(0, 200)
+    };
+    // fixed id → pressing Save twice rewrites the same record, never duplicates
+    return db.collection("attendance").doc("admin_" + _normIdKey(e.id) + "_" + iso).set(rec)
+      .then(function(){ okNames.push(e.name); })
+      .catch(function(err){ console.error("[AdminAdd] write failed:", e.id, err); failNames.push(e.name + " (" + ((err && err.message) || err) + ")"); });
+  })).then(function(){
+    btn.disabled = false;
+    if (!failNames.length) {
+      toast("✅ Added attendance for " + okNames.length + " engineer" + (okNames.length !== 1 ? "s" : "") + " on " + iso + (problems.length ? " · " + problems.length + " skipped" : ""), "t-ok");
+      if (!problems.length) { adminAddAttClose(); return; }
+    }
+    _aaSel = {}; aaRenderEngs();
+    st.innerHTML = (okNames.length ? '<span style="color:var(--green)">✅ Added: ' + sanitizeHtml(okNames.join(", ")) + '</span>\n' : "")
+      + (problems.length ? '<span style="color:var(--red)">Skipped:\n' + sanitizeHtml(problems.join("\n")) + '</span>\n' : "")
+      + (failNames.length ? '<span style="color:var(--red)">❌ Failed: ' + sanitizeHtml(failNames.join(", ")) + '</span>' : "");
+    setTimeout(aaRenderDayList, 800);
   });
 }
 
@@ -11265,6 +11324,13 @@ function _renderCalendarInto(prefix, editable) {
     var ph = (typeof phName === "function") ? phName(isoDate) : "";
     if (ph) chips = '<span class="cal-chip" style="background:#f59e6b" title="Public holiday: ' + sanitizeHtml(ph) + '">🎌 ' + sanitizeHtml(ph) + '</span>' + chips;
 
+    if (editable) {   // v6.122: show attendance the admin added, with the comment on hover
+      var _added = _aaAddedOnDay(isoDate).filter(function(r){ return !siteFilter || r.site === siteFilter; });
+      _added.slice(0, 3).forEach(function(r){
+        chips += '<span class="cal-chip" style="background:#0d9488" title="' + sanitizeHtml((r.empName || r.empId) + ' — added by ' + (r.addedBy || "admin") + ': ' + (r.addedReason || "(no comment)")) + '">➕ ' + sanitizeHtml((r.empName || r.empId || "?").split(" ")[0].slice(0, 12)) + '</span>';
+      });
+      if (_added.length > 3) chips += '<span class="cal-more" title="Click the day to see all">+' + (_added.length - 3) + '</span>';
+    }
     if (editable) {
       html += '<div class="cal-cell cal-clickable' + (isToday ? " today" : "") + '" onclick="adminAddAttOpen(\'' + isoDate + '\')" title="Click to add missing attendance for ' + isoDate + '">'
         + '<div class="cal-day-num">' + d + '</div>' + chips + '<span class="cal-add">＋</span></div>';
@@ -16327,6 +16393,10 @@ function tsSaveWorkbook(wb, fname, done) {
           return zip.file(path).async("string").then(function(xml) {
             var out = xml.replace(/<sheetViews>[\s\S]*?<\/sheetViews>/, views);
             if (out === xml) throw new Error("sheetViews not found in " + path);
+            if (/sheet1\.xml$/.test(path) && out.indexOf("<tabColor") === -1) {   // v6.122: Summary tab (first sheet) is green
+              if (/<sheetPr[ >\/]/.test(out)) out = out.replace(/<sheetPr([^>]*)\/>/, '<sheetPr$1><tabColor rgb="FF00B050"/></sheetPr>').replace(/<sheetPr([^>]*)>(?!<tabColor)/, '<sheetPr$1><tabColor rgb="FF00B050"/>');
+              else out = out.replace(/(<worksheet[^>]*>)/, '$1<sheetPr><tabColor rgb="FF00B050"/></sheetPr>');
+            }
             zip.file(path, out);
           });
         })).then(function(){
